@@ -83,6 +83,7 @@ func (b *Builder) removeOrdersFor(column string) {
 func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Builder {
 	col := idColumn(column)
 	b.removeOrdersFor(col)
+	b.wheres = isolated(b.wheres)
 	if lastID == nil {
 		b.WhereNotNull(col)
 	} else {
@@ -100,6 +101,7 @@ func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Bu
 func (b *Builder) ForPageAfterID(perPage int, lastID any, column ...string) *Builder {
 	col := idColumn(column)
 	b.removeOrdersFor(col)
+	b.wheres = isolated(b.wheres)
 	if lastID == nil {
 		b.WhereNotNull(col)
 	} else {

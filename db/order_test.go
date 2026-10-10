@@ -59,6 +59,36 @@ func TestOrderingGolden(t *testing.T) {
 			my:   "SELECT * FROM `t` WHERE `uid` IS NOT NULL ORDER BY `uid` DESC LIMIT 5",
 			lite: `SELECT * FROM "t" WHERE "uid" IS NOT NULL ORDER BY "uid" DESC LIMIT 5`,
 		},
+		{
+			name: "keyset paging groups an existing OR",
+			build: func(d db.Dialect) *db.Builder {
+				return db.Use(d).Table("t").Where("a", 1).OrWhere("b", 2).ForPageAfterID(10, 5)
+			},
+			pg:   `SELECT * FROM "t" WHERE ("a" = $1 OR "b" = $2) AND "id" > $3 ORDER BY "id" ASC LIMIT 10`,
+			my:   "SELECT * FROM `t` WHERE (`a` = ? OR `b` = ?) AND `id` > ? ORDER BY `id` ASC LIMIT 10",
+			lite: `SELECT * FROM "t" WHERE ("a" = ? OR "b" = ?) AND "id" > ? ORDER BY "id" ASC LIMIT 10`,
+			args: []any{1, 2, 5},
+		},
+		{
+			name: "keyset paging groups a raw where",
+			build: func(d db.Dialect) *db.Builder {
+				return db.Use(d).Table("t").WhereRaw("a = ? OR b = ?", 1, 2).ForPageBeforeID(10, 5)
+			},
+			pg:   `SELECT * FROM "t" WHERE (a = $1 OR b = $2) AND "id" < $3 ORDER BY "id" DESC LIMIT 10`,
+			my:   "SELECT * FROM `t` WHERE (a = ? OR b = ?) AND `id` < ? ORDER BY `id` DESC LIMIT 10",
+			lite: `SELECT * FROM "t" WHERE (a = ? OR b = ?) AND "id" < ? ORDER BY "id" DESC LIMIT 10`,
+			args: []any{1, 2, 5},
+		},
+		{
+			name: "keyset paging leaves plain AND wheres ungrouped",
+			build: func(d db.Dialect) *db.Builder {
+				return db.Use(d).Table("t").Where("a", 1).Where("b", 2).ForPageAfterID(10, 5)
+			},
+			pg:   `SELECT * FROM "t" WHERE "a" = $1 AND "b" = $2 AND "id" > $3 ORDER BY "id" ASC LIMIT 10`,
+			my:   "SELECT * FROM `t` WHERE `a` = ? AND `b` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 10",
+			lite: `SELECT * FROM "t" WHERE "a" = ? AND "b" = ? AND "id" > ? ORDER BY "id" ASC LIMIT 10`,
+			args: []any{1, 2, 5},
+		},
 	}
 	runGolden(t, tests)
 }

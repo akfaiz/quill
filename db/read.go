@@ -58,7 +58,9 @@ func (b *Builder) First(ctx context.Context, dest any) error {
 //	err := conn.Table("users").Find(ctx, 2, &u)
 //	// SELECT * FROM "users" WHERE "id" = $1 LIMIT 1   args: [2]
 func (b *Builder) Find(ctx context.Context, id any, dest any) error {
-	return b.Clone().Where("id", id).First(ctx, dest)
+	q := b.Clone()
+	q.wheres = isolated(q.wheres)
+	return q.Where("id", id).First(ctx, dest)
 }
 
 // Sole returns the only matching row: ErrNotFound for none, ErrMultipleRecords for several.

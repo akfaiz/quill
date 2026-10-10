@@ -255,6 +255,49 @@ func TestUpdateGolden(t *testing.T) {
 			args: []any{true},
 		},
 		{
+			name: "update from groups an OR in the wheres and in the join conditions",
+			build: func(d db.Dialect) (string, []any, error) {
+				return db.Use(d).Table("posts").
+					JoinFunc("users", func(j *db.JoinClause) {
+						j.On("users.id", "posts.user_id").OrOn("users.id", "posts.editor_id")
+					}).
+					Where("users.banned", true).OrWhere("users.spam", true).
+					UpdateFromSQL(m("hidden", true))
+			},
+			pg: `UPDATE "posts" SET "hidden" = $1 FROM "users" ` +
+				`WHERE ("users"."banned" = $2 OR "users"."spam" = $3) ` +
+				`AND ("users"."id" = "posts"."user_id" OR "users"."id" = "posts"."editor_id")`,
+			my:   unsupported,
+			lite: unsupported,
+			args: []any{true, true, true},
+		},
+		{
+			name: "update with join and limit",
+			build: func(d db.Dialect) (string, []any, error) {
+				return db.Use(d).Table("posts").
+					Join("users", "users.id", "posts.user_id").
+					OrderBy("posts.id").Limit(1).
+					UpdateSQL(m("hidden", true))
+			},
+			pg:   `UPDATE "posts" SET "hidden" = $1 WHERE "ctid" IN (SELECT "posts"."ctid" FROM "posts" INNER JOIN "users" ON "users"."id" = "posts"."user_id" ORDER BY "posts"."id" ASC LIMIT 1)`,
+			my:   unsupported,
+			lite: `UPDATE "posts" SET "hidden" = ? WHERE "rowid" IN (SELECT "posts"."rowid" FROM "posts" INNER JOIN "users" ON "users"."id" = "posts"."user_id" ORDER BY "posts"."id" ASC LIMIT 1)`,
+			args: []any{true},
+		},
+		{
+			name: "update with join and order by",
+			build: func(d db.Dialect) (string, []any, error) {
+				return db.Use(d).Table("posts").
+					Join("users", "users.id", "posts.user_id").
+					Where("users.banned", true).OrderBy("posts.id").
+					UpdateSQL(m("hidden", true))
+			},
+			pg:   `UPDATE "posts" SET "hidden" = $1 WHERE "ctid" IN (SELECT "posts"."ctid" FROM "posts" INNER JOIN "users" ON "users"."id" = "posts"."user_id" WHERE "users"."banned" = $2 ORDER BY "posts"."id" ASC)`,
+			my:   unsupported,
+			lite: `UPDATE "posts" SET "hidden" = ? WHERE "rowid" IN (SELECT "posts"."rowid" FROM "posts" INNER JOIN "users" ON "users"."id" = "posts"."user_id" WHERE "users"."banned" = ? ORDER BY "posts"."id" ASC)`,
+			args: []any{true, true},
+		},
+		{
 			name: "update from without base where uses join conditions",
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").Join("a", "a.uid", "users.id").UpdateFromSQL(m("x", 1))
@@ -339,6 +382,21 @@ func TestDeleteGolden(t *testing.T) {
 			pg:   `DELETE FROM "users" AS "u" WHERE "ctid" IN (SELECT "u"."ctid" FROM "users" AS "u" INNER JOIN "bans" AS "b" ON "b"."uid" = "u"."id" WHERE "b"."active" = $1)`,
 			my:   "DELETE `u` FROM `users` AS `u` INNER JOIN `bans` AS `b` ON `b`.`uid` = `u`.`id` WHERE `b`.`active` = ?",
 			lite: `DELETE FROM "users" AS "u" WHERE "rowid" IN (SELECT "u"."rowid" FROM "users" AS "u" INNER JOIN "bans" AS "b" ON "b"."uid" = "u"."id" WHERE "b"."active" = ?)`,
+			args: []any{true},
+		},
+		{
+			name: "delete with join and limit",
+			build: func(d db.Dialect) (string, []any, error) {
+				return db.Use(d).
+					Table("users as u").
+					Join("bans as b", "b.uid", "u.id").
+					Where("b.active", true).
+					Limit(5).
+					DeleteSQL()
+			},
+			pg:   `DELETE FROM "users" AS "u" WHERE "ctid" IN (SELECT "u"."ctid" FROM "users" AS "u" INNER JOIN "bans" AS "b" ON "b"."uid" = "u"."id" WHERE "b"."active" = $1 LIMIT 5)`,
+			my:   unsupported,
+			lite: `DELETE FROM "users" AS "u" WHERE "rowid" IN (SELECT "u"."rowid" FROM "users" AS "u" INNER JOIN "bans" AS "b" ON "b"."uid" = "u"."id" WHERE "b"."active" = ? LIMIT 5)`,
 			args: []any{true},
 		},
 		{

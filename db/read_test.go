@@ -41,6 +41,12 @@ func TestGetFirstFindSole(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT * FROM "people" LIMIT 2`).WillReturnRows(people(0))
 	require.ErrorIs(t, conn.Table("people").Sole(ctx, &one), db.ErrNotFound)
+
+	// the id applies to the whole existing condition, not only its last OR branch
+	mock.ExpectQuery(`SELECT * FROM "people" WHERE ("age" > $1 OR "vip" = $2) AND "id" = $3 LIMIT 1`).
+		WithArgs(3, true, 9).
+		WillReturnRows(people(1))
+	require.NoError(t, conn.Table("people").Where("age", ">", 3).OrWhere("vip", true).Find(ctx, 9, &one))
 }
 
 func TestGetPropagatesBuildAndDriverErrors(t *testing.T) {

@@ -167,6 +167,7 @@ func (b *Builder) UpdateOrInsert(ctx context.Context, attributes, values map[str
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	q.wheres = isolated(q.wheres)
 	for _, k := range keys {
 		q.Where(k, attributes[k])
 	}
