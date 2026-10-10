@@ -49,7 +49,7 @@ func getStructMap(t reflect.Type) *structMap {
 // outer field shadows an embedded one of the same name.
 func collectFields(t reflect.Type, prefix []int, sm *structMap) {
 	var embedded []reflect.StructField
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		tag := f.Tag.Get("db")
 		if tag == "-" {
@@ -96,7 +96,7 @@ func collectFields(t reflect.Type, prefix []int, sm *structMap) {
 }
 
 func hasOption(opts, want string) bool {
-	for _, o := range strings.Split(opts, ",") {
+	for o := range strings.SplitSeq(opts, ",") {
 		if strings.TrimSpace(o) == want {
 			return true
 		}

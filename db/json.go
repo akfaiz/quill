@@ -286,7 +286,7 @@ func (b *Builder) jsonLength(boolean, column string, args []any) *Builder {
 	if _, ok := val.(Expression); !ok {
 		n, err := toInt64(val)
 		if err != nil {
-			return b.fail(fmt.Errorf("%w: JSON length must be an integer: %v", ErrInvalidArgs, err))
+			return b.fail(fmt.Errorf("%w: JSON length must be an integer: %w", ErrInvalidArgs, err))
 		}
 		val = n
 	}

@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akfaiz/quill/db"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	tcmariadb "github.com/testcontainers/testcontainers-go/modules/mariadb"
+
+	"github.com/akfaiz/quill/db"
 )
 
 const mariadbImage = "mariadb:11.4"
@@ -39,10 +40,10 @@ func startMariaDB(t *testing.T) *mariadbServer {
 	if mariadbShared != nil {
 		return mariadbShared
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	startCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	c, err := tcmariadb.Run(ctx, mariadbImage,
+	c, err := tcmariadb.Run(startCtx, mariadbImage,
 		tcmariadb.WithDatabase("gq"), tcmariadb.WithUsername("gq"), tcmariadb.WithPassword("gq"))
 	if c != nil {
 		onShutdown(terminate(c))
@@ -50,13 +51,13 @@ func startMariaDB(t *testing.T) *mariadbServer {
 	if err != nil {
 		t.Fatalf("start mariadb: %v", err)
 	}
-	dsn, err := c.ConnectionString(ctx, "parseTime=true")
+	dsn, err := c.ConnectionString(startCtx, "parseTime=true")
 	require.NoError(t, err)
 	raw, err := sql.Open("mysql", dsn)
 	require.NoError(t, err)
 	onShutdown(func(context.Context) { _ = raw.Close() }) // runs before the container is removed
 	raw.SetMaxOpenConns(8)
-	if err := raw.PingContext(ctx); err != nil {
+	if err := raw.PingContext(startCtx); err != nil {
 		t.Fatalf("ping mariadb: %v", err)
 	}
 	mariadbShared = &mariadbServer{raw: raw, conn: db.New(raw, db.MariaDB)}
@@ -89,7 +90,7 @@ func TestMariaDBScanningAndReads(t *testing.T) {
 	require.NoError(t, users().Get(ctx, &us))
 	assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, names(us))
 	assert.Equal(t, "hello", us[2].Bio)
-	assert.Equal(t, "", us[0].Bio) // NULL -> zero value
+	assert.Empty(t, us[0].Bio) // NULL -> zero value
 	assert.True(t, us[3].Age == nil && us[0].Age != nil && *us[0].Age == 30)
 	assert.False(t, us[1].Active)
 	assert.Equal(t, 1.5, us[0].Score)
@@ -97,7 +98,7 @@ func TestMariaDBScanningAndReads(t *testing.T) {
 	var rows []map[string]any
 	require.NoError(t, conn.Table("users").Select("name", "age").OrderBy("id").Get(ctx, &rows))
 	assert.Equal(t, "Ann", rows[0]["name"]) // text columns arrive as string, not []byte
-	assert.Equal(t, nil, rows[3]["age"])
+	assert.Nil(t, rows[3]["age"])
 
 	var u User
 	require.NoError(t, users().Where("name", "Bob").Sole(ctx, &u))
@@ -181,28 +182,91 @@ func TestMariaDBWhereFamily(t *testing.T) {
 		{"not like", users().WhereNotLike("name", "%n"), []string{"Bob", "Cy", "Di"}},
 		{"basic like operator", users().Where("name", "like", "C%"), []string{"Cy"}},
 		{"null safe equals", users().WhereNullSafeEquals("age", nil), []string{"Di"}},
-		{"group", users().Where("active", true).WhereGroup(func(q *db.Builder) { q.Where("age", ">", 35).OrWhereNull("age") }), []string{"Cy", "Di"}},
+		{
+			"group",
+			users().Where("active", true).
+				WhereGroup(func(q *db.Builder) { q.Where("age", ">", 35).OrWhereNull("age") }),
+			[]string{"Cy", "Di"},
+		},
 		{"not", users().WhereNot("active", true), []string{"Bob"}},
-		{"exists", users().WhereExists(posts().SelectRaw("1").WhereColumn("posts.user_id", "users.id").Where("views", ">", 6)), []string{"Ann", "Bob"}},
-		{"not exists", users().WhereNotExists(posts().SelectRaw("1").WhereColumn("posts.user_id", "users.id")), []string{"Di"}},
-		{"in subquery", users().WhereIn("id", posts().Select("user_id").Where("published", true)), []string{"Ann", "Bob", "Cy"}},
+		{
+			"exists",
+			users().WhereExists(posts().SelectRaw("1").WhereColumn("posts.user_id", "users.id").Where("views", ">", 6)),
+			[]string{"Ann", "Bob"},
+		},
+		{
+			"not exists",
+			users().WhereNotExists(posts().SelectRaw("1").WhereColumn("posts.user_id", "users.id")),
+			[]string{"Di"},
+		},
+		{
+			"in subquery",
+			users().WhereIn("id", posts().Select("user_id").Where("published", true)),
+			[]string{"Ann", "Bob", "Cy"},
+		},
 		{"scalar subquery", users().Where("age", ">", conn.Table("users").SelectRaw("avg(age)")), []string{"Cy"}},
 		{"any", users().WhereAny([]string{"name", "email"}, "like", "b%"), []string{"Bob"}},
 		{"all", users().WhereAll([]string{"name", "email"}, "like", "%i%"), []string{"Di"}},
 		{"none", users().WhereNone([]string{"name", "email"}, "like", "%o%"), []string{"Ann", "Cy", "Di"}},
-		{"year month day", users().WhereYear("created_at", 2024).WhereMonth("created_at", 3).WhereDay("created_at", ">", 7), []string{"Bob"}},
-		{"date and time", users().WhereDate("created_at", "2024-03-07").WhereTime("created_at", ">=", "09:00:00"), []string{"Ann"}},
-		{"date from time.Time", users().WhereDate("created_at", time.Date(2024, 3, 8, 23, 0, 0, 0, time.UTC)), []string{"Bob"}},
+		{
+			"year month day",
+			users().WhereYear("created_at", 2024).WhereMonth("created_at", 3).WhereDay("created_at", ">", 7),
+			[]string{"Bob"},
+		},
+		{
+			"date and time",
+			users().WhereDate("created_at", "2024-03-07").WhereTime("created_at", ">=", "09:00:00"),
+			[]string{"Ann"},
+		},
+		{
+			"date from time.Time",
+			users().WhereDate("created_at", time.Date(2024, 3, 8, 23, 0, 0, 0, time.UTC)),
+			[]string{"Bob"},
+		},
 		{"row values", users().WhereRowValues([]string{"id", "age"}, "=", []any{1, 30}), []string{"Ann"}},
 		{"raw", users().WhereRaw("length(name) = ?", 2), []string{"Cy", "Di"}},
 		{"map", users().WhereMap(map[string]any{"active": true, "name": "Cy"}), []string{"Cy"}},
 		{"latest limit offset", conn.Table("users").Latest("id").Limit(2).Offset(1), []string{"Cy", "Bob"}},
-		{"left join with value", users().LeftJoinFunc("posts", func(j *db.JoinClause) { j.On("posts.user_id", "users.id").Where("posts.views", ">", 8) }).WhereNull("posts.id"), []string{"Bob", "Cy", "Di"}},
-		{"join sub", users().JoinSub(posts().Select("user_id").SelectRaw("max(views) as mv").GroupBy("user_id"), "m", "m.user_id", "users.id").Where("m.mv", ">", 6), []string{"Ann", "Bob"}},
-		{"cross join", conn.Table("users").CrossJoin("posts").Where("users.id", 1).Where("posts.id", 1), []string{"Ann"}},
-		{"from sub", conn.NewQuery().FromSub(conn.Table("users").Where("active", true), "au").OrderBy("name"), []string{"Ann", "Cy", "Di"}},
-		{"union", conn.Table("users").Select("name").Where("id", 1).Union(conn.Table("users").Select("name").Where("id", 2)).OrderBy("name", "desc"), []string{"Bob", "Ann"}},
-		{"union all limit", conn.Table("users").Select("name").Where("id", 1).UnionAll(conn.Table("users").Select("name").Where("id", 1)).Limit(5), []string{"Ann", "Ann"}},
+		{
+			"left join with value",
+			users().LeftJoinFunc("posts", func(j *db.JoinClause) { j.On("posts.user_id", "users.id").Where("posts.views", ">", 8) }).
+				WhereNull("posts.id"),
+			[]string{"Bob", "Cy", "Di"},
+		},
+		{
+			"join sub",
+			users().JoinSub(posts().Select("user_id").SelectRaw("max(views) as mv").GroupBy("user_id"), "m", "m.user_id", "users.id").
+				Where("m.mv", ">", 6),
+			[]string{"Ann", "Bob"},
+		},
+		{
+			"cross join",
+			conn.Table("users").CrossJoin("posts").Where("users.id", 1).Where("posts.id", 1),
+			[]string{"Ann"},
+		},
+		{
+			"from sub",
+			conn.NewQuery().FromSub(conn.Table("users").Where("active", true), "au").OrderBy("name"),
+			[]string{"Ann", "Cy", "Di"},
+		},
+		{
+			"union",
+			conn.Table("users").
+				Select("name").
+				Where("id", 1).
+				Union(conn.Table("users").Select("name").Where("id", 2)).
+				OrderBy("name", "desc"),
+			[]string{"Bob", "Ann"},
+		},
+		{
+			"union all limit",
+			conn.Table("users").
+				Select("name").
+				Where("id", 1).
+				UnionAll(conn.Table("users").Select("name").Where("id", 1)).
+				Limit(5),
+			[]string{"Ann", "Ann"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -242,7 +306,11 @@ func TestMariaDBDialectSpecificJoinsAndLocks(t *testing.T) {
 	conn := s.reset(t)
 
 	t.Run("lateral joins are rejected before they reach the server", func(t *testing.T) {
-		latest := conn.Table("posts").Select("title").WhereColumn("posts.user_id", "users.id").OrderBy("views", "desc").Limit(1)
+		latest := conn.Table("posts").
+			Select("title").
+			WhereColumn("posts.user_id", "users.id").
+			OrderBy("views", "desc").
+			Limit(1)
 		for name, q := range map[string]*db.Builder{
 			"JoinLateral":     conn.Table("users").JoinLateral(latest, "lp"),
 			"LeftJoinLateral": conn.Table("users").LeftJoinLateral(latest, "lp"),
@@ -269,7 +337,10 @@ func TestMariaDBDialectSpecificJoinsAndLocks(t *testing.T) {
 		}))
 	})
 	t.Run("straight join and index hints", func(t *testing.T) {
-		got := pluckNames(t, conn.Table("users").StraightJoin("posts", "posts.user_id", "users.id").Where("posts.id", 1))
+		got := pluckNames(
+			t,
+			conn.Table("users").StraightJoin("posts", "posts.user_id", "users.id").Where("posts.id", 1),
+		)
 		assert.Equal(t, []string{"Ann"}, got)
 		for _, q := range []*db.Builder{
 			conn.Table("users").UseIndex("PRIMARY"),
@@ -278,10 +349,9 @@ func TestMariaDBDialectSpecificJoinsAndLocks(t *testing.T) {
 		} {
 			var rows []map[string]any
 			require.NoError(t, q.Where("id", 1).Get(ctx, &rows))
-			assert.Equal(t, 1, len(rows))
+			assert.Len(t, rows, 1)
 		}
 	})
-
 }
 
 func TestMariaDBJSON(t *testing.T) {
@@ -291,12 +361,24 @@ func TestMariaDBJSON(t *testing.T) {
 
 	assert.Equal(t, []string{"Ann", "Bob"}, pluckNames(t, ordered().WhereJsonContains("meta->tags", "b")))
 	assert.Equal(t, []string{"Ann"}, pluckNames(t, ordered().WhereJsonContains("meta->tags", "a")))
-	assert.Equal(t, []string{"Bob"}, pluckNames(t, ordered().WhereJsonContains("meta", map[string]any{"theme": "light"})))
+	assert.Equal(
+		t,
+		[]string{"Bob"},
+		pluckNames(t, ordered().WhereJsonContains("meta", map[string]any{"theme": "light"})),
+	)
 	// Unlike MySQL (where a missing path makes json_contains NULL and skips Cy), MariaDB returns a
 	// definite false there, so "doesn't contain" includes Cy, as SQLite does.
-	assert.Equal(t, []string{"Bob", "Cy"}, pluckNames(t, ordered().WhereJsonDoesntContain("meta->tags", "a").WhereNotNull("meta")))
+	assert.Equal(
+		t,
+		[]string{"Bob", "Cy"},
+		pluckNames(t, ordered().WhereJsonDoesntContain("meta->tags", "a").WhereNotNull("meta")),
+	)
 	assert.Equal(t, []string{"Ann", "Bob"}, pluckNames(t, ordered().WhereJsonContainsKey("meta->theme")))
-	assert.Equal(t, []string{"Cy"}, pluckNames(t, ordered().WhereJsonDoesntContainKey("meta->theme").WhereNotNull("meta")))
+	assert.Equal(
+		t,
+		[]string{"Cy"},
+		pluckNames(t, ordered().WhereJsonDoesntContainKey("meta->theme").WhereNotNull("meta")),
+	)
 	assert.Equal(t, []string{"Ann"}, pluckNames(t, ordered().WhereJsonLength("meta->tags", ">", 1)))
 	assert.Equal(t, []string{"Bob"}, pluckNames(t, ordered().Where("meta->theme", "light")))
 
@@ -310,10 +392,21 @@ func TestMariaDBJSON(t *testing.T) {
 	assert.Equal(t, `["a", "b"]`, tags)
 
 	assert.Equal(t, []string{"Ann"}, pluckNames(t, ordered().WhereJsonOverlaps("meta->tags", []string{"a", "z"})))
-	assert.Equal(t, []string{"Bob"}, pluckNames(t, ordered().WhereJsonDoesntOverlap("meta->tags", []string{"a", "z"}).WhereNotNull("meta").WhereJsonContainsKey("meta->tags")))
+	assert.Equal(
+		t,
+		[]string{"Bob"},
+		pluckNames(
+			t,
+			ordered().WhereJsonDoesntOverlap("meta->tags", []string{"a", "z"}).
+				WhereNotNull("meta").
+				WhereJsonContainsKey("meta->tags"),
+		),
+	)
 
 	t.Run("updates set paths and keep siblings", func(t *testing.T) {
-		n, err := conn.Table("users").Where("id", 1).Update(ctx, map[string]any{"meta->theme": "blue", "meta->beta": true})
+		n, err := conn.Table("users").
+			Where("id", 1).
+			Update(ctx, map[string]any{"meta->theme": "blue", "meta->beta": true})
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		require.NoError(t, conn.Table("users").Where("id", 1).Value(ctx, "meta->theme", &theme))
@@ -332,7 +425,8 @@ func TestMariaDBWrites(t *testing.T) {
 	s := startMariaDB(t)
 	t.Run("insert variants", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Table("users").Insert(ctx, map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"})
+		n, err := conn.Table("users").
+			Insert(ctx, map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		id, err := conn.Table("users").InsertGetID(ctx, map[string]any{"name": "Gus", "email": "gus@x"})
@@ -365,7 +459,8 @@ func TestMariaDBWrites(t *testing.T) {
 		c, _ := conn.Table("users").Count(ctx)
 		assert.Equal(t, int64(5), c)
 		for _, v := range []string{"Zed", "Zed2"} {
-			ok, err := conn.Table("users").UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": v})
+			ok, err := conn.Table("users").
+				UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": v})
 			require.NoError(t, err)
 			assert.True(t, ok)
 		}
@@ -394,10 +489,18 @@ func TestMariaDBWrites(t *testing.T) {
 	})
 	t.Run("update and delete with join or limit", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Table("users as u").Join("posts as p", "p.user_id", "u.id").Where("p.views", ">", 6).Update(ctx, map[string]any{"u.score": 9}) // MySQL counts changed rows, so pick a column that changes
+		n, err := conn.Table("users as u").
+			Join("posts as p", "p.user_id", "u.id").
+			Where("p.views", ">", 6).
+			Update(ctx, map[string]any{"u.score": 9})
+			// MySQL counts changed rows, so pick a column that changes
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Table("posts").Where("views", ">", 0).OrderBy("views", "desc").Limit(1).Update(ctx, map[string]any{"title": "top"})
+		n, err = conn.Table("posts").
+			Where("views", ">", 0).
+			OrderBy("views", "desc").
+			Limit(1).
+			Update(ctx, map[string]any{"title": "top"})
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		var title string
@@ -434,14 +537,16 @@ func TestMariaDBWrites(t *testing.T) {
 			ID   int64
 			Name string
 		}
-		err := conn.Table("users").Returning("id", "name").InsertReturning(ctx, &out, map[string]any{"name": "Rae", "email": "rae@x"})
-		assert.True(t, errors.Is(err, db.ErrUnsupported))
+		err := conn.Table("users").
+			Returning("id", "name").
+			InsertReturning(ctx, &out, map[string]any{"name": "Rae", "email": "rae@x"})
+		assert.ErrorIs(t, err, db.ErrUnsupported)
 	})
 	t.Run("update from", func(t *testing.T) {
 		conn := s.reset(t)
 		q := conn.Table("users").Join("posts", "posts.user_id", "users.id").Where("posts.views", ">", 9)
 		_, err := q.UpdateFrom(ctx, map[string]any{"bio": db.Raw("`posts`.`title`")})
-		assert.True(t, errors.Is(err, db.ErrUnsupported))
+		assert.ErrorIs(t, err, db.ErrUnsupported)
 	})
 }
 
@@ -463,8 +568,8 @@ func TestMariaDBPaginationAndChunking(t *testing.T) {
 	cursor := ""
 	for range 5 {
 		var page []User
-		cp, err := conn.Table("users").CursorPaginate(ctx, 3, cursor, &page)
-		require.NoError(t, err)
+		cp, pageErr := conn.Table("users").CursorPaginate(ctx, 3, cursor, &page)
+		require.NoError(t, pageErr)
 		seen = append(seen, names(page)...)
 		if !cp.HasMore {
 			break
@@ -474,19 +579,25 @@ func TestMariaDBPaginationAndChunking(t *testing.T) {
 	assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, seen)
 
 	var pages [][]string
-	require.NoError(t, users().Chunk(ctx, 3, &us, func() (bool, error) { pages = append(pages, names(us)); return true, nil }))
+	require.NoError(
+		t,
+		users().Chunk(ctx, 3, &us, func() (bool, error) { pages = append(pages, names(us)); return true, nil }),
+	)
 	assert.Equal(t, [][]string{{"Ann", "Bob", "Cy"}, {"Di"}}, pages)
 
 	var total int
-	require.NoError(t, db.As[map[string]any](conn.Table("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
-		total += len(rows)
-		for _, r := range rows {
-			if _, err := conn.Table("posts").Where("id", r["id"]).Delete(ctx); err != nil {
-				return false, err
+	require.NoError(
+		t,
+		db.As[map[string]any](conn.Table("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
+			total += len(rows)
+			for _, r := range rows {
+				if _, delErr := conn.Table("posts").Where("id", r["id"]).Delete(ctx); delErr != nil {
+					return false, delErr
+				}
 			}
-		}
-		return true, nil
-	}))
+			return true, nil
+		}),
+	)
 	assert.Equal(t, 4, total)
 
 	var got []string
@@ -571,7 +682,7 @@ func TestMariaDBTypedReadsAndStructWrites(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Cy", u.Name)
 	_, err = db.As[User](users().Where("name", "nobody")).First(ctx)
-	assert.True(t, errors.Is(err, db.ErrNotFound))
+	require.ErrorIs(t, err, db.ErrNotFound)
 
 	ids, err := db.As[int64](conn.Table("users").Select("id").OrderBy("id")).Get(ctx)
 	require.NoError(t, err)
@@ -586,8 +697,8 @@ func TestMariaDBTypedReadsAndStructWrites(t *testing.T) {
 	var seen []string
 	cursor := ""
 	for range 5 {
-		cp, err := db.As[User](conn.Table("users")).CursorPaginate(ctx, 3, cursor)
-		require.NoError(t, err)
+		cp, pageErr := db.As[User](conn.Table("users")).CursorPaginate(ctx, 3, cursor)
+		require.NoError(t, pageErr)
 		seen = append(seen, names(cp.Items)...)
 		if !cp.HasMore {
 			break
@@ -597,7 +708,9 @@ func TestMariaDBTypedReadsAndStructWrites(t *testing.T) {
 	assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, seen)
 
 	// struct writes
-	n, err := db.As[Member](conn.Table("users")).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
+	n, err := db.As[Member](
+		conn.Table("users"),
+	).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
 	id, err := db.As[Member](conn.Table("users")).InsertGetID(ctx, Member{Name: "Gus", Email: ptr("gus@x")})
@@ -617,7 +730,7 @@ func TestMariaDBTypedReadsAndStructWrites(t *testing.T) {
 
 	// the library does not use MariaDB RETURNING yet
 	_, err = db.As[Member](conn.Table("users")).InsertReturning(ctx, Member{Name: "Rae", Email: ptr("rae@x")})
-	assert.True(t, errors.Is(err, db.ErrUnsupported))
+	assert.ErrorIs(t, err, db.ErrUnsupported)
 }
 
 func TestMariaDBFromTakesTheTableFromTheType(t *testing.T) {
@@ -640,7 +753,9 @@ func TestMariaDBFromTakesTheTableFromTheType(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, [2]any{int64(4), "Di"}, [2]any{p.Total, names(p.Items)[0]})
 
-	cnt, err := db.From[Member](conn).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
+	cnt, err := db.From[Member](
+		conn,
+	).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), cnt)
 	id, err := db.From[Member](conn).InsertGetID(ctx, Member{Name: "Gus", Email: ptr("gus@x")})
@@ -661,7 +776,7 @@ func TestMariaDBFromTakesTheTableFromTheType(t *testing.T) {
 	assert.Equal(t, int64(1), pid)
 
 	_, err = db.From[Untitled](conn).Get(ctx)
-	assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+	assert.ErrorIs(t, err, db.ErrInvalidArgs)
 }
 
 func TestMariaDBCTE(t *testing.T) {
@@ -669,13 +784,20 @@ func TestMariaDBCTE(t *testing.T) {
 	active := func() *db.Builder { return conn.Table("users").Where("active", true) }
 
 	t.Run("plain", func(t *testing.T) {
-		assert.Equal(t, []string{"Ann", "Cy", "Di"}, pluckNames(t, conn.Table("au").With("au", active()).OrderBy("name")))
+		assert.Equal(
+			t,
+			[]string{"Ann", "Cy", "Di"},
+			pluckNames(t, conn.Table("au").With("au", active()).OrderBy("name")),
+		)
 	})
 	t.Run("recursive series", func(t *testing.T) {
 		anchor := conn.Table("users").SelectRaw("1 as n").Where("id", 1)
 		step := conn.Table("seq").SelectRaw("n + 1").Where("n", "<", 5)
 		var got []int64
-		require.NoError(t, conn.Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got))
+		require.NoError(
+			t,
+			conn.Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got),
+		)
 		assert.Equal(t, []int64{1, 2, 3, 4, 5}, got)
 	})
 	t.Run("inside where in", func(t *testing.T) {

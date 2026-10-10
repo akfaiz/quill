@@ -282,7 +282,10 @@ func TestIncrementGolden(t *testing.T) {
 		{
 			name: "decrement each with override",
 			build: func(d db.Dialect) (string, []any, error) {
-				return db.Use(d).Table("stock").Where("sku", "a").DecrementEachSQL(m("qty", 2, "reserved", 1.5), m("reserved", 0))
+				return db.Use(d).
+					Table("stock").
+					Where("sku", "a").
+					DecrementEachSQL(m("qty", 2, "reserved", 1.5), m("reserved", 0))
 			},
 			pg:   `update "stock" set "qty" = "qty" - $1, "reserved" = $2 where "sku" = $3`,
 			my:   "update `stock` set `qty` = `qty` - ?, `reserved` = ? where `sku` = ?",
@@ -327,7 +330,11 @@ func TestDeleteGolden(t *testing.T) {
 		{
 			name: "delete with join",
 			build: func(d db.Dialect) (string, []any, error) {
-				return db.Use(d).Table("users as u").Join("bans as b", "b.uid", "u.id").Where("b.active", true).DeleteSQL()
+				return db.Use(d).
+					Table("users as u").
+					Join("bans as b", "b.uid", "u.id").
+					Where("b.active", true).
+					DeleteSQL()
 			},
 			pg:   `delete from "users" as "u" where "ctid" in (select "u"."ctid" from "users" as "u" inner join "bans" as "b" on "b"."uid" = "u"."id" where "b"."active" = $1)`,
 			my:   "delete `u` from `users` as `u` inner join `bans` as `b` on `b`.`uid` = `u`.`id` where `b`.`active` = ?",
@@ -401,13 +408,37 @@ func TestWriteErrors(t *testing.T) {
 	}{
 		{"no table", func() error { _, _, err := db.NewBuilder(d).InsertSQL(m("a", 1)); return err }, db.ErrNoTable},
 		{"no rows", func() error { _, _, err := db.Use(d).Table("t").InsertSQL(); return err }, db.ErrNoValues},
-		{"ragged rows", func() error { _, _, err := db.Use(d).Table("t").InsertSQL(m("a", 1), m("b", 2)); return err }, db.ErrInvalidArgs},
-		{"different size rows", func() error { _, _, err := db.Use(d).Table("t").InsertSQL(m("a", 1), m("a", 1, "b", 2)); return err }, db.ErrInvalidArgs},
-		{"multiple empty rows", func() error { _, _, err := db.Use(d).Table("t").InsertSQL(m(), m()); return err }, db.ErrInvalidArgs},
-		{"update no values", func() error { _, _, err := db.Use(d).Table("t").Where("a", 1).UpdateSQL(nil); return err }, db.ErrNoValues},
-		{"update no where", func() error { _, _, err := db.Use(d).Table("t").UpdateSQL(m("a", 1)); return err }, db.ErrNoWhere},
+		{
+			"ragged rows",
+			func() error { _, _, err := db.Use(d).Table("t").InsertSQL(m("a", 1), m("b", 2)); return err },
+			db.ErrInvalidArgs,
+		},
+		{
+			"different size rows",
+			func() error { _, _, err := db.Use(d).Table("t").InsertSQL(m("a", 1), m("a", 1, "b", 2)); return err },
+			db.ErrInvalidArgs,
+		},
+		{
+			"multiple empty rows",
+			func() error { _, _, err := db.Use(d).Table("t").InsertSQL(m(), m()); return err },
+			db.ErrInvalidArgs,
+		},
+		{
+			"update no values",
+			func() error { _, _, err := db.Use(d).Table("t").Where("a", 1).UpdateSQL(nil); return err },
+			db.ErrNoValues,
+		},
+		{
+			"update no where",
+			func() error { _, _, err := db.Use(d).Table("t").UpdateSQL(m("a", 1)); return err },
+			db.ErrNoWhere,
+		},
 		{"delete no where", func() error { _, _, err := db.Use(d).Table("t").DeleteSQL(); return err }, db.ErrNoWhere},
-		{"increment no where", func() error { _, _, err := db.Use(d).Table("t").IncrementSQL("a", 1, nil); return err }, db.ErrNoWhere},
+		{
+			"increment no where",
+			func() error { _, _, err := db.Use(d).Table("t").IncrementSQL("a", 1, nil); return err },
+			db.ErrNoWhere,
+		},
 		{"increment non numeric", func() error {
 			_, _, err := db.Use(d).Table("t").Where("a", 1).IncrementSQL("a", "1; drop", nil)
 			return err
@@ -420,17 +451,32 @@ func TestWriteErrors(t *testing.T) {
 			_, _, err := db.Use(d).Table("t").UpsertSQL([]map[string]any{m("a", 1)}, []string{"a"}, []string{})
 			return err
 		}, db.ErrInvalidArgs},
-		{"insert using nil", func() error { _, _, err := db.Use(d).Table("t").InsertUsingSQL(nil, nil); return err }, db.ErrInvalidArgs},
+		{
+			"insert using nil",
+			func() error { _, _, err := db.Use(d).Table("t").InsertUsingSQL(nil, nil); return err },
+			db.ErrInvalidArgs,
+		},
 		{"insert using bad sub", func() error {
 			_, _, err := db.Use(d).Table("t").InsertUsingSQL(nil, db.NewBuilder(d))
 			return err
 		}, db.ErrNoTable},
-		{"update from no where or join", func() error { _, _, err := db.Use(d).Table("t").UpdateFromSQL(m("a", 1)); return err }, db.ErrNoWhere},
+		{
+			"update from no where or join",
+			func() error { _, _, err := db.Use(d).Table("t").UpdateFromSQL(m("a", 1)); return err },
+			db.ErrNoWhere,
+		},
 		{"update from sub join", func() error {
-			_, _, err := db.Use(d).Table("t").JoinSub(db.Use(d).Table("s"), "s", "s.id", "t.id").UpdateFromSQL(m("a", 1))
+			_, _, err := db.Use(d).
+				Table("t").
+				JoinSub(db.Use(d).Table("s"), "s", "s.id", "t.id").
+				UpdateFromSQL(m("a", 1))
 			return err
 		}, db.ErrUnsupported},
-		{"builder error surfaces", func() error { _, _, err := db.Use(d).Table("t").Where("a", "bogus", 1).DeleteSQL(); return err }, db.ErrInvalidOperator},
+		{
+			"builder error surfaces",
+			func() error { _, _, err := db.Use(d).Table("t").Where("a", "bogus", 1).DeleteSQL(); return err },
+			db.ErrInvalidOperator,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

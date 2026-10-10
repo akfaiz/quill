@@ -68,7 +68,7 @@ var pgPlaceholders = func() (p [100]string) {
 	for i := range p {
 		p[i] = "$" + strconv.Itoa(i)
 	}
-	return
+	return p
 }()
 
 func (pgGrammar) UnboundedLimit() string { return "" }

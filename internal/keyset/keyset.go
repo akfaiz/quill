@@ -25,7 +25,7 @@ func Encode(v any) (string, error) {
 	}
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return "", fmt.Errorf("%w: cursor value: %v", errs.ErrInvalidArgs, err)
+		return "", fmt.Errorf("%w: cursor value: %w", errs.ErrInvalidArgs, err)
 	}
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }

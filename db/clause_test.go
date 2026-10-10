@@ -51,7 +51,17 @@ func TestCloneKeepsClauseExtensionsIndependent(t *testing.T) {
 
 func TestNegatedExistsConnectives(t *testing.T) {
 	sub := db.Use(db.Postgres).Table("p").Where("x", 1)
-	sql, _, err := db.Use(db.Postgres).Table("u").WhereNotExists(sub).OrWhereNotExists(sub).Where("a", 1).OrWhereExists(sub).ToSQL()
+	sql, _, err := db.Use(db.Postgres).
+		Table("u").
+		WhereNotExists(sub).
+		OrWhereNotExists(sub).
+		Where("a", 1).
+		OrWhereExists(sub).
+		ToSQL()
 	require.NoError(t, err)
-	assert.Equal(t, `select * from "u" where not exists (select * from "p" where "x" = $1) or not exists (select * from "p" where "x" = $2) and "a" = $3 or exists (select * from "p" where "x" = $4)`, sql)
+	assert.Equal(
+		t,
+		`select * from "u" where not exists (select * from "p" where "x" = $1) or not exists (select * from "p" where "x" = $2) and "a" = $3 or exists (select * from "p" where "x" = $4)`,
+		sql,
+	)
 }

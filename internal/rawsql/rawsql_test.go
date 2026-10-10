@@ -36,7 +36,13 @@ func TestInterpolate(t *testing.T) {
 		numbered bool
 		want     string
 	}{
-		{"question marks in order", `select * from t where a = ? and b = ?`, []any{1, "x"}, false, `select * from t where a = 1 and b = 'x'`},
+		{
+			"question marks in order",
+			`select * from t where a = ? and b = ?`,
+			[]any{1, "x"},
+			false,
+			`select * from t where a = 1 and b = 'x'`,
+		},
 		{"numbered placeholders", `a = $2 and b = $1 and c = $2`, []any{"x", 9}, true, `a = 9 and b = 'x' and c = 9`},
 		{"multi-digit numbers", `$10`, []any{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, true, `10`},
 		{"too few args leaves the marker", `a = ? and b = ?`, []any{1}, false, `a = 1 and b = ?`},

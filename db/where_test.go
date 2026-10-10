@@ -74,7 +74,11 @@ func TestWhereFamilyGolden(t *testing.T) {
 		{
 			name: "integer in raw",
 			build: func(d db.Dialect) *db.Builder {
-				return newT(d).WhereIntegerInRaw("id", []string{"1", "2"}).OrWhereIntegerNotInRaw("n", []int64{3}).WhereIntegerInRaw("e", []int{})
+				return newT(
+					d,
+				).WhereIntegerInRaw("id", []string{"1", "2"}).
+					OrWhereIntegerNotInRaw("n", []int64{3}).
+					WhereIntegerInRaw("e", []int{})
 			},
 			pg:   `select * from "t" where "id" in (1, 2) or "n" not in (3) and 0 = 1`,
 			my:   "select * from `t` where `id` in (1, 2) or `n` not in (3) and 0 = 1",
@@ -143,7 +147,7 @@ func TestWhereFamilyGolden(t *testing.T) {
 					WhereGroup(func(q *db.Builder) {
 						q.Where("b", 2).OrWhereGroup(func(q *db.Builder) { q.WhereNull("c").Where("d", 3) })
 					}).
-					OrWhereGroup(func(q *db.Builder) {}).
+					OrWhereGroup(func(*db.Builder) {}).
 					OrWhereGroup(func(q *db.Builder) { q.WhereIn("e", []int{4}) })
 			},
 			pg:   `select * from "t" where "a" = $1 and ("b" = $2 or ("c" is null and "d" = $3)) or ("e" in ($4))`,
@@ -205,7 +209,10 @@ func TestWhereFamilyGolden(t *testing.T) {
 		{
 			name: "row values",
 			build: func(d db.Dialect) *db.Builder {
-				return newT(d).WhereRowValues([]string{"a", "b"}, "=", []any{1, 2}).OrWhereRowValues([]string{"c"}, ">", []any{3})
+				return newT(
+					d,
+				).WhereRowValues([]string{"a", "b"}, "=", []any{1, 2}).
+					OrWhereRowValues([]string{"c"}, ">", []any{3})
 			},
 			pg:   `select * from "t" where ("a", "b") = ($1, $2) or ("c") > ($3)`,
 			my:   "select * from `t` where (`a`, `b`) = (?, ?) or (`c`) > (?)",
@@ -251,7 +258,7 @@ func TestWhereFamilyGolden(t *testing.T) {
 			sql, args, err := likeCase.build(c.d).ToSQL()
 			require.NoError(t, err)
 			assert.Equal(t, c.want, sql)
-			assert.Equal(t, len(c.args), len(args))
+			assert.Len(t, args, len(c.args))
 			for i := range args {
 				assert.Equal(t, c.args[i], args[i])
 			}
@@ -266,13 +273,21 @@ func TestWhereFamilyErrors(t *testing.T) {
 		want  error
 	}{
 		{"nil with ordering op", newT(db.Postgres).Where("a", ">", nil), db.ErrInvalidArgs},
-		{"integer in raw rejects text", newT(db.Postgres).WhereIntegerInRaw("id", []string{"1; drop"}), db.ErrInvalidArgs},
+		{
+			"integer in raw rejects text",
+			newT(db.Postgres).WhereIntegerInRaw("id", []string{"1; drop"}),
+			db.ErrInvalidArgs,
+		},
 		{"date nil", newT(db.Postgres).WhereDate("c", nil), db.ErrInvalidArgs},
 		{"day not numeric", newT(db.Postgres).WhereDay("c", "x"), db.ErrInvalidArgs},
 		{"column second not string", newT(db.Postgres).WhereColumn("a", 5), db.ErrInvalidArgs},
 		{"row values mismatch", newT(db.Postgres).WhereRowValues([]string{"a", "b"}, "=", []any{1}), db.ErrInvalidArgs},
 		{"row values bad op", newT(db.Postgres).WhereRowValues([]string{"a"}, "; --", []any{1}), db.ErrInvalidOperator},
-		{"bad op inside group propagates", newT(db.Postgres).WhereGroup(func(q *db.Builder) { q.Where("a", "bogus", 1) }), db.ErrInvalidOperator},
+		{
+			"bad op inside group propagates",
+			newT(db.Postgres).WhereGroup(func(q *db.Builder) { q.Where("a", "bogus", 1) }),
+			db.ErrInvalidOperator,
+		},
 		{"subquery error propagates", newT(db.Postgres).WhereIn("id", db.NewBuilder(db.Postgres)), db.ErrNoTable},
 		{"all bad op", newT(db.Postgres).WhereAll([]string{"a"}, "bogus", 1), db.ErrInvalidOperator},
 	}
@@ -313,18 +328,42 @@ func TestEveryWhereVariantUsesTheRightConnective(t *testing.T) {
 		{"OrWhereColumn", func(b *db.Builder) *db.Builder { return b.OrWhereColumn("c", "d") }, " or "},
 		{"OrWhereIn", func(b *db.Builder) *db.Builder { return b.OrWhereIn("c", []int{1}) }, " or "},
 		{"OrWhereNotIn", func(b *db.Builder) *db.Builder { return b.OrWhereNotIn("c", []int{1}) }, " or "},
-		{"WhereIntegerNotInRaw", func(b *db.Builder) *db.Builder { return b.WhereIntegerNotInRaw("c", []int{1}) }, " and "},
-		{"OrWhereIntegerInRaw", func(b *db.Builder) *db.Builder { return b.OrWhereIntegerInRaw("c", []int{1}) }, " or "},
-		{"OrWhereIntegerNotInRaw", func(b *db.Builder) *db.Builder { return b.OrWhereIntegerNotInRaw("c", []int{1}) }, " or "},
+		{
+			"WhereIntegerNotInRaw",
+			func(b *db.Builder) *db.Builder { return b.WhereIntegerNotInRaw("c", []int{1}) },
+			" and ",
+		},
+		{
+			"OrWhereIntegerInRaw",
+			func(b *db.Builder) *db.Builder { return b.OrWhereIntegerInRaw("c", []int{1}) },
+			" or ",
+		},
+		{
+			"OrWhereIntegerNotInRaw",
+			func(b *db.Builder) *db.Builder { return b.OrWhereIntegerNotInRaw("c", []int{1}) },
+			" or ",
+		},
 		{"OrWhereNull", func(b *db.Builder) *db.Builder { return b.OrWhereNull("c") }, " or "},
 		{"OrWhereNotNull", func(b *db.Builder) *db.Builder { return b.OrWhereNotNull("c") }, " or "},
 		{"WhereNotBetween", func(b *db.Builder) *db.Builder { return b.WhereNotBetween("c", 1, 2) }, " and "},
 		{"OrWhereBetween", func(b *db.Builder) *db.Builder { return b.OrWhereBetween("c", 1, 2) }, " or "},
 		{"OrWhereNotBetween", func(b *db.Builder) *db.Builder { return b.OrWhereNotBetween("c", 1, 2) }, " or "},
-		{"OrWhereBetweenColumns", func(b *db.Builder) *db.Builder { return b.OrWhereBetweenColumns("c", "l", "h") }, " or "},
-		{"OrWhereNotBetweenColumns", func(b *db.Builder) *db.Builder { return b.OrWhereNotBetweenColumns("c", "l", "h") }, " or "},
+		{
+			"OrWhereBetweenColumns",
+			func(b *db.Builder) *db.Builder { return b.OrWhereBetweenColumns("c", "l", "h") },
+			" or ",
+		},
+		{
+			"OrWhereNotBetweenColumns",
+			func(b *db.Builder) *db.Builder { return b.OrWhereNotBetweenColumns("c", "l", "h") },
+			" or ",
+		},
 		{"OrWhereValueBetween", func(b *db.Builder) *db.Builder { return b.OrWhereValueBetween(1, "l", "h") }, " or "},
-		{"WhereValueNotBetween", func(b *db.Builder) *db.Builder { return b.WhereValueNotBetween(1, "l", "h") }, " and "},
+		{
+			"WhereValueNotBetween",
+			func(b *db.Builder) *db.Builder { return b.WhereValueNotBetween(1, "l", "h") },
+			" and ",
+		},
 		{"OrWhereLike", func(b *db.Builder) *db.Builder { return b.OrWhereLike("c", "x") }, " or "},
 		{"OrWhereNotLike", func(b *db.Builder) *db.Builder { return b.OrWhereNotLike("c", "x") }, " or "},
 		{"OrWhereNullSafeEquals", func(b *db.Builder) *db.Builder { return b.OrWhereNullSafeEquals("c", 1) }, " or "},
@@ -343,11 +382,23 @@ func TestEveryWhereVariantUsesTheRightConnective(t *testing.T) {
 		{"OrWhereAll", func(b *db.Builder) *db.Builder { return b.OrWhereAll(cols, 1) }, " or "},
 		{"OrWhereAny", func(b *db.Builder) *db.Builder { return b.OrWhereAny(cols, 1) }, " or "},
 		{"OrWhereNone", func(b *db.Builder) *db.Builder { return b.OrWhereNone(cols, 1) }, " or not "},
-		{"OrWhereRowValues", func(b *db.Builder) *db.Builder { return b.OrWhereRowValues(cols, "=", []any{1, 2}) }, " or "},
+		{
+			"OrWhereRowValues",
+			func(b *db.Builder) *db.Builder { return b.OrWhereRowValues(cols, "=", []any{1, 2}) },
+			" or ",
+		},
 		{"OrWhereJsonContains", func(b *db.Builder) *db.Builder { return b.OrWhereJsonContains("o->k", 1) }, " or "},
-		{"OrWhereJsonDoesntContain", func(b *db.Builder) *db.Builder { return b.OrWhereJsonDoesntContain("o->k", 1) }, " or not "},
+		{
+			"OrWhereJsonDoesntContain",
+			func(b *db.Builder) *db.Builder { return b.OrWhereJsonDoesntContain("o->k", 1) },
+			" or not ",
+		},
 		{"OrWhereJsonContainsKey", func(b *db.Builder) *db.Builder { return b.OrWhereJsonContainsKey("o->k") }, " or "},
-		{"OrWhereJsonDoesntContainKey", func(b *db.Builder) *db.Builder { return b.OrWhereJsonDoesntContainKey("o->k") }, " or not "},
+		{
+			"OrWhereJsonDoesntContainKey",
+			func(b *db.Builder) *db.Builder { return b.OrWhereJsonDoesntContainKey("o->k") },
+			" or not ",
+		},
 		{"OrWhereJsonLength", func(b *db.Builder) *db.Builder { return b.OrWhereJsonLength("o->k", 1) }, " or "},
 	}
 	for _, v := range vs {

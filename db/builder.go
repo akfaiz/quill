@@ -497,7 +497,11 @@ func (b *Builder) addClause(dst *[]clause, boolean, column string, args []any) *
 		return b.fail(err)
 	}
 	if val == nil {
-		return b.push(dst, boolean, clause{kind: clauseNull, column: column, not: op == "!=" || op == "<>" || op == "is not"})
+		return b.push(
+			dst,
+			boolean,
+			clause{kind: clauseNull, column: column, not: op == "!=" || op == "<>" || op == "is not"},
+		)
 	}
 	if _, isBool := val.(bool); isBool && jsonpath.IsSelector(column) {
 		return b.push(dst, boolean, clause{kind: clauseJSONBool, column: column, op: op, value: val})

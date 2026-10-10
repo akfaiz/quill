@@ -42,8 +42,18 @@ func TestRow(t *testing.T) {
 	}{
 		{"omitempty skips zero, nil pointer stays NULL", account{Name: "Ann"},
 			map[string]any{"name": "Ann", "email": (*string)(nil), "nick": sql.NullString{}}},
-		{"non-zero omitempty fields are kept", account{ID: 7, Name: "Ann", Email: str("a@x"), Bio: "hi", Created: at},
-			map[string]any{"id": int64(7), "name": "Ann", "email": str("a@x"), "bio": "hi", "created_at": at, "nick": sql.NullString{}}},
+		{
+			"non-zero omitempty fields are kept",
+			account{ID: 7, Name: "Ann", Email: str("a@x"), Bio: "hi", Created: at},
+			map[string]any{
+				"id":         int64(7),
+				"name":       "Ann",
+				"email":      str("a@x"),
+				"bio":        "hi",
+				"created_at": at,
+				"nick":       sql.NullString{},
+			},
+		},
 		{"pointer to struct", &account{Name: "Bob"},
 			map[string]any{"name": "Bob", "email": (*string)(nil), "nick": sql.NullString{}}},
 		{"embedded struct is flattened", withEmbedded{audit{"me"}, "t"},

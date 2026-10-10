@@ -89,7 +89,9 @@ func TestCTEGolden(t *testing.T) {
 		{
 			name: "prefix applies to the name",
 			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d, db.WithPrefix("app_")).Table("au").With("au", db.Use(d, db.WithPrefix("app_")).Table("users"))
+				return db.Use(d, db.WithPrefix("app_")).
+					Table("au").
+					With("au", db.Use(d, db.WithPrefix("app_")).Table("users"))
 			},
 			pg:   `with "app_au" as (select * from "app_users") select * from "app_au"`,
 			my:   "with `app_au` as (select * from `app_users`) select * from `app_au`",
@@ -110,10 +112,13 @@ func TestCTEMaterialized(t *testing.T) {
 			my:    unsup, lite: unsup,
 		},
 		{
-			name:  "not materialized",
-			build: selectOf(func(d db.Dialect) *db.Builder { return q(d).WithNotMaterialized("x", db.Use(d).Table("t")) }),
-			pg:    want{sql: `with "x" as not materialized (select * from "t") select * from "x"`},
-			my:    unsup, lite: unsup,
+			name: "not materialized",
+			build: selectOf(
+				func(d db.Dialect) *db.Builder { return q(d).WithNotMaterialized("x", db.Use(d).Table("t")) },
+			),
+			pg:   want{sql: `with "x" as not materialized (select * from "t") select * from "x"`},
+			my:   unsup,
+			lite: unsup,
 		},
 	})
 }
@@ -134,7 +139,11 @@ func TestCTEWrites(t *testing.T) {
 		{
 			name: "with on update is refused",
 			build: func(d db.Dialect) (string, []any, error) {
-				return db.Use(d).Table("users").With("x", db.Use(d).Table("y")).Where("id", 1).UpdateSQL(map[string]any{"a": 1})
+				return db.Use(d).
+					Table("users").
+					With("x", db.Use(d).Table("y")).
+					Where("id", 1).
+					UpdateSQL(map[string]any{"a": 1})
 			},
 			pg: unsupported, my: unsupported, lite: unsupported,
 		},

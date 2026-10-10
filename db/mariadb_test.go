@@ -83,7 +83,12 @@ func TestMariaDBMatchesMySQLEverywhereElse(t *testing.T) {
 			return db.Use(d).Table("a").StraightJoin("b", "b.id", "a.id").ToSQL()
 		},
 		"JSON contains and keys": func(d db.Dialect) (string, []any, error) {
-			return db.Use(d).Table("t").WhereJsonContains("o->a", 1).WhereJsonContainsKey("o->b").WhereJsonLength("o->c", ">", 1).ToSQL()
+			return db.Use(d).
+				Table("t").
+				WhereJsonContains("o->a", 1).
+				WhereJsonContainsKey("o->b").
+				WhereJsonLength("o->c", ">", 1).
+				ToSQL()
 		},
 		"insert":         func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertSQL(rows...) },
 		"insert ignore":  func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertOrIgnoreSQL(rows...) },

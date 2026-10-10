@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/akfaiz/quill/db"
 	"github.com/stretchr/testify/require"
+
+	"github.com/akfaiz/quill/db"
 )
 
 // Helpers shared by the SQLite and the PostgreSQL/MySQL suites.

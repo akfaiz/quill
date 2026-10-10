@@ -24,25 +24,101 @@ func TestTypedChainMatchesBuilder(t *testing.T) {
 		plain func(*db.Builder) *db.Builder
 	}
 	pairs := []pair{
-		{"Select", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Select("a", "b") }, func(b *db.Builder) *db.Builder { return b.Select("a", "b") }},
-		{"AddSelect", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Select("a").AddSelect("b") }, func(b *db.Builder) *db.Builder { return b.Select("a").AddSelect("b") }},
-		{"SelectRaw", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.SelectRaw("count(*) + ?", 1) }, func(b *db.Builder) *db.Builder { return b.SelectRaw("count(*) + ?", 1) }},
-		{"Distinct", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Distinct() }, func(b *db.Builder) *db.Builder { return b.Distinct() }},
-		{"Where", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("a", ">", 1) }, func(b *db.Builder) *db.Builder { return b.Where("a", ">", 1) }},
-		{"OrWhere", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("a", 1).OrWhere("b", 2) }, func(b *db.Builder) *db.Builder { return b.Where("a", 1).OrWhere("b", 2) }},
-		{"WhereNot", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNot("a", 1) }, func(b *db.Builder) *db.Builder { return b.WhereNot("a", 1) }},
-		{"WhereRaw", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereRaw("a = ?", 1) }, func(b *db.Builder) *db.Builder { return b.WhereRaw("a = ?", 1) }},
-		{"OrWhereRaw", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("a", 1).OrWhereRaw("b = ?", 2) }, func(b *db.Builder) *db.Builder { return b.Where("a", 1).OrWhereRaw("b = ?", 2) }},
-		{"WhereColumn", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereColumn("a", "<", "b") }, func(b *db.Builder) *db.Builder { return b.WhereColumn("a", "<", "b") }},
-		{"WhereIn", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereIn("a", []int{1, 2}) }, func(b *db.Builder) *db.Builder { return b.WhereIn("a", []int{1, 2}) }},
-		{"OrWhereIn", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("x", 0).OrWhereIn("a", sub()) }, func(b *db.Builder) *db.Builder { return b.Where("x", 0).OrWhereIn("a", sub()) }},
-		{"WhereNotIn", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotIn("a", []int{1}) }, func(b *db.Builder) *db.Builder { return b.WhereNotIn("a", []int{1}) }},
-		{"WhereNull", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNull("a") }, func(b *db.Builder) *db.Builder { return b.WhereNull("a") }},
-		{"OrWhereNull", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("x", 0).OrWhereNull("a") }, func(b *db.Builder) *db.Builder { return b.Where("x", 0).OrWhereNull("a") }},
-		{"WhereNotNull", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotNull("a") }, func(b *db.Builder) *db.Builder { return b.WhereNotNull("a") }},
-		{"WhereBetween", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereBetween("a", 1, 5) }, func(b *db.Builder) *db.Builder { return b.WhereBetween("a", 1, 5) }},
-		{"WhereNotBetween", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotBetween("a", 1, 5) }, func(b *db.Builder) *db.Builder { return b.WhereNotBetween("a", 1, 5) }},
-		{"WhereLike", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereLike("a", "x%", true) }, func(b *db.Builder) *db.Builder { return b.WhereLike("a", "x%", true) }},
+		{
+			"Select",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Select("a", "b") },
+			func(b *db.Builder) *db.Builder { return b.Select("a", "b") },
+		},
+		{
+			"AddSelect",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Select("a").AddSelect("b") },
+			func(b *db.Builder) *db.Builder { return b.Select("a").AddSelect("b") },
+		},
+		{
+			"SelectRaw",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.SelectRaw("count(*) + ?", 1) },
+			func(b *db.Builder) *db.Builder { return b.SelectRaw("count(*) + ?", 1) },
+		},
+		{
+			"Distinct",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Distinct() },
+			func(b *db.Builder) *db.Builder { return b.Distinct() },
+		},
+		{
+			"Where",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("a", ">", 1) },
+			func(b *db.Builder) *db.Builder { return b.Where("a", ">", 1) },
+		},
+		{
+			"OrWhere",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("a", 1).OrWhere("b", 2) },
+			func(b *db.Builder) *db.Builder { return b.Where("a", 1).OrWhere("b", 2) },
+		},
+		{
+			"WhereNot",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNot("a", 1) },
+			func(b *db.Builder) *db.Builder { return b.WhereNot("a", 1) },
+		},
+		{
+			"WhereRaw",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereRaw("a = ?", 1) },
+			func(b *db.Builder) *db.Builder { return b.WhereRaw("a = ?", 1) },
+		},
+		{
+			"OrWhereRaw",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("a", 1).OrWhereRaw("b = ?", 2) },
+			func(b *db.Builder) *db.Builder { return b.Where("a", 1).OrWhereRaw("b = ?", 2) },
+		},
+		{
+			"WhereColumn",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereColumn("a", "<", "b") },
+			func(b *db.Builder) *db.Builder { return b.WhereColumn("a", "<", "b") },
+		},
+		{
+			"WhereIn",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereIn("a", []int{1, 2}) },
+			func(b *db.Builder) *db.Builder { return b.WhereIn("a", []int{1, 2}) },
+		},
+		{
+			"OrWhereIn",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("x", 0).OrWhereIn("a", sub()) },
+			func(b *db.Builder) *db.Builder { return b.Where("x", 0).OrWhereIn("a", sub()) },
+		},
+		{
+			"WhereNotIn",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotIn("a", []int{1}) },
+			func(b *db.Builder) *db.Builder { return b.WhereNotIn("a", []int{1}) },
+		},
+		{
+			"WhereNull",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNull("a") },
+			func(b *db.Builder) *db.Builder { return b.WhereNull("a") },
+		},
+		{
+			"OrWhereNull",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Where("x", 0).OrWhereNull("a") },
+			func(b *db.Builder) *db.Builder { return b.Where("x", 0).OrWhereNull("a") },
+		},
+		{
+			"WhereNotNull",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotNull("a") },
+			func(b *db.Builder) *db.Builder { return b.WhereNotNull("a") },
+		},
+		{
+			"WhereBetween",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereBetween("a", 1, 5) },
+			func(b *db.Builder) *db.Builder { return b.WhereBetween("a", 1, 5) },
+		},
+		{
+			"WhereNotBetween",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotBetween("a", 1, 5) },
+			func(b *db.Builder) *db.Builder { return b.WhereNotBetween("a", 1, 5) },
+		},
+		{
+			"WhereLike",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereLike("a", "x%", true) },
+			func(b *db.Builder) *db.Builder { return b.WhereLike("a", "x%", true) },
+		},
 		{"WhereGroup", func(q *db.Query[chainRow]) *db.Query[chainRow] {
 			return q.WhereGroup(func(g *db.Builder) { g.Where("a", 1).OrWhere("b", 2) })
 		}, func(b *db.Builder) *db.Builder {
@@ -53,11 +129,31 @@ func TestTypedChainMatchesBuilder(t *testing.T) {
 		}, func(b *db.Builder) *db.Builder {
 			return b.Where("x", 0).OrWhereGroup(func(g *db.Builder) { g.Where("a", 1) })
 		}},
-		{"WhereExists", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereExists(sub()) }, func(b *db.Builder) *db.Builder { return b.WhereExists(sub()) }},
-		{"WhereNotExists", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotExists(sub()) }, func(b *db.Builder) *db.Builder { return b.WhereNotExists(sub()) }},
-		{"Join", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Join("j", "j.a", "t.a") }, func(b *db.Builder) *db.Builder { return b.Join("j", "j.a", "t.a") }},
-		{"LeftJoin", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.LeftJoin("j", "j.a", "=", "t.a") }, func(b *db.Builder) *db.Builder { return b.LeftJoin("j", "j.a", "=", "t.a") }},
-		{"RightJoin", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.RightJoin("j", "j.a", "t.a") }, func(b *db.Builder) *db.Builder { return b.RightJoin("j", "j.a", "t.a") }},
+		{
+			"WhereExists",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereExists(sub()) },
+			func(b *db.Builder) *db.Builder { return b.WhereExists(sub()) },
+		},
+		{
+			"WhereNotExists",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WhereNotExists(sub()) },
+			func(b *db.Builder) *db.Builder { return b.WhereNotExists(sub()) },
+		},
+		{
+			"Join",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Join("j", "j.a", "t.a") },
+			func(b *db.Builder) *db.Builder { return b.Join("j", "j.a", "t.a") },
+		},
+		{
+			"LeftJoin",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.LeftJoin("j", "j.a", "=", "t.a") },
+			func(b *db.Builder) *db.Builder { return b.LeftJoin("j", "j.a", "=", "t.a") },
+		},
+		{
+			"RightJoin",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.RightJoin("j", "j.a", "t.a") },
+			func(b *db.Builder) *db.Builder { return b.RightJoin("j", "j.a", "t.a") },
+		},
 		{"JoinFunc", func(q *db.Query[chainRow]) *db.Query[chainRow] {
 			return q.JoinFunc("j", func(j *db.JoinClause) { j.On("j.a", "t.a").Where("j.k", 1) })
 		}, func(b *db.Builder) *db.Builder {
@@ -68,28 +164,104 @@ func TestTypedChainMatchesBuilder(t *testing.T) {
 		}, func(b *db.Builder) *db.Builder {
 			return b.LeftJoinFunc("j", func(j *db.JoinClause) { j.On("j.a", "t.a") })
 		}},
-		{"GroupBy", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.GroupBy("a", "b") }, func(b *db.Builder) *db.Builder { return b.GroupBy("a", "b") }},
-		{"Having", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.GroupBy("a").Having("n", ">", 1) }, func(b *db.Builder) *db.Builder { return b.GroupBy("a").Having("n", ">", 1) }},
+		{
+			"GroupBy",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.GroupBy("a", "b") },
+			func(b *db.Builder) *db.Builder { return b.GroupBy("a", "b") },
+		},
+		{
+			"Having",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.GroupBy("a").Having("n", ">", 1) },
+			func(b *db.Builder) *db.Builder { return b.GroupBy("a").Having("n", ">", 1) },
+		},
 		{"HavingRaw", func(q *db.Query[chainRow]) *db.Query[chainRow] {
 			return q.GroupBy("a").HavingRaw("count(*) > ?", 1)
 		}, func(b *db.Builder) *db.Builder { return b.GroupBy("a").HavingRaw("count(*) > ?", 1) }},
-		{"OrderBy", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.OrderBy("a", "desc") }, func(b *db.Builder) *db.Builder { return b.OrderBy("a", "desc") }},
-		{"OrderByDesc", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.OrderByDesc("a") }, func(b *db.Builder) *db.Builder { return b.OrderByDesc("a") }},
-		{"OrderByRaw", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.OrderByRaw("random()") }, func(b *db.Builder) *db.Builder { return b.OrderByRaw("random()") }},
-		{"Latest", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Latest() }, func(b *db.Builder) *db.Builder { return b.Latest() }},
-		{"Oldest", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Oldest("a") }, func(b *db.Builder) *db.Builder { return b.Oldest("a") }},
-		{"Limit", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Limit(5) }, func(b *db.Builder) *db.Builder { return b.Limit(5) }},
-		{"Offset", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Offset(5) }, func(b *db.Builder) *db.Builder { return b.Offset(5) }},
-		{"ForPage", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.ForPage(3, 10) }, func(b *db.Builder) *db.Builder { return b.ForPage(3, 10) }},
-		{"LockForUpdate", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.LockForUpdate() }, func(b *db.Builder) *db.Builder { return b.LockForUpdate() }},
-		{"SharedLock", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.SharedLock() }, func(b *db.Builder) *db.Builder { return b.SharedLock() }},
-		{"AllRows", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.AllRows() }, func(b *db.Builder) *db.Builder { return b.AllRows() }},
-		{"Returning", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Returning("id") }, func(b *db.Builder) *db.Builder { return b.Returning("id") }},
-		{"With", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.With("c", sub(), "k") }, func(b *db.Builder) *db.Builder { return b.With("c", sub(), "k") }},
-		{"WithRecursive", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithRecursive("c", sub().UnionAll(sub())) }, func(b *db.Builder) *db.Builder { return b.WithRecursive("c", sub().UnionAll(sub())) }},
-		{"WithRaw", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithRaw("c", db.Raw("select ?", 1), "n") }, func(b *db.Builder) *db.Builder { return b.WithRaw("c", db.Raw("select ?", 1), "n") }},
-		{"WithMaterialized", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithMaterialized("c", sub()) }, func(b *db.Builder) *db.Builder { return b.WithMaterialized("c", sub()) }},
-		{"WithNotMaterialized", func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithNotMaterialized("c", sub()) }, func(b *db.Builder) *db.Builder { return b.WithNotMaterialized("c", sub()) }},
+		{
+			"OrderBy",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.OrderBy("a", "desc") },
+			func(b *db.Builder) *db.Builder { return b.OrderBy("a", "desc") },
+		},
+		{
+			"OrderByDesc",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.OrderByDesc("a") },
+			func(b *db.Builder) *db.Builder { return b.OrderByDesc("a") },
+		},
+		{
+			"OrderByRaw",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.OrderByRaw("random()") },
+			func(b *db.Builder) *db.Builder { return b.OrderByRaw("random()") },
+		},
+		{
+			"Latest",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Latest() },
+			func(b *db.Builder) *db.Builder { return b.Latest() },
+		},
+		{
+			"Oldest",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Oldest("a") },
+			func(b *db.Builder) *db.Builder { return b.Oldest("a") },
+		},
+		{
+			"Limit",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Limit(5) },
+			func(b *db.Builder) *db.Builder { return b.Limit(5) },
+		},
+		{
+			"Offset",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Offset(5) },
+			func(b *db.Builder) *db.Builder { return b.Offset(5) },
+		},
+		{
+			"ForPage",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.ForPage(3, 10) },
+			func(b *db.Builder) *db.Builder { return b.ForPage(3, 10) },
+		},
+		{
+			"LockForUpdate",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.LockForUpdate() },
+			func(b *db.Builder) *db.Builder { return b.LockForUpdate() },
+		},
+		{
+			"SharedLock",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.SharedLock() },
+			func(b *db.Builder) *db.Builder { return b.SharedLock() },
+		},
+		{
+			"AllRows",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.AllRows() },
+			func(b *db.Builder) *db.Builder { return b.AllRows() },
+		},
+		{
+			"Returning",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.Returning("id") },
+			func(b *db.Builder) *db.Builder { return b.Returning("id") },
+		},
+		{
+			"With",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.With("c", sub(), "k") },
+			func(b *db.Builder) *db.Builder { return b.With("c", sub(), "k") },
+		},
+		{
+			"WithRecursive",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithRecursive("c", sub().UnionAll(sub())) },
+			func(b *db.Builder) *db.Builder { return b.WithRecursive("c", sub().UnionAll(sub())) },
+		},
+		{
+			"WithRaw",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithRaw("c", db.Raw("select ?", 1), "n") },
+			func(b *db.Builder) *db.Builder { return b.WithRaw("c", db.Raw("select ?", 1), "n") },
+		},
+		{
+			"WithMaterialized",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithMaterialized("c", sub()) },
+			func(b *db.Builder) *db.Builder { return b.WithMaterialized("c", sub()) },
+		},
+		{
+			"WithNotMaterialized",
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithNotMaterialized("c", sub()) },
+			func(b *db.Builder) *db.Builder { return b.WithNotMaterialized("c", sub()) },
+		},
 	}
 
 	conn := db.Use(db.Postgres)
@@ -114,7 +286,7 @@ func TestTypedChainMatchesBuilder(t *testing.T) {
 	}
 	helpers := []string{"Apply", "When", "Unless", "Clone"}
 	qt := reflect.TypeFor[*db.Query[chainRow]]()
-	for i := 0; i < qt.NumMethod(); i++ {
+	for i := range qt.NumMethod() {
 		m := qt.Method(i)
 		if m.Type.NumOut() == 1 && m.Type.Out(0) == qt && !slices.Contains(helpers, m.Name) && !covered[m.Name] {
 			t.Errorf("chain method %s has no parity case", m.Name)

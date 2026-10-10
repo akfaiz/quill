@@ -3,8 +3,9 @@ package db_test
 import (
 	"testing"
 
-	"github.com/akfaiz/quill/db"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/akfaiz/quill/db"
 )
 
 func TestLockAndIndexHintGolden(t *testing.T) {

@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -29,10 +30,9 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
 	shutdownMu.Lock()
-	for i := len(shutdowns) - 1; i >= 0; i-- {
-		shutdowns[i](ctx)
+	for _, shutdown := range slices.Backward(shutdowns) {
+		shutdown(ctx)
 	}
 	shutdownMu.Unlock()
 	cancel()

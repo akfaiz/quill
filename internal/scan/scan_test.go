@@ -246,10 +246,16 @@ func TestInvalidDestinations(t *testing.T) {
 		{"Slice nil pointer", func() error { return Slice(result(t, two), (*[]user)(nil)) }},
 		{"Slice pointer to non-slice", func() error { return Slice(result(t, two), &one) }},
 		{"Slice nil", func() error { return Slice(result(t, two), nil) }},
-		{"Slice scalar with two columns", func() error { var s []string; return Slice(result(t, two, row{"x", "y"}), &s) }},
+		{
+			"Slice scalar with two columns",
+			func() error { var s []string; return Slice(result(t, two, row{"x", "y"}), &s) },
+		},
 		{"First non-pointer", func() error { return First(result(t, two), one) }},
 		{"First nil pointer", func() error { return First(result(t, two), (*user)(nil)) }},
-		{"First scalar with two columns", func() error { return First(result(t, two, row{int64(1), int64(2)}), &notSlice) }},
+		{
+			"First scalar with two columns",
+			func() error { return First(result(t, two, row{int64(1), int64(2)}), &notSlice) },
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -403,7 +409,7 @@ func TestFieldValue(t *testing.T) {
 }
 
 func TestHasOption(t *testing.T) {
-	for opts, want := range map[string]bool{"omitempty": true, "x,omitempty": true, " omitempty ": true, "": false, "omit": false, "omitempty2": false} {
+	for opts, want := range map[string]bool{"omitempty": true, "x,omitempty": true, " omitempty ": true, "": false, "omit": false, "omitempty2": false} { //nolint:gocritic // the whitespace key is the case under test.
 		if got := hasOption(opts, "omitempty"); got != want {
 			t.Errorf("hasOption(%q) = %v, want %v", opts, got, want)
 		}
@@ -489,7 +495,10 @@ func TestToRowsNilEmbeddedPointer(t *testing.T) {
 	}
 
 	// in a batch where another row sets it, every row must carry the column: nil becomes NULL
-	rows, err = ToRows(typ, []reflect.Value{reflect.ValueOf(holder{Name: "a"}), reflect.ValueOf(holder{Inner: &Inner{"x"}, Name: "b"})})
+	rows, err = ToRows(
+		typ,
+		[]reflect.Value{reflect.ValueOf(holder{Name: "a"}), reflect.ValueOf(holder{Inner: &Inner{"x"}, Name: "b"})},
+	)
 	require.NoError(t, err)
 	if v, has := rows[0]["deep"]; !has || v != nil || rows[1]["deep"] != "x" {
 		t.Errorf("mixed batch: got %v / %v", rows[0], rows[1])
@@ -500,7 +509,13 @@ func TestToRowsNoColumns(t *testing.T) {
 	type none struct {
 		X int `db:"-"`
 	}
-	if _, err := ToRows(reflect.TypeFor[none](), []reflect.Value{reflect.ValueOf(none{})}); !errors.Is(err, errs.ErrInvalidArgs) {
+	if _, err := ToRows(
+		reflect.TypeFor[none](),
+		[]reflect.Value{reflect.ValueOf(none{})},
+	); !errors.Is(
+		err,
+		errs.ErrInvalidArgs,
+	) {
 		t.Errorf("got %v, want ErrInvalidArgs", err)
 	}
 }

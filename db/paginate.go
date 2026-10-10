@@ -117,7 +117,13 @@ func (b *Builder) SimplePaginate(ctx context.Context, page, perPage int, dest an
 // CursorPaginate pages forward by keyset on opt.Column. Pass the previous
 // page's NextCursor (empty for the first page). It replaces any existing ORDER BY.
 // The cursor is an opaque token; its value is only ever bound as an argument.
-func (b *Builder) CursorPaginate(ctx context.Context, perPage int, cursor string, dest any, opt ...CursorOptions) (CursorPage, error) {
+func (b *Builder) CursorPaginate(
+	ctx context.Context,
+	perPage int,
+	cursor string,
+	dest any,
+	opt ...CursorOptions,
+) (CursorPage, error) {
 	if _, err := checkPaging(1, perPage); err != nil {
 		return CursorPage{}, err
 	}

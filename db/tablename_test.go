@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
@@ -95,7 +94,7 @@ func TestTableName(t *testing.T) {
 // A TableName that panics on a zero value is an error, not a crash in the caller.
 func TestTableNamePanicBecomesAnError(t *testing.T) {
 	_, err := db.TableName[derefTable]()
-	assert.ErrorIs(t, err, db.ErrInvalidArgs)
+	require.ErrorIs(t, err, db.ErrInvalidArgs)
 	for _, want := range []string{"derefTable", "panicked", "zero value"} {
 		assert.Contains(t, err.Error(), want)
 	}

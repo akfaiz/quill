@@ -83,7 +83,12 @@ func (q *Query[T]) SimplePaginate(ctx context.Context, page, perPage int) (Simpl
 }
 
 // CursorPaginate pages forward by keyset; see Builder.CursorPaginate.
-func (q *Query[T]) CursorPaginate(ctx context.Context, perPage int, cursor string, opt ...CursorOptions) (CursorPaged[T], error) {
+func (q *Query[T]) CursorPaginate(
+	ctx context.Context,
+	perPage int,
+	cursor string,
+	opt ...CursorOptions,
+) (CursorPaged[T], error) {
 	var items []T
 	p, err := q.b.CursorPaginate(ctx, perPage, cursor, &items, opt...)
 	return CursorPaged[T]{CursorPage: p, Items: items}, err

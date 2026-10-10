@@ -79,7 +79,7 @@ func doubleChar(s string, c byte) string {
 		return s
 	}
 	out := make([]byte, 0, len(s)+1)
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] == c {
 			out = append(out, c)
 		}

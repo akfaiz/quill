@@ -72,7 +72,16 @@ func TestParseIndexSegment(t *testing.T) {
 	for _, tc := range tests {
 		key, index, ok := ParseIndexSegment(tc.in)
 		if key != tc.key || index != tc.index || ok != tc.ok {
-			t.Errorf("ParseIndexSegment(%q) = (%q, %d, %v), want (%q, %d, %v)", tc.in, key, index, ok, tc.key, tc.index, tc.ok)
+			t.Errorf(
+				"ParseIndexSegment(%q) = (%q, %d, %v), want (%q, %d, %v)",
+				tc.in,
+				key,
+				index,
+				ok,
+				tc.key,
+				tc.index,
+				tc.ok,
+			)
 		}
 	}
 }

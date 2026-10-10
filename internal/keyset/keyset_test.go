@@ -122,7 +122,7 @@ func FuzzDecode(f *testing.F) {
 			t.Fatalf("Decode(%q) returned %T, want a scalar", tok, v)
 		}
 		again, err := Encode(v)
-		assert.Equal(t, nil, err)
+		require.NoError(t, err)
 		back, err := Decode(again)
 		if err != nil || !sameValue(v, back) {
 			t.Fatalf("round trip of %#v gave %#v (%v)", v, back, err)

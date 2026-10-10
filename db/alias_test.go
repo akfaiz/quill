@@ -36,7 +36,7 @@ func TestMatchAliasEdgeCases(t *testing.T) {
 func TestMatchAliasAgreesWithRegexp(t *testing.T) {
 	alphabet := []string{"a", "s", "A", "S", " ", " ", "\t", "\n", "\f", "\r", "x", ".", "é", "ſ"}
 	rng := rand.New(rand.NewSource(1))
-	for n := 0; n < 200000; n++ {
+	for range 200000 {
 		var b []byte
 		for l := rng.Intn(11); l > 0; l-- {
 			b = append(b, alphabet[rng.Intn(len(alphabet))]...)

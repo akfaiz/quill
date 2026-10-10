@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"testing"
 
-	"github.com/akfaiz/quill/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
+
+	"github.com/akfaiz/quill/db"
 )
 
 type Base struct {
@@ -72,7 +72,7 @@ func TestSQLiteScanning(t *testing.T) {
 		require.NoError(t, conn.Table("users").OrderBy("id").Get(ctx, &us))
 		assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, names(us))
 		assert.Equal(t, "hello", us[2].Bio)
-		assert.Equal(t, "", us[0].Bio) // NULL -> zero value
+		assert.Empty(t, us[0].Bio) // NULL -> zero value
 		if us[3].Age != nil || us[0].Age == nil || *us[0].Age != 30 {
 			t.Errorf("pointer NULL handling wrong: %+v %+v", us[3].Age, us[0].Age)
 		}
@@ -82,7 +82,7 @@ func TestSQLiteScanning(t *testing.T) {
 	t.Run("pointer elements", func(t *testing.T) {
 		var us []*User
 		require.NoError(t, conn.Table("users").OrderBy("id").Limit(2).Get(ctx, &us))
-		assert.Equal(t, 2, len(us))
+		assert.Len(t, us, 2)
 		assert.Equal(t, "Bob", us[1].Name)
 	})
 	t.Run("maps convert bytes and keep NULL as nil", func(t *testing.T) {
@@ -90,7 +90,7 @@ func TestSQLiteScanning(t *testing.T) {
 		require.NoError(t, conn.Table("users").Select("name", "age").OrderBy("id").Get(ctx, &rows))
 		assert.Equal(t, "Ann", rows[0]["name"])
 		assert.Equal(t, int64(30), rows[0]["age"])
-		assert.Equal(t, nil, rows[3]["age"])
+		assert.Nil(t, rows[3]["age"])
 	})
 	t.Run("embedded structs, tag, conn:- and case-insensitive fallback", func(t *testing.T) {
 		var es []Embedded
@@ -111,20 +111,20 @@ func TestSQLiteScanning(t *testing.T) {
 	})
 	t.Run("bad destinations", func(t *testing.T) {
 		var u User
-		assert.ErrorIs(t, conn.Table("users").Get(ctx, &u), db.ErrInvalidArgs)
-		assert.ErrorIs(t, conn.Table("users").Get(ctx, nil), db.ErrInvalidArgs)
+		require.ErrorIs(t, conn.Table("users").Get(ctx, &u), db.ErrInvalidArgs)
+		require.ErrorIs(t, conn.Table("users").Get(ctx, nil), db.ErrInvalidArgs)
 		var names []string
 		require.Error(t, conn.Table("users").Select("id", "name").Get(ctx, &names))
 	})
 	t.Run("generic helpers", func(t *testing.T) {
 		us, err := db.As[User](conn.Table("users").OrderBy("id")).Get(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, 4, len(us))
+		assert.Len(t, us, 4)
 		u, err := db.As[User](conn.Table("users").Where("name", "Cy")).First(ctx)
 		require.NoError(t, err)
 		assert.True(t, u.Age != nil && *u.Age == 41)
 		_, err = db.As[User](conn.Table("users").Where("name", "nobody")).First(ctx)
-		assert.True(t, errors.Is(err, db.ErrNotFound))
+		assert.ErrorIs(t, err, db.ErrNotFound)
 	})
 }
 
@@ -138,7 +138,7 @@ func TestSQLiteReads(t *testing.T) {
 		assert.Equal(t, "Cy", u.Name)
 		require.NoError(t, users().Find(ctx, 2, &u))
 		assert.Equal(t, "Bob", u.Name)
-		assert.True(t, errors.Is(users().Find(ctx, 99, &u), sql.ErrNoRows))
+		require.ErrorIs(t, users().Find(ctx, 99, &u), sql.ErrNoRows)
 		require.NoError(t, users().Where("name", "Ann").Sole(ctx, &u))
 		assert.Equal(t, db.ErrMultipleRecords, users().Where("age", ">", 0).Sole(ctx, &u))
 		assert.Equal(t, db.ErrNotFound, users().Where("name", "zzz").Sole(ctx, &u))
@@ -204,7 +204,11 @@ func TestSQLiteReads(t *testing.T) {
 		n, err = conn.Table("posts").Join("users", "users.id", "posts.user_id").Where("posts.views", ">", 0).Count(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), n)
-		total, err := conn.Table("posts").Limit(3).OrderBy("id").Sum(ctx, "posts.views") // qualified col in wrapped query
+		total, err := conn.Table("posts").
+			Limit(3).
+			OrderBy("id").
+			Sum(ctx, "posts.views")
+			// qualified col in wrapped query
 		require.NoError(t, err)
 		assert.Equal(t, 22.0, total)
 	})
@@ -247,25 +251,87 @@ func TestSQLiteQueryShapesExecute(t *testing.T) {
 		{"like case sensitive hit", users().WhereLike("name", "A%", true), []string{"Ann"}},
 		{"not like", users().WhereNotLike("name", "%n"), []string{"Bob", "Cy", "Di"}},
 		{"null safe equals on NULL", users().WhereNullSafeEquals("age", nil), []string{"Di"}},
-		{"group", users().Where("active", 1).WhereGroup(func(q *db.Builder) { q.Where("age", ">", 35).OrWhereNull("age") }), []string{"Cy", "Di"}},
+		{
+			"group",
+			users().Where("active", 1).WhereGroup(func(q *db.Builder) { q.Where("age", ">", 35).OrWhereNull("age") }),
+			[]string{"Cy", "Di"},
+		},
 		{"not", users().WhereNot("active", 1), []string{"Bob"}},
-		{"exists subquery", users().WhereExists(conn.Table("posts").SelectRaw("1").WhereColumn("posts.user_id", "users.id").Where("views", ">", 6)), []string{"Ann", "Bob"}},
-		{"in subquery", users().WhereIn("id", conn.Table("posts").Select("user_id").Where("published", 1)), []string{"Ann", "Bob", "Cy"}},
-		{"scalar subquery compare", users().Where("age", ">", conn.Table("users").SelectRaw("avg(age)")), []string{"Cy"}},
+		{
+			"exists subquery",
+			users().WhereExists(conn.Table("posts").SelectRaw("1").WhereColumn("posts.user_id", "users.id").Where("views", ">", 6)),
+			[]string{"Ann", "Bob"},
+		},
+		{
+			"in subquery",
+			users().WhereIn("id", conn.Table("posts").Select("user_id").Where("published", 1)),
+			[]string{"Ann", "Bob", "Cy"},
+		},
+		{
+			"scalar subquery compare",
+			users().Where("age", ">", conn.Table("users").SelectRaw("avg(age)")),
+			[]string{"Cy"},
+		},
 		{"any / all / none", users().WhereAny([]string{"name", "email"}, "like", "b%"), []string{"Bob"}},
-		{"date parts", users().WhereYear("created_at", 2024).WhereMonth("created_at", 3).WhereDay("created_at", ">", 7), []string{"Bob"}},
-		{"date and time", users().WhereDate("created_at", "2024-03-07").WhereTime("created_at", ">=", "09:00:00"), []string{"Ann"}},
+		{
+			"date parts",
+			users().WhereYear("created_at", 2024).WhereMonth("created_at", 3).WhereDay("created_at", ">", 7),
+			[]string{"Bob"},
+		},
+		{
+			"date and time",
+			users().WhereDate("created_at", "2024-03-07").WhereTime("created_at", ">=", "09:00:00"),
+			[]string{"Ann"},
+		},
 		{"row values", users().WhereRowValues([]string{"id", "age"}, "=", []any{1, 30}), []string{"Ann"}},
 		{"raw", users().WhereRaw("length(name) = ?", 2), []string{"Cy", "Di"}},
 		{"order latest limit offset", conn.Table("users").Latest("id").Limit(2).Offset(1), []string{"Cy", "Bob"}},
-		{"left join with value", users().LeftJoinFunc("posts", func(j *db.JoinClause) { j.On("posts.user_id", "users.id").Where("posts.views", ">", 8) }).WhereNull("posts.id"), []string{"Bob", "Cy", "Di"}},
-		{"join sub", users().JoinSub(conn.Table("posts").Select("user_id").SelectRaw("max(views) as mv").GroupBy("user_id"), "m", "m.user_id", "users.id").Where("m.mv", ">", 6), []string{"Ann", "Bob"}},
-		{"cross join", conn.Table("users").CrossJoin("posts").Where("users.id", 1).Where("posts.id", 1), []string{"Ann"}},
-		{"from sub", conn.NewQuery().FromSub(conn.Table("users").Where("active", 1), "au").OrderBy("name"), []string{"Ann", "Cy", "Di"}},
-		{"union", conn.Table("users").Select("name").Where("id", 1).Union(conn.Table("users").Select("name").Where("id", 2)).OrderBy("name", "desc"), []string{"Bob", "Ann"}},
-		{"union all with limit", conn.Table("users").Select("name").Where("id", 1).UnionAll(conn.Table("users").Select("name").Where("id", 1)).Limit(5), []string{"Ann", "Ann"}},
+		{
+			"left join with value",
+			users().LeftJoinFunc("posts", func(j *db.JoinClause) { j.On("posts.user_id", "users.id").Where("posts.views", ">", 8) }).
+				WhereNull("posts.id"),
+			[]string{"Bob", "Cy", "Di"},
+		},
+		{
+			"join sub",
+			users().JoinSub(conn.Table("posts").Select("user_id").SelectRaw("max(views) as mv").GroupBy("user_id"), "m", "m.user_id", "users.id").
+				Where("m.mv", ">", 6),
+			[]string{"Ann", "Bob"},
+		},
+		{
+			"cross join",
+			conn.Table("users").CrossJoin("posts").Where("users.id", 1).Where("posts.id", 1),
+			[]string{"Ann"},
+		},
+		{
+			"from sub",
+			conn.NewQuery().FromSub(conn.Table("users").Where("active", 1), "au").OrderBy("name"),
+			[]string{"Ann", "Cy", "Di"},
+		},
+		{
+			"union",
+			conn.Table("users").
+				Select("name").
+				Where("id", 1).
+				Union(conn.Table("users").Select("name").Where("id", 2)).
+				OrderBy("name", "desc"),
+			[]string{"Bob", "Ann"},
+		},
+		{
+			"union all with limit",
+			conn.Table("users").
+				Select("name").
+				Where("id", 1).
+				UnionAll(conn.Table("users").Select("name").Where("id", 1)).
+				Limit(5),
+			[]string{"Ann", "Ann"},
+		},
 		{"shared lock is a no-op on sqlite", users().SharedLock().Limit(1), []string{"Ann"}},
-		{"force index", conn.Table("users").ForceIndex("sqlite_autoindex_users_1").Where("email", "cy@x"), []string{"Cy"}},
+		{
+			"force index",
+			conn.Table("users").ForceIndex("sqlite_autoindex_users_1").Where("email", "cy@x"),
+			[]string{"Cy"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -292,14 +358,21 @@ func TestSQLiteQueryShapesExecute(t *testing.T) {
 
 	t.Run("select sub value", func(t *testing.T) {
 		var rows []map[string]any
-		require.NoError(t, conn.Table("users").Select("name").SelectSub(conn.Table("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id"), "pc").OrderBy("id").Get(ctx, &rows))
+		require.NoError(
+			t,
+			conn.Table("users").
+				Select("name").
+				SelectSub(conn.Table("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id"), "pc").
+				OrderBy("id").
+				Get(ctx, &rows),
+		)
 		assert.Equal(t, int64(2), rows[0]["pc"])
 		assert.Equal(t, int64(0), rows[3]["pc"])
 	})
 	t.Run("lateral join is rejected on sqlite", func(t *testing.T) {
 		var rows []map[string]any
 		err := conn.Table("users").JoinLateral(conn.Table("posts"), "p").Get(ctx, &rows)
-		assert.True(t, errors.Is(err, db.ErrUnsupported))
+		assert.ErrorIs(t, err, db.ErrUnsupported)
 	})
 }
 
@@ -313,7 +386,11 @@ func TestSQLiteJSONExecution(t *testing.T) {
 	t.Run("contains / doesn't contain", func(t *testing.T) {
 		assert.Equal(t, []string{"Ann", "Bob"}, pluck(conn.Table("users").WhereJsonContains("meta->tags", "b")))
 		assert.Equal(t, []string{"Ann"}, pluck(conn.Table("users").WhereJsonContains("meta->tags", "a")))
-		assert.Equal(t, []string{"Bob", "Cy"}, pluck(conn.Table("users").WhereJsonDoesntContain("meta->tags", "a").WhereNotNull("meta")))
+		assert.Equal(
+			t,
+			[]string{"Bob", "Cy"},
+			pluck(conn.Table("users").WhereJsonDoesntContain("meta->tags", "a").WhereNotNull("meta")),
+		)
 	})
 	t.Run("contains key / length / selector", func(t *testing.T) {
 		assert.Equal(t, []string{"Ann", "Bob"}, pluck(conn.Table("users").WhereJsonContainsKey("meta->theme")))
@@ -324,7 +401,9 @@ func TestSQLiteJSONExecution(t *testing.T) {
 		assert.Equal(t, []string{"dark"}, themes)
 	})
 	t.Run("json updates patch in place", func(t *testing.T) {
-		n, err := conn.Table("users").Where("id", 1).Update(ctx, map[string]any{"meta->theme": "blue", "meta->flags->beta": true})
+		n, err := conn.Table("users").
+			Where("id", 1).
+			Update(ctx, map[string]any{"meta->theme": "blue", "meta->flags->beta": true})
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		var theme string
@@ -344,7 +423,8 @@ func TestSQLiteJSONExecution(t *testing.T) {
 func TestSQLiteWrites(t *testing.T) {
 	t.Run("insert variants", func(t *testing.T) {
 		conn := newDB(t)
-		n, err := conn.Table("users").Insert(ctx, map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"})
+		n, err := conn.Table("users").
+			Insert(ctx, map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = conn.Table("users").Insert(ctx) // no rows: no-op
@@ -379,10 +459,12 @@ func TestSQLiteWrites(t *testing.T) {
 		c, _ := conn.Table("users").Count(ctx)
 		assert.Equal(t, int64(5), c)
 
-		ok, err := conn.Table("users").UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": "Zed"})
+		ok, err := conn.Table("users").
+			UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": "Zed"})
 		require.NoError(t, err)
 		assert.True(t, ok)
-		ok, err = conn.Table("users").UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": "Zed2"})
+		ok, err = conn.Table("users").
+			UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": "Zed2"})
 		require.NoError(t, err)
 		assert.True(t, ok)
 		require.NoError(t, conn.Table("users").Where("email", "zed@x").Value(ctx, "name", &name))
@@ -417,7 +499,9 @@ func TestSQLiteWrites(t *testing.T) {
 		n, err := conn.Table("posts").Where("id", 1).Decrement(ctx, "views", 3, nil)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		n, err = conn.Table("posts").Where("user_id", 1).IncrementEach(ctx, map[string]any{"views": 1, "published": 1}, nil)
+		n, err = conn.Table("posts").
+			Where("user_id", 1).
+			IncrementEach(ctx, map[string]any{"views": 1, "published": 1}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		var v int
@@ -434,14 +518,21 @@ func TestSQLiteWrites(t *testing.T) {
 		assert.Equal(t, int64(0), n)
 
 		_, err = conn.Table("users").Where("id", 1).UpdateFrom(ctx, map[string]any{"name": "x"})
-		assert.True(t, errors.Is(err, db.ErrUnsupported))
+		assert.ErrorIs(t, err, db.ErrUnsupported)
 	})
 	t.Run("update with join and limit go through rowid", func(t *testing.T) {
 		conn := newDB(t)
-		n, err := conn.Table("users as u").Join("posts as p", "p.user_id", "u.id").Where("p.views", ">", 6).Update(ctx, map[string]any{"u.active": 0})
+		n, err := conn.Table("users as u").
+			Join("posts as p", "p.user_id", "u.id").
+			Where("p.views", ">", 6).
+			Update(ctx, map[string]any{"u.active": 0})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Table("posts").Where("views", ">", 0).OrderBy("views", "desc").Limit(1).Update(ctx, map[string]any{"title": "top"})
+		n, err = conn.Table("posts").
+			Where("views", ">", 0).
+			OrderBy("views", "desc").
+			Limit(1).
+			Update(ctx, map[string]any{"title": "top"})
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		var title string
@@ -480,13 +571,24 @@ func TestSQLiteWrites(t *testing.T) {
 			ID   int64
 			Name string
 		}
-		require.NoError(t, conn.Table("users").Returning("id", "name").InsertReturning(ctx, &out, map[string]any{"name": "Rae", "email": "rae@x"}))
-		assert.Equal(t, 1, len(out))
+		require.NoError(
+			t,
+			conn.Table("users").
+				Returning("id", "name").
+				InsertReturning(ctx, &out, map[string]any{"name": "Rae", "email": "rae@x"}),
+		)
+		assert.Len(t, out, 1)
 		assert.Equal(t, "Rae", out[0].Name)
-		require.NoError(t, conn.Table("users").Where("name", "Rae").Returning("id", "name").UpdateReturning(ctx, &out, map[string]any{"name": "Rae2"}))
+		require.NoError(
+			t,
+			conn.Table("users").
+				Where("name", "Rae").
+				Returning("id", "name").
+				UpdateReturning(ctx, &out, map[string]any{"name": "Rae2"}),
+		)
 		assert.Equal(t, "Rae2", out[0].Name)
 		require.NoError(t, conn.Table("users").Where("name", "Rae2").Returning("id", "name").DeleteReturning(ctx, &out))
-		assert.Equal(t, 1, len(out))
+		assert.Len(t, out, 1)
 		assert.ErrorIs(t, conn.Table("users").Where("id", 1).DeleteReturning(ctx, &out), db.ErrInvalidArgs)
 	})
 	t.Run("not bound", func(t *testing.T) {
@@ -512,9 +614,9 @@ func TestSQLitePagination(t *testing.T) {
 		p, err = users().Where("id", 999).Paginate(ctx, 1, 3, &us)
 		require.NoError(t, err)
 		assert.Equal(t, db.Page{Total: 0, PerPage: 3, CurrentPage: 1, LastPage: 1}, p)
-		assert.Equal(t, 0, len(us))
+		assert.Empty(t, us)
 		_, err = users().Paginate(ctx, 1, 0, &us)
-		assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+		assert.ErrorIs(t, err, db.ErrInvalidArgs)
 	})
 	t.Run("simple", func(t *testing.T) {
 		var us []User
@@ -548,7 +650,8 @@ func TestSQLitePagination(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), rows[0]["id"])
 		assert.True(t, p.HasMore)
-		p, err = conn.Table("users").CursorPaginate(ctx, 2, p.NextCursor, &rows, db.CursorOptions{Column: "id", Desc: true})
+		p, err = conn.Table("users").
+			CursorPaginate(ctx, 2, p.NextCursor, &rows, db.CursorOptions{Column: "id", Desc: true})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), rows[0]["id"])
 		assert.False(t, p.HasMore)
@@ -568,7 +671,11 @@ func TestSQLiteChunkingAndStreaming(t *testing.T) {
 
 	t.Run("chunk needs order and walks pages", func(t *testing.T) {
 		var us []User
-		assert.Equal(t, db.ErrNoOrder, conn.Table("users").Chunk(ctx, 2, &us, func() (bool, error) { return true, nil }))
+		assert.Equal(
+			t,
+			db.ErrNoOrder,
+			conn.Table("users").Chunk(ctx, 2, &us, func() (bool, error) { return true, nil }),
+		)
 		var pages [][]string
 		require.NoError(t, conn.Table("users").OrderBy("id").Chunk(ctx, 3, &us, func() (bool, error) {
 			pages = append(pages, names(us))
@@ -579,22 +686,34 @@ func TestSQLiteChunkingAndStreaming(t *testing.T) {
 	t.Run("chunk stops early and propagates errors", func(t *testing.T) {
 		calls := 0
 		var us []User
-		require.NoError(t, conn.Table("users").OrderBy("id").Chunk(ctx, 1, &us, func() (bool, error) { calls++; return calls < 2, nil }))
+		require.NoError(
+			t,
+			conn.Table("users").
+				OrderBy("id").
+				Chunk(ctx, 1, &us, func() (bool, error) { calls++; return calls < 2, nil }),
+		)
 		assert.Equal(t, 2, calls)
 		boom := errors.New("boom")
-		assert.Equal(t, boom, conn.Table("users").OrderBy("id").Chunk(ctx, 1, &us, func() (bool, error) { return true, boom }))
+		assert.Equal(
+			t,
+			boom,
+			conn.Table("users").OrderBy("id").Chunk(ctx, 1, &us, func() (bool, error) { return true, boom }),
+		)
 	})
 	t.Run("chunk by id survives deletes made by the callback", func(t *testing.T) {
 		var total int
-		require.NoError(t, db.As[map[string]any](conn.Table("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
-			total += len(rows)
-			for _, r := range rows {
-				if _, err := conn.Table("posts").Where("id", r["id"]).Delete(ctx); err != nil {
-					return false, err
+		require.NoError(
+			t,
+			db.As[map[string]any](conn.Table("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
+				total += len(rows)
+				for _, r := range rows {
+					if _, err := conn.Table("posts").Where("id", r["id"]).Delete(ctx); err != nil {
+						return false, err
+					}
 				}
-			}
-			return true, nil
-		}))
+				return true, nil
+			}),
+		)
 		assert.Equal(t, 4, total)
 		c, _ := conn.Table("posts").Count(ctx)
 		assert.Equal(t, int64(0), c)
@@ -610,11 +729,14 @@ func TestSQLiteChunkingAndStreaming(t *testing.T) {
 	t.Run("each", func(t *testing.T) {
 		var u User
 		var got []string
-		require.NoError(t, conn.Table("users").OrderBy("id").Each(ctx, &u, func() error { got = append(got, u.Name); return nil }))
+		require.NoError(
+			t,
+			conn.Table("users").OrderBy("id").Each(ctx, &u, func() error { got = append(got, u.Name); return nil }),
+		)
 		assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, got)
 		stop := errors.New("stop")
 		assert.Equal(t, stop, conn.Table("users").Each(ctx, &u, func() error { return stop }))
-		assert.True(t, conn.Table("users").Each(ctx, u, func() error { return nil }) != nil) // non-pointer
+		assert.Error(t, conn.Table("users").Each(ctx, u, func() error { return nil })) // non-pointer
 	})
 	t.Run("stream", func(t *testing.T) {
 		var got []string
@@ -688,7 +810,8 @@ func TestSQLiteTransactions(t *testing.T) {
 				return err
 			}
 			err := tx.Transaction(ctx, func(inner *db.DB) error {
-				if _, err := inner.Table("users").Insert(ctx, map[string]any{"name": "Inner", "email": "i@x"}); err != nil {
+				if _, err := inner.Table("users").
+					Insert(ctx, map[string]any{"name": "Inner", "email": "i@x"}); err != nil {
 					return err
 				}
 				return boom
@@ -730,10 +853,10 @@ func TestSQLiteTransactions(t *testing.T) {
 // noBegin hides BeginTx so the DB looks like a bare Conn.
 type noBegin struct{ conn *db.DB }
 
-func (n noBegin) QueryContext(ctx context.Context, q string, a ...any) (*sql.Rows, error) {
+func (n noBegin) QueryContext(_ context.Context, _ string, _ ...any) (*sql.Rows, error) {
 	return nil, errors.New("unused")
 }
-func (n noBegin) ExecContext(ctx context.Context, q string, a ...any) (sql.Result, error) {
+func (n noBegin) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result, error) {
 	return nil, errors.New("unused")
 }
 
@@ -743,19 +866,23 @@ func TestSQLiteHooksAndRawAccess(t *testing.T) {
 		conn := newDB(t, db.WithHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }))
 		var us []User
 		require.NoError(t, conn.Table("users").Where("email", "ann@x").Get(ctx, &us))
-		assert.Equal(t, 1, len(evs))
+		assert.Len(t, evs, 1)
 		assert.Equal(t, 1, evs[0].NumArgs)
-		assert.True(t, evs[0].Args == nil)
-		assert.False(t, strings.Contains(evs[0].SQL, "ann@x"))
-		assert.True(t, evs[0].Duration >= 0)
+		assert.Nil(t, evs[0].Args)
+		assert.NotContains(t, evs[0].SQL, "ann@x")
+		assert.GreaterOrEqual(t, int64(evs[0].Duration), int64(0))
 	})
 	t.Run("args logged on request, errors reported", func(t *testing.T) {
 		var evs []db.QueryEvent
-		conn := newDB(t, db.WithLogArgs(), db.WithHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }))
+		conn := newDB(
+			t,
+			db.WithLogArgs(),
+			db.WithHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }),
+		)
 		_, err := conn.Exec(ctx, "insert into nope values (?)", 1)
 		require.Error(t, err)
 		assert.Equal(t, []any{1}, evs[0].Args)
-		assert.True(t, evs[0].Err != nil)
+		assert.Error(t, evs[0].Err)
 	})
 	t.Run("raw query and exec", func(t *testing.T) {
 		conn := newDB(t)
@@ -800,10 +927,10 @@ func TestSQLiteTypedQueries(t *testing.T) {
 		_, err = db.As[User](users().Where("age", ">", 0)).Sole(ctx)
 		assert.Equal(t, db.ErrMultipleRecords, err)
 		_, err = db.As[User](users().Where("name", "nobody")).First(ctx)
-		assert.True(t, errors.Is(err, db.ErrNotFound))
+		require.ErrorIs(t, err, db.ErrNotFound)
 		// the handle gives the same builder back for further chaining
 		b := users()
-		assert.True(t, db.As[User](b).Builder() == b)
+		assert.Same(t, db.As[User](b).Builder(), b)
 	})
 	t.Run("maps and scalars", func(t *testing.T) {
 		m, err := db.As[map[string]any](conn.Table("users").Select("name").Where("id", 1)).First(ctx)
@@ -840,7 +967,7 @@ func TestSQLiteTypedQueries(t *testing.T) {
 		sp, err := db.As[User](users()).SimplePaginate(ctx, 1, 3)
 		require.NoError(t, err)
 		assert.True(t, sp.HasMore)
-		assert.Equal(t, 3, len(sp.Items))
+		assert.Len(t, sp.Items, 3)
 
 		var seen []string
 		cursor := ""
@@ -884,23 +1011,25 @@ func TestSQLiteTypedQueries(t *testing.T) {
 	t.Run("returning gives typed rows", func(t *testing.T) {
 		rows, err := db.As[Member](conn.Table("users")).InsertReturning(ctx, Member{Name: "Rae", Email: ptr("rae@x")})
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(rows))
+		assert.Len(t, rows, 1)
 		assert.Equal(t, "Rae", rows[0].Name)
-		assert.True(t, rows[0].ID > 4)
+		assert.Greater(t, rows[0].ID, int64(4))
 		rows, err = db.As[Member](conn.Table("users").Where("name", "Rae")).UpdateReturning(ctx, Member{Bio: "hello"})
 		require.NoError(t, err)
 		assert.Equal(t, "hello", rows[0].Bio)
 		assert.Equal(t, "Rae", rows[0].Name) // untouched columns survive
 		rows, err = db.As[Member](conn.Table("users").Where("name", "Rae")).DeleteReturning(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, 1, len(rows))
+		assert.Len(t, rows, 1)
 	})
 }
 
 func TestSQLiteStructWrites(t *testing.T) {
 	t.Run("insert variants", func(t *testing.T) {
 		conn := newDB(t)
-		n, err := db.As[Member](conn.Table("users")).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
+		n, err := db.As[Member](
+			conn.Table("users"),
+		).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = db.As[Member](conn.Table("users")).Insert(ctx) // nothing to insert
@@ -958,9 +1087,9 @@ func TestSQLiteStructWrites(t *testing.T) {
 	t.Run("bad input is an error", func(t *testing.T) {
 		conn := newDB(t)
 		_, err := db.As[int](conn.Table("users")).Insert(ctx, 5)
-		assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+		require.ErrorIs(t, err, db.ErrInvalidArgs)
 		_, err = db.As[map[string]any](conn.Table("users").Where("id", 1)).Update(ctx, map[string]any{"a": 1})
-		assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+		assert.ErrorIs(t, err, db.ErrInvalidArgs)
 	})
 }
 
@@ -1003,7 +1132,9 @@ func TestSQLiteFromTakesTheTableFromTheType(t *testing.T) {
 		assert.Equal(t, []string{"Ann"}, names(us))
 	})
 	t.Run("writes need no table name or builder", func(t *testing.T) {
-		n, err := db.From[Member](conn).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
+		n, err := db.From[Member](
+			conn,
+		).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		id, err := db.From[Member](conn).InsertGetID(ctx, Member{Name: "Gus", Email: ptr("gus@x")})
@@ -1012,7 +1143,9 @@ func TestSQLiteFromTakesTheTableFromTheType(t *testing.T) {
 		n, err = db.From[Member](conn).InsertOrIgnore(ctx, Member{Name: "Dup", Email: ptr("ann@x")})
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
-		_, err = db.From[Member](conn).Upsert(ctx, []Member{{Name: "Ann!", Email: ptr("ann@x")}}, []string{"email"}, []string{"name"})
+		_, err = db.From[Member](
+			conn,
+		).Upsert(ctx, []Member{{Name: "Ann!", Email: ptr("ann@x")}}, []string{"email"}, []string{"name"})
 		require.NoError(t, err)
 
 		n, err = db.From[Member](conn).Where("id", 1).Update(ctx, Member{Bio: "set"})
@@ -1044,11 +1177,11 @@ func TestSQLiteFromTakesTheTableFromTheType(t *testing.T) {
 	})
 	t.Run("a type without TableName fails clearly", func(t *testing.T) {
 		_, err := db.From[Untitled](conn).Get(ctx)
-		assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+		require.ErrorIs(t, err, db.ErrInvalidArgs)
 		_, err = db.From[Untitled](conn).Where("id", 1).Count(ctx)
-		assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+		require.ErrorIs(t, err, db.ErrInvalidArgs)
 		_, err = db.From[Untitled](conn).Insert(ctx, Untitled{ID: 1})
-		assert.True(t, errors.Is(err, db.ErrInvalidArgs))
+		require.ErrorIs(t, err, db.ErrInvalidArgs)
 		// As still works for types without one: the table is given explicitly
 		us, err := db.As[Untitled](conn.Table("users").Select("id").OrderBy("id")).Get(ctx)
 		require.NoError(t, err)
@@ -1063,13 +1196,20 @@ func TestSQLiteCTE(t *testing.T) {
 	active := func() *db.Builder { return conn.Table("users").Where("active", true) }
 
 	t.Run("plain", func(t *testing.T) {
-		assert.Equal(t, []string{"Ann", "Cy", "Di"}, pluckNames(t, conn.Table("au").With("au", active()).OrderBy("name")))
+		assert.Equal(
+			t,
+			[]string{"Ann", "Cy", "Di"},
+			pluckNames(t, conn.Table("au").With("au", active()).OrderBy("name")),
+		)
 	})
 	t.Run("recursive series", func(t *testing.T) {
 		anchor := conn.Table("users").SelectRaw("1 as n").Where("id", 1)
 		step := conn.Table("seq").SelectRaw("n + 1").Where("n", "<", 5)
 		var got []int64
-		require.NoError(t, conn.Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got))
+		require.NoError(
+			t,
+			conn.Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got),
+		)
 		assert.Equal(t, []int64{1, 2, 3, 4, 5}, got)
 	})
 	t.Run("inside where in", func(t *testing.T) {

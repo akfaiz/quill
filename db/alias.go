@@ -11,7 +11,7 @@ func matchAlias(s string) (name, alias string, ok bool) {
 	if !strings.ContainsAny(s, " \t\n\f\r") {
 		return "", "", false // an alias needs whitespace around "as"
 	}
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		if s[i] >= 0x80 {
 			m := aliasRe.FindStringSubmatch(s)
 			if m == nil {

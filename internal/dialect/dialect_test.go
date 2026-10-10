@@ -80,7 +80,13 @@ func TestLikeOp(t *testing.T) {
 }
 
 func TestLikeValueOnlySQLiteGlobRewritesThePattern(t *testing.T) {
-	perDialect(t, func(g Grammar) string { return g.LikeValue("a%b_c*d?", true) }, "a%b_c*d?", "a%b_c*d?", "a*b?c[*]d[?]")
+	perDialect(
+		t,
+		func(g Grammar) string { return g.LikeValue("a%b_c*d?", true) },
+		"a%b_c*d?",
+		"a%b_c*d?",
+		"a*b?c[*]d[?]",
+	)
 	perDialect(t, func(g Grammar) string { return g.LikeValue("a%b_c*d?", false) }, "a%b_c*d?", "a%b_c*d?", "a%b_c*d?")
 }
 
@@ -222,6 +228,10 @@ func TestMariaDBInheritsMySQL(t *testing.T) {
 		t.Error("straight_join should be supported on both")
 	}
 	if !my.SupportsLateralJoin() || ma.SupportsLateralJoin() {
-		t.Errorf("lateral: mysql=%v (want true), mariadb=%v (want false)", my.SupportsLateralJoin(), ma.SupportsLateralJoin())
+		t.Errorf(
+			"lateral: mysql=%v (want true), mariadb=%v (want false)",
+			my.SupportsLateralJoin(),
+			ma.SupportsLateralJoin(),
+		)
 	}
 }

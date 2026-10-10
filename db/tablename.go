@@ -33,7 +33,7 @@ func TableName[T any]() (string, error) {
 		return name.(string), nil
 	}
 	// *T carries the methods of both receiver kinds
-	tb, ok := reflect.New(t).Interface().(Tabler)
+	tb, ok := reflect.TypeAssert[Tabler](reflect.New(t))
 	if !ok {
 		return "", fmt.Errorf("%w: %s has no TableName() string method", ErrInvalidArgs, t)
 	}

@@ -121,7 +121,7 @@ func Encode(v any) (string, error) {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		return "", fmt.Errorf("%w: cannot encode JSON: %v", errs.ErrInvalidArgs, err)
+		return "", fmt.Errorf("%w: cannot encode JSON: %w", errs.ErrInvalidArgs, err)
 	}
 	return strings.TrimSuffix(buf.String(), "\n"), nil
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/akfaiz/quill/internal/scan"
@@ -68,7 +69,7 @@ func (b *Builder) InsertGetID(ctx context.Context, row map[string]any, sequence 
 	}
 	if db.dialect == Postgres {
 		var id int64
-		err := db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return scan.First(rows, &id) })
+		err = db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return scan.First(rows, &id) })
 		return id, err
 	}
 	res, err := db.exec(ctx, sqlText, args)
@@ -115,14 +116,10 @@ func (b *Builder) UpdateOrInsert(ctx context.Context, attributes, values map[str
 	}
 	if !exists {
 		merged := make(map[string]any, len(attributes)+len(values))
-		for k, v := range attributes {
-			merged[k] = v
-		}
-		for k, v := range values {
-			merged[k] = v
-		}
-		_, err := b.Clone().Insert(ctx, merged)
-		return err == nil, err
+		maps.Copy(merged, attributes)
+		maps.Copy(merged, values)
+		_, insErr := b.Clone().Insert(ctx, merged)
+		return insErr == nil, insErr
 	}
 	if len(values) == 0 {
 		return true, nil

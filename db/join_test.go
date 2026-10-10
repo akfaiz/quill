@@ -62,7 +62,12 @@ func TestJoinGolden(t *testing.T) {
 		{
 			name: "join subquery numbers args in order",
 			build: func(d db.Dialect) *db.Builder {
-				sub := db.Use(d).Table("posts").Select("user_id").SelectRaw("max(created_at) as last").Where("pub", true).GroupBy("user_id")
+				sub := db.Use(d).
+					Table("posts").
+					Select("user_id").
+					SelectRaw("max(created_at) as last").
+					Where("pub", true).
+					GroupBy("user_id")
 				return db.Use(d).Table("users").
 					JoinSub(sub, "latest", "latest.user_id", "users.id").
 					LeftJoinSubFunc(db.Use(d).Table("x").Where("k", 7), "xs", func(j *db.JoinClause) { j.On("xs.id", "users.id") }).
@@ -114,8 +119,8 @@ func TestJoinDialectSpecific(t *testing.T) {
 	}
 
 	for _, d := range []db.Dialect{db.Postgres, db.SQLite} {
-		if _, _, err := straight(d).ToSQL(); !errors.Is(err, db.ErrUnsupported) {
-			t.Errorf("%s straight_join: got %v want ErrUnsupported", d, err)
+		if _, _, sErr := straight(d).ToSQL(); !errors.Is(sErr, db.ErrUnsupported) {
+			t.Errorf("%s straight_join: got %v want ErrUnsupported", d, sErr)
 		}
 	}
 	// MariaDB: straight_join works as on MySQL, lateral joins do not exist
@@ -144,7 +149,11 @@ func TestJoinErrors(t *testing.T) {
 		{"second column not string", db.Use(d).Table("a").Join("b", "b.x", 5), db.ErrInvalidArgs},
 		{"sub needs alias", db.Use(d).Table("a").JoinSub(db.Use(d).Table("s"), "", "s.x", "a.x"), db.ErrInvalidArgs},
 		{"bad sub propagates", db.Use(d).Table("a").JoinSub(db.NewBuilder(d), "s", "s.x", "a.x"), db.ErrNoTable},
-		{"error inside on func", db.Use(d).Table("a").JoinFunc("b", func(j *db.JoinClause) { j.Where("x", "bogus", 1) }), db.ErrInvalidOperator},
+		{
+			"error inside on func",
+			db.Use(d).Table("a").JoinFunc("b", func(j *db.JoinClause) { j.Where("x", "bogus", 1) }),
+			db.ErrInvalidOperator,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -181,26 +190,36 @@ func TestJoinVariantsPostgres(t *testing.T) {
 		sql   string
 		args  []any
 	}{
-		{"every join clause condition", tb().JoinFunc("j", func(j *db.JoinClause) {
-			j.On("j.a", "t.a").
-				OrOnGroup(func(g *db.JoinClause) { g.On("j.b", "t.b").OrOn("j.c", "t.c") }).
-				WhereIn("j.k", []int{1}).WhereNotIn("j.k", []int{2}).
-				OrWhere("j.z", ">", 3).OrWhereIn("j.y", []int{4}).OrWhereNotIn("j.y", []int{5}).
-				WhereNotNull("j.n").OrWhereNull("j.m").OrWhereNotNull("j.o").
-				WhereRaw("j.r = ?", 6).OrWhereRaw("j.q = ?", 7)
-		}),
+		{
+			"every join clause condition",
+			tb().JoinFunc("j", func(j *db.JoinClause) {
+				j.On("j.a", "t.a").
+					OrOnGroup(func(g *db.JoinClause) { g.On("j.b", "t.b").OrOn("j.c", "t.c") }).
+					WhereIn("j.k", []int{1}).WhereNotIn("j.k", []int{2}).
+					OrWhere("j.z", ">", 3).OrWhereIn("j.y", []int{4}).OrWhereNotIn("j.y", []int{5}).
+					WhereNotNull("j.n").OrWhereNull("j.m").OrWhereNotNull("j.o").
+					WhereRaw("j.r = ?", 6).OrWhereRaw("j.q = ?", 7)
+			}),
 			`select * from "t" inner join "j" on "j"."a" = "t"."a" or ("j"."b" = "t"."b" or "j"."c" = "t"."c") and "j"."k" in ($1) and "j"."k" not in ($2) or "j"."z" > $3 or "j"."y" in ($4) or "j"."y" not in ($5) and "j"."n" is not null or "j"."m" is null or "j"."o" is not null and j.r = $6 or j.q = $7`,
-			[]any{1, 2, 3, 4, 5, 6, 7}},
-		{"right join func and where", tb().RightJoinFunc("r", func(j *db.JoinClause) { j.On("r.a", "t.a") }).RightJoinWhere("w", "w.x", 9),
-			`select * from "t" right join "r" on "r"."a" = "t"."a" right join "w" on "w"."x" = $1`, []any{9}},
-		{"every subquery join form", tb().
-			LeftJoinSub(sub(), "l", "l.a", "t.a").
-			RightJoinSub(sub(), "r", "r.a", "t.a").
-			CrossJoinSub(sub(), "c").
-			JoinSubFunc(sub(), "f", func(j *db.JoinClause) { j.On("f.a", "t.a") }).
-			RightJoinSubFunc(sub(), "g", func(j *db.JoinClause) { j.On("g.a", "t.a") }),
+			[]any{1, 2, 3, 4, 5, 6, 7},
+		},
+		{
+			"right join func and where",
+			tb().RightJoinFunc("r", func(j *db.JoinClause) { j.On("r.a", "t.a") }).RightJoinWhere("w", "w.x", 9),
+			`select * from "t" right join "r" on "r"."a" = "t"."a" right join "w" on "w"."x" = $1`,
+			[]any{9},
+		},
+		{
+			"every subquery join form",
+			tb().
+				LeftJoinSub(sub(), "l", "l.a", "t.a").
+				RightJoinSub(sub(), "r", "r.a", "t.a").
+				CrossJoinSub(sub(), "c").
+				JoinSubFunc(sub(), "f", func(j *db.JoinClause) { j.On("f.a", "t.a") }).
+				RightJoinSubFunc(sub(), "g", func(j *db.JoinClause) { j.On("g.a", "t.a") }),
 			`select * from "t" left join (select * from "s" where "k" = $1) as "l" on "l"."a" = "t"."a" right join (select * from "s" where "k" = $2) as "r" on "r"."a" = "t"."a" cross join (select * from "s" where "k" = $3) as "c" inner join (select * from "s" where "k" = $4) as "f" on "f"."a" = "t"."a" right join (select * from "s" where "k" = $5) as "g" on "g"."a" = "t"."a"`,
-			[]any{1, 1, 1, 1, 1}},
+			[]any{1, 1, 1, 1, 1},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -47,14 +47,30 @@ var scenarios = []scenario{
 			return pg.Table("users").Select("id", "name").Where("votes", ">", 100).OrderByDesc("id").Limit(10).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
-			return sqPG.Select("id", "name").From("users").Where(sq.Gt{"votes": 100}).OrderBy("id DESC").Limit(10).ToSql()
+			return sqPG.Select("id", "name").
+				From("users").
+				Where(sq.Gt{"votes": 100}).
+				OrderBy("id DESC").
+				Limit(10).
+				ToSql()
 		},
 		goqu: func() (string, []any, error) {
-			return goquPG.From("users").Prepared(true).Select("id", "name").Where(goqu.C("votes").Gt(100)).Order(goqu.C("id").Desc()).Limit(10).ToSQL()
+			return goquPG.From("users").
+				Prepared(true).
+				Select("id", "name").
+				Where(goqu.C("votes").Gt(100)).
+				Order(goqu.C("id").Desc()).
+				Limit(10).
+				ToSQL()
 		},
 		sqlb: func() (string, []any, error) {
 			sb := sqlbuilder.PostgreSQL.NewSelectBuilder()
-			sql, args := sb.Select("id", "name").From("users").Where(sb.GreaterThan("votes", 100)).OrderByDesc("id").Limit(10).Build()
+			sql, args := sb.Select("id", "name").
+				From("users").
+				Where(sb.GreaterThan("votes", 100)).
+				OrderByDesc("id").
+				Limit(10).
+				Build()
 			return sql, args, nil
 		},
 	},
@@ -129,15 +145,19 @@ var scenarios = []scenario{
 			return sqPG.Select("*").From("orders").
 				Where(sq.Eq{"a": 1}).Where(sq.Gt{"b": 2}).Where(sq.Lt{"c": 3}).Where(sq.NotEq{"d": 4}).
 				Where(sq.GtOrEq{"e": 5}).Where(sq.LtOrEq{"f": 6}).Where(sq.Eq{"g": ids}).Where(sq.Eq{"h": nil}).
-				Where(sq.NotEq{"i": nil}).Where("j BETWEEN ? AND ?", 7, 8).Where(sq.Like{"k": "x%"}).Where(sq.Eq{"l": 9}).
+				Where(sq.NotEq{"i": nil}).
+				Where("j BETWEEN ? AND ?", 7, 8).Where(sq.Like{"k": "x%"}).Where(sq.Eq{"l": 9}).
 				ToSql()
 		},
 		goqu: func() (string, []any, error) {
 			return goquPG.From("orders").Prepared(true).Where(
 				goqu.C("a").Eq(1), goqu.C("b").Gt(2), goqu.C("c").Lt(3), goqu.C("d").Neq(4),
 				goqu.C("e").Gte(5), goqu.C("f").Lte(6), goqu.C("g").In(ids), goqu.C("h").IsNull(),
-				goqu.C("i").IsNotNull(), goqu.C("j").Between(goqu.Range(7, 8)), goqu.C("k").Like("x%"), goqu.C("l").Eq(9),
-			).ToSQL()
+				goqu.C("i").
+					IsNotNull(),
+				goqu.C("j").Between(goqu.Range(7, 8)), goqu.C("k").Like("x%"), goqu.C("l").Eq(9),
+			).
+				ToSQL()
 		},
 		sqlb: func() (string, []any, error) {
 			sb := sqlbuilder.PostgreSQL.NewSelectBuilder()
@@ -191,11 +211,18 @@ var scenarios = []scenario{
 			return sqPG.Update("users").Set("name", "ann").Set("age", 31).Where(sq.Eq{"id": 1}).ToSql()
 		},
 		goqu: func() (string, []any, error) {
-			return goquPG.Update("users").Prepared(true).Set(goqu.Record{"name": "ann", "age": 31}).Where(goqu.C("id").Eq(1)).ToSQL()
+			return goquPG.Update("users").
+				Prepared(true).
+				Set(goqu.Record{"name": "ann", "age": 31}).
+				Where(goqu.C("id").Eq(1)).
+				ToSQL()
 		},
 		sqlb: func() (string, []any, error) {
 			ub := sqlbuilder.PostgreSQL.NewUpdateBuilder()
-			sql, args := ub.Update("users").Set(ub.Assign("name", "ann"), ub.Assign("age", 31)).Where(ub.Equal("id", 1)).Build()
+			sql, args := ub.Update("users").
+				Set(ub.Assign("name", "ann"), ub.Assign("age", 31)).
+				Where(ub.Equal("id", 1)).
+				Build()
 			return sql, args, nil
 		},
 	},

@@ -340,7 +340,8 @@ func (c *compiler) setList(sets []setItem) error {
 			done[key] = true
 			var group []setItem
 			for _, o := range sets {
-				if _, p := o.value.(jsonPatch); !p && jsonpath.IsSelector(o.column) && c.jsonColumnKey(o.column) == key {
+				if _, p := o.value.(jsonPatch); !p && jsonpath.IsSelector(o.column) &&
+					c.jsonColumnKey(o.column) == key {
 					group = append(group, o)
 				}
 			}

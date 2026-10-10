@@ -57,7 +57,7 @@ func Interpolate(sql string, args []any, numbered bool) string {
 				j++
 			}
 			if j > i+1 && n >= 1 && n <= len(args) {
-				sb.WriteString(Literal(args[n-1]))
+				sb.WriteString(Literal(args[n-1])) //nolint:gosec // n is bounded to 1..len(args) above.
 				i = j - 1
 				continue
 			}

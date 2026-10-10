@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -62,7 +63,7 @@ func (b *Builder) inRawClause(dst *[]clause, boolean, column string, values any,
 	for i, v := range vs {
 		n, err := toInt64(v)
 		if err != nil {
-			return b.fail(fmt.Errorf("%w: %v", ErrInvalidArgs, err))
+			return b.fail(fmt.Errorf("%w: %w", ErrInvalidArgs, err))
 		}
 		ints[i] = n
 	}
@@ -75,7 +76,11 @@ func toInt64(v any) (int64, error) {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return rv.Int(), nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int64(rv.Uint()), nil
+		u := rv.Uint()
+		if u > math.MaxInt64 {
+			return 0, fmt.Errorf("integer out of range: %d", u)
+		}
+		return int64(u), nil
 	case reflect.String:
 		return strconv.ParseInt(rv.String(), 10, 64)
 	}
@@ -112,7 +117,13 @@ func (b *Builder) dateClause(dst *[]clause, boolean, part, column string, args [
 	return b.push(dst, boolean, clause{kind: clauseDate, column: column, x: &clauseExt{part: part}, op: op, value: val})
 }
 
-var dateLayouts = map[string]string{"date": "2006-01-02", "time": "15:04:05", "day": "02", "month": "01", "year": "2006"}
+var dateLayouts = map[string]string{
+	"date":  "2006-01-02",
+	"time":  "15:04:05",
+	"day":   "02",
+	"month": "01",
+	"year":  "2006",
+}
 
 // dateValue formats time.Time per part, and zero-pads numeric day/month like Laravel.
 func dateValue(part string, v any) (any, error) {
@@ -125,7 +136,7 @@ func dateValue(part string, v any) (any, error) {
 	if part == "day" || part == "month" {
 		n, err := toInt64(v)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s must be numeric: %v", ErrInvalidArgs, part, err)
+			return nil, fmt.Errorf("%w: %s must be numeric: %w", ErrInvalidArgs, part, err)
 		}
 		return fmt.Sprintf("%02d", n), nil
 	}
@@ -280,7 +291,11 @@ func (b *Builder) OrWhereNotBetween(column string, lo, hi any) *Builder {
 }
 
 func (b *Builder) betweenColumns(boolean, column, c1, c2 string, not bool) *Builder {
-	return b.push(&b.wheres, boolean, clause{kind: clauseBetweenColumns, column: column, x: &clauseExt{columns: []string{c1, c2}}, not: not})
+	return b.push(
+		&b.wheres,
+		boolean,
+		clause{kind: clauseBetweenColumns, column: column, x: &clauseExt{columns: []string{c1, c2}}, not: not},
+	)
 }
 
 // WhereBetweenColumns adds "col between c1 and c2" comparing against columns.
@@ -304,7 +319,11 @@ func (b *Builder) OrWhereNotBetweenColumns(column, c1, c2 string) *Builder {
 }
 
 func (b *Builder) valueBetween(boolean string, value any, c1, c2 string, not bool) *Builder {
-	return b.push(&b.wheres, boolean, clause{kind: clauseValueBetween, value: value, x: &clauseExt{columns: []string{c1, c2}}, not: not})
+	return b.push(
+		&b.wheres,
+		boolean,
+		clause{kind: clauseValueBetween, value: value, x: &clauseExt{columns: []string{c1, c2}}, not: not},
+	)
 }
 
 // WhereValueBetween adds "? between c1 and c2" (a value between two columns).
@@ -330,7 +349,11 @@ func (b *Builder) OrWhereValueNotBetween(value any, c1, c2 string) *Builder {
 // ---- LIKE / null-safe ----
 
 func (b *Builder) like(boolean, column string, value any, not bool, cs []bool) *Builder {
-	return b.push(&b.wheres, boolean, clause{kind: clauseLike, column: column, value: value, not: not, cs: len(cs) > 0 && cs[0]})
+	return b.push(
+		&b.wheres,
+		boolean,
+		clause{kind: clauseLike, column: column, value: value, not: not, cs: len(cs) > 0 && cs[0]},
+	)
 }
 
 // WhereLike adds a LIKE predicate, case-insensitive unless caseSensitive[0] is true.
@@ -512,7 +535,11 @@ func (b *Builder) rowValues(boolean string, columns []string, op string, values 
 	if len(columns) == 0 || len(columns) != len(values) {
 		return b.fail(fmt.Errorf("%w: row values need equal, non-zero columns and values", ErrInvalidArgs))
 	}
-	return b.push(&b.wheres, boolean, clause{kind: clauseRowValues, x: &clauseExt{columns: columns}, op: op, values: values})
+	return b.push(
+		&b.wheres,
+		boolean,
+		clause{kind: clauseRowValues, x: &clauseExt{columns: columns}, op: op, values: values},
+	)
 }
 
 // WhereRowValues adds "(a, b) op (?, ?)".

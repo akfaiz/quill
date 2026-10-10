@@ -243,12 +243,26 @@ func TestBuilderWrappers(t *testing.T) {
 		sql   string
 		args  []any
 	}{
-		{"or where raw", tb().Where("a", 1).OrWhereRaw("b = ?", 2), `select * from "t" where "a" = $1 or b = $2`, []any{1, 2}},
-		{"group by raw, or having, having raw", tb().GroupByRaw("date(x)").Having("n", ">", 1).OrHaving("m", 2).HavingRaw("count(*) > ?", 3),
-			`select * from "t" group by date(x) having "n" > $1 or "m" = $2 and count(*) > $3`, []any{1, 2, 3}},
+		{
+			"or where raw",
+			tb().Where("a", 1).OrWhereRaw("b = ?", 2),
+			`select * from "t" where "a" = $1 or b = $2`,
+			[]any{1, 2},
+		},
+		{
+			"group by raw, or having, having raw",
+			tb().GroupByRaw("date(x)").Having("n", ">", 1).OrHaving("m", 2).HavingRaw("count(*) > ?", 3),
+			`select * from "t" group by date(x) having "n" > $1 or "m" = $2 and count(*) > $3`,
+			[]any{1, 2, 3},
+		},
 		{"take, and a page number below 1", tb().Take(3).ForPage(0, 5), `select * from "t" limit 5 offset 0`, nil},
 		{"tap", tb().Tap(func(q *db.Builder) { q.Where("a", 1) }), `select * from "t" where "a" = $1`, []any{1}},
-		{"negative limit ignored, negative offset clamped", tb().Limit(-1).Offset(-5), `select * from "t" offset 0`, nil},
+		{
+			"negative limit ignored, negative offset clamped",
+			tb().Limit(-1).Offset(-5),
+			`select * from "t" offset 0`,
+			nil,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -306,11 +320,17 @@ func TestMustSQLAndMustRawSQL(t *testing.T) {
 		call func()
 		want error
 	}{
-		"MustSQL, invalid operator":    {func() { db.Use(db.Postgres).Table("t").Where("a", "bogus", 1).MustSQL() }, db.ErrInvalidOperator},
-		"MustSQL, no table":            {func() { db.Use(db.Postgres).NewQuery().MustSQL() }, db.ErrNoTable},
-		"MustSQL, unknown dialect":     {func() { db.Use(db.Dialect(99)).Table("t").MustSQL() }, db.ErrUnknownDialect},
-		"MustRawSQL, invalid operator": {func() { db.Use(db.Postgres).Table("t").Where("a", "bogus", 1).MustRawSQL() }, db.ErrInvalidOperator},
-		"MustRawSQL, no table":         {func() { db.Use(db.Postgres).NewQuery().MustRawSQL() }, db.ErrNoTable},
+		"MustSQL, invalid operator": {
+			func() { db.Use(db.Postgres).Table("t").Where("a", "bogus", 1).MustSQL() },
+			db.ErrInvalidOperator,
+		},
+		"MustSQL, no table":        {func() { db.Use(db.Postgres).NewQuery().MustSQL() }, db.ErrNoTable},
+		"MustSQL, unknown dialect": {func() { db.Use(db.Dialect(99)).Table("t").MustSQL() }, db.ErrUnknownDialect},
+		"MustRawSQL, invalid operator": {
+			func() { db.Use(db.Postgres).Table("t").Where("a", "bogus", 1).MustRawSQL() },
+			db.ErrInvalidOperator,
+		},
+		"MustRawSQL, no table": {func() { db.Use(db.Postgres).NewQuery().MustRawSQL() }, db.ErrNoTable},
 	}
 	for name, tc := range bad {
 		t.Run(name, func(t *testing.T) {

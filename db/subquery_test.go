@@ -3,8 +3,9 @@ package db_test
 import (
 	"testing"
 
-	"github.com/akfaiz/quill/db"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/akfaiz/quill/db"
 )
 
 func TestSubqueryAndUnionGolden(t *testing.T) {
@@ -12,7 +13,11 @@ func TestSubqueryAndUnionGolden(t *testing.T) {
 		{
 			name: "select sub and from sub",
 			build: func(d db.Dialect) *db.Builder {
-				cnt := db.Use(d).Table("posts").SelectRaw("count(*)").WhereColumn("posts.uid", "users.id").Where("pub", true)
+				cnt := db.Use(d).
+					Table("posts").
+					SelectRaw("count(*)").
+					WhereColumn("posts.uid", "users.id").
+					Where("pub", true)
 				inner := db.Use(d).Table("users").Select("id", "name").Where("age", ">", 18)
 				return db.NewBuilder(d).FromSub(inner, "u").SelectSub(cnt, "post_count").Where("u.id", 5)
 			},
