@@ -3,10 +3,10 @@ package integration
 import (
 	"context"
 	"database/sql"
-	"reflect"
 	"testing"
 
 	"github.com/akfaiz/quill/db"
+	"github.com/stretchr/testify/require"
 )
 
 // Helpers shared by the SQLite and the PostgreSQL/MySQL suites.
@@ -31,24 +31,10 @@ func names(us []User) []string {
 	return out
 }
 
-func eq(t *testing.T, got, want any) {
-	t.Helper()
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %#v, want %#v", got, want)
-	}
-}
-
-func noErr(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func pluckNames(t *testing.T, b *db.Builder) []string {
 	t.Helper()
 	var out []string
-	noErr(t, b.Pluck(ctx, "name", &out))
+	require.NoError(t, b.Pluck(ctx, "name", &out))
 	return out
 }
 
@@ -93,8 +79,7 @@ var seedStatements = []string{
 func execAll(t *testing.T, raw *sql.DB, stmts []string) {
 	t.Helper()
 	for _, st := range stmts {
-		if _, err := raw.ExecContext(ctx, st); err != nil {
-			t.Fatalf("setup failed: %v\n%s", err, st)
-		}
+		_, err := raw.ExecContext(ctx, st)
+		require.NoError(t, err, "setup failed: %s", st)
 	}
 }

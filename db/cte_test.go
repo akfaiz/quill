@@ -1,8 +1,11 @@
 package db_test
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -171,9 +174,8 @@ func TestCTEErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := tc.build.ToSQL(); !errors.Is(err, tc.want) {
-				t.Errorf("got %v want %v", err, tc.want)
-			}
+			_, _, err := tc.build.ToSQL()
+			assert.ErrorIs(t, err, tc.want)
 		})
 	}
 }
@@ -185,16 +187,12 @@ func TestCTESnapshotAndClone(t *testing.T) {
 	clone := base.Clone().With("d", db.Use(db.Postgres).Table("posts"))
 
 	got, _, err := base.ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := `with "c" as (select * from "users") select * from "c"`; got != want {
 		t.Errorf("base\n got: %s\nwant: %s", got, want)
 	}
 	got, _, err = clone.ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := `with "c" as (select * from "users"), "d" as (select * from "posts") select * from "c"`; got != want {
 		t.Errorf("clone\n got: %s\nwant: %s", got, want)
 	}

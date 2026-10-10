@@ -10,6 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/internal/errs"
 )
 
@@ -59,9 +63,7 @@ func result(t *testing.T, cols []string, data ...[]driver.Value) *sql.Rows {
 	db := sql.OpenDB(connector{dataset{cols, data}})
 	t.Cleanup(func() { _ = db.Close() })
 	rs, err := db.Query("ignored")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = rs.Close() })
 	return rs
 }
@@ -106,12 +108,8 @@ func TestSliceIntoStructs(t *testing.T) {
 		row{int64(2), "bob", nil, nil, "hi", false, 2.5, at, nil, nil, nil},
 	)
 	var got []user
-	if err := Slice(rs, &got); err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("got %d rows", len(got))
-	}
+	require.NoError(t, Slice(rs, &got))
+	require.Len(t, got, 2)
 	a, b := got[0], got[1]
 	if a.ID != 1 || a.UserName != "ann" || a.Email == nil || *a.Email != "a@x" || a.Age == nil || *a.Age != 30 {
 		t.Errorf("row 0 wrong: %+v", a)
@@ -130,9 +128,7 @@ func TestSliceIntoStructs(t *testing.T) {
 func TestSliceIntoPointerElementsAndEmbedding(t *testing.T) {
 	rs := result(t, []string{"ID", "USER_NAME"}, row{int64(7), "x"})
 	var got []*user // case-insensitive column match, embedded struct promoted
-	if err := Slice(rs, &got); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(rs, &got))
 	if len(got) != 1 || got[0].ID != 7 || got[0].UserName != "x" {
 		t.Errorf("got %+v", got)
 	}
@@ -144,9 +140,7 @@ func TestSliceIntoPointerElementsAndEmbedding(t *testing.T) {
 	}
 	rs = result(t, []string{"id", "name"}, row{int64(9), "n"})
 	var pe []ptrEmbed // nil embedded pointer to an exported type is allocated on demand
-	if err := Slice(rs, &pe); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(rs, &pe))
 	if pe[0].Exported == nil || pe[0].ID != 9 || pe[0].Name != "n" {
 		t.Errorf("embedded pointer not allocated: %+v", pe[0])
 	}
@@ -161,9 +155,7 @@ func TestEmbeddedPointerToUnexportedTypeIsIgnored(t *testing.T) {
 	}
 	rs := result(t, []string{"id", "name"}, row{int64(9), "n"})
 	var got []hiddenPtr
-	if err := Slice(rs, &got); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(rs, &got))
 	if got[0].base != nil || got[0].Name != "n" {
 		t.Errorf("got %+v", got[0])
 	}
@@ -176,9 +168,7 @@ func TestOuterFieldShadowsEmbedded(t *testing.T) {
 	}
 	rs := result(t, []string{"id"}, row{"outer-wins"})
 	var got []outer
-	if err := Slice(rs, &got); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(rs, &got))
 	if got[0].ID != "outer-wins" || got[0].base.ID != 0 {
 		t.Errorf("got %+v", got[0])
 	}
@@ -187,30 +177,22 @@ func TestOuterFieldShadowsEmbedded(t *testing.T) {
 func TestSliceIntoMaps(t *testing.T) {
 	rs := result(t, []string{"name", "age", "raw"}, row{[]byte("ann"), int64(3), []byte("b")}, row{"bob", nil, nil})
 	var got []map[string]any
-	if err := Slice(rs, &got); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(rs, &got))
 	want := []map[string]any{
 		{"name": "ann", "age": int64(3), "raw": "b"}, // []byte arrives as string
 		{"name": "bob", "age": nil, "raw": nil},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %#v\nwant %#v", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestSliceIntoScalars(t *testing.T) {
 	var ints []int
-	if err := Slice(result(t, []string{"n"}, row{int64(1)}, row{nil}, row{int64(3)}), &ints); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(result(t, []string{"n"}, row{int64(1)}, row{nil}, row{int64(3)}), &ints))
 	if !reflect.DeepEqual(ints, []int{1, 0, 3}) { // NULL -> 0
 		t.Errorf("ints = %v", ints)
 	}
 	var strs []*string
-	if err := Slice(result(t, []string{"s"}, row{"a"}, row{nil}), &strs); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(result(t, []string{"s"}, row{"a"}, row{nil}), &strs))
 	if len(strs) != 2 || strs[0] == nil || *strs[0] != "a" || strs[1] != nil {
 		t.Errorf("strs = %v", strs)
 	}
@@ -223,9 +205,7 @@ func TestSliceIntoScalars(t *testing.T) {
 
 func TestSliceEmptyResultIsNonNil(t *testing.T) {
 	var got []user
-	if err := Slice(result(t, []string{"id"}), &got); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, Slice(result(t, []string{"id"}), &got))
 	if got == nil || len(got) != 0 {
 		t.Errorf("want empty non-nil slice, got %#v", got)
 	}
@@ -286,9 +266,7 @@ func TestInvalidDestinations(t *testing.T) {
 		"nil":         Slice(result(t, two), nil),
 		"not a slice": Slice(result(t, two), &one),
 	} {
-		if !errors.Is(err, errs.ErrInvalidArgs) {
-			t.Errorf("%s: got %v, want ErrInvalidArgs", name, err)
-		}
+		assert.ErrorIs(t, err, errs.ErrInvalidArgs, name)
 	}
 }
 
@@ -304,15 +282,11 @@ func TestMapperReusedAcrossRows(t *testing.T) {
 	rs := result(t, []string{"id", "user_name"}, row{int64(1), "a"}, row{int64(2), nil})
 	cols, _ := rs.Columns()
 	m, err := NewMapper(reflect.TypeFor[user](), cols)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	var seen []user
 	for rs.Next() {
 		var u user
-		if err := m.Scan(rs, reflect.ValueOf(&u).Elem()); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, m.Scan(rs, reflect.ValueOf(&u).Elem()))
 		seen = append(seen, u)
 	}
 	if len(seen) != 2 || seen[0].UserName != "a" || seen[1].UserName != "" || seen[1].ID != 2 {
@@ -326,9 +300,7 @@ func TestMapperReusedAcrossRows(t *testing.T) {
 func TestTargetNullGuard(t *testing.T) {
 	var s string
 	target, post := Target(reflect.ValueOf(&s).Elem())
-	if post == nil {
-		t.Fatal("plain string needs a post step")
-	}
+	require.NotNil(t, post)
 	if _, ok := target.(**string); !ok {
 		t.Errorf("target is %T, want **string", target)
 	}
@@ -365,9 +337,7 @@ func TestValueOfColumn(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := ValueOfColumn(tc.elem, tc.col)
 			if tc.bad {
-				if !errors.Is(err, errs.ErrInvalidArgs) {
-					t.Errorf("want ErrInvalidArgs, got %v", err)
-				}
+				assert.ErrorIs(t, err, errs.ErrInvalidArgs)
 				return
 			}
 			if err != nil || !reflect.DeepEqual(got, tc.want) {
@@ -400,9 +370,7 @@ func TestFields(t *testing.T) {
 	// own fields first (declaration order), then fields promoted from embedded structs
 	want := []brief{{"id", true}, {"name", false}, {"email", true}, {"created", false}}
 	// base.ID is shadowed by tagged.ID, so only 4 columns remain
-	if !reflect.DeepEqual(names, want) {
-		t.Errorf("got %+v\nwant %+v", names, want)
-	}
+	assert.Equal(t, want, names)
 }
 
 func TestFieldValue(t *testing.T) {
@@ -479,9 +447,7 @@ func TestToRowsOmitEmptyAndPassThrough(t *testing.T) {
 	email := "a@x"
 	typ := reflect.TypeFor[tagged]()
 	rows, err := ToRows(typ, []reflect.Value{reflect.ValueOf(tagged{Name: "n", Email: &email})})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	// id is omitempty and zero -> left out; email is set -> kept; secret is db:"-"
 	if _, has := rows[0]["id"]; has {
 		t.Errorf("zero omitempty field was written: %v", rows[0])
@@ -498,16 +464,12 @@ func TestToRowsBatchKeepsAColumnIfAnyRowSetsIt(t *testing.T) {
 	typ := reflect.TypeFor[tagged]()
 	vals := []reflect.Value{reflect.ValueOf(tagged{Name: "a"}), reflect.ValueOf(tagged{ID: 9, Name: "b"})}
 	rows, err := ToRows(typ, vals)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if rows[0]["id"] != int64(0) || rows[1]["id"] != int64(9) {
 		t.Errorf("id must be written for every row once any row sets it: %v", rows)
 	}
 	for i, r := range rows {
-		if len(r) != len(rows[0]) {
-			t.Errorf("row %d has %d columns, row 0 has %d", i, len(r), len(rows[0]))
-		}
+		assert.Len(t, r, len(rows[0]), "row %d", i)
 	}
 }
 
@@ -521,18 +483,14 @@ func TestToRowsNilEmbeddedPointer(t *testing.T) {
 
 	// alone, a nil embedded pointer has no value: the column is left out (the database default applies)
 	rows, err := ToRows(typ, []reflect.Value{reflect.ValueOf(holder{Name: "n"})})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, has := rows[0]["deep"]; has {
 		t.Errorf("column behind a nil embedded pointer should be omitted: %v", rows[0])
 	}
 
 	// in a batch where another row sets it, every row must carry the column: nil becomes NULL
 	rows, err = ToRows(typ, []reflect.Value{reflect.ValueOf(holder{Name: "a"}), reflect.ValueOf(holder{Inner: &Inner{"x"}, Name: "b"})})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if v, has := rows[0]["deep"]; !has || v != nil || rows[1]["deep"] != "x" {
 		t.Errorf("mixed batch: got %v / %v", rows[0], rows[1])
 	}

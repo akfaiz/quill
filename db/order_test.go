@@ -1,8 +1,9 @@
 package db_test
 
 import (
-	"github.com/akfaiz/quill/db"
 	"testing"
+
+	"github.com/akfaiz/quill/db"
 )
 
 func TestOrderingGolden(t *testing.T) {

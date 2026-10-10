@@ -6,6 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/db"
 )
 
@@ -91,13 +95,9 @@ func TestTableName(t *testing.T) {
 // A TableName that panics on a zero value is an error, not a crash in the caller.
 func TestTableNamePanicBecomesAnError(t *testing.T) {
 	_, err := db.TableName[derefTable]()
-	if !errors.Is(err, db.ErrInvalidArgs) {
-		t.Fatalf("got %v, want ErrInvalidArgs", err)
-	}
+	assert.ErrorIs(t, err, db.ErrInvalidArgs)
 	for _, want := range []string{"derefTable", "panicked", "zero value"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q should mention %q", err, want)
-		}
+		assert.Contains(t, err.Error(), want)
 	}
 	// the same failure surfaces through From, at the terminal call
 	q := db.From[derefTable](db.Use(db.Postgres)).Where("id", 1)
@@ -119,17 +119,13 @@ func TestTableNameIsEvaluatedOncePerType(t *testing.T) {
 		}
 	}
 	db.From[countedTable](db.Use(db.Postgres))
-	if countedCalls != 1 {
-		t.Errorf("TableName was evaluated %d times, want 1", countedCalls)
-	}
+	assert.Equal(t, 1, countedCalls)
 }
 
 func TestFromUsesTheTypesTable(t *testing.T) {
 	conn := db.Use(db.Postgres) // building SQL never touches the connection
 	sql, args, err := db.From[valueTable](conn).Where("id", 7).Builder().ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := `select * from "value_rows" where "id" = $1`; sql != want || !reflect.DeepEqual(args, []any{7}) {
 		t.Errorf("got %s %v", sql, args)
 	}

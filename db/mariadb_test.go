@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/akfaiz/quill/db"
 )
 
@@ -38,9 +40,7 @@ func TestMariaDBDiffersFromMySQLInTwoPlaces(t *testing.T) {
 		// scalar values are unaffected
 		a, _, _ := db.Use(db.MySQL).Table("t").Where("id", 1).UpdateSQL(map[string]any{"opts->n": 1})
 		b, _, _ := db.Use(db.MariaDB).Table("t").Where("id", 1).UpdateSQL(map[string]any{"opts->n": 1})
-		if a != b {
-			t.Errorf("scalar JSON update differs:\n mysql   %s\n mariadb %s", a, b)
-		}
+		assert.Equal(t, b, a)
 	})
 
 	t.Run("lateral joins are unsupported", func(t *testing.T) {

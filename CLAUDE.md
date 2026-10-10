@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `quill`: a fluent SQL query builder for Go (not an ORM) for PostgreSQL, MySQL, MariaDB and SQLite. The module is
 `github.com/akfaiz/quill`; the **public package is `db`** (`github.com/akfaiz/quill/db`), so callers write
-`db.Use(db.Postgres).Table("users")`. The root module is **standard library only**: keep it that way.
+`db.Use(db.Postgres).Table("users")`. The root module is **standard library only at runtime**: keep it that way. The only third-party dependency is
+`github.com/stretchr/testify`, used by tests alone (`require`/`assert`); never import it from non-test code.
 
 ## Commands
 
@@ -66,6 +67,7 @@ interpolation), `errs` (shared sentinel errors, re-exported by `db`).
 
 ## Testing conventions
 
+- Assert with testify: `require` for steps later code depends on (`require.NoError`), `assert` otherwise; expected value first.
 - **Golden tests run every dialect.** The runners (`golden`, `stmtCase`, `perCase`) take `pg`, `my`, `lite` expectations
   and an optional `maria` override; empty means "same as MySQL", which is how MariaDB inheritance is proven. A SQL change
   needs expectations for all dialects. Tests use `db.Use(...)`, no database.

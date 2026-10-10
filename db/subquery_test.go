@@ -1,9 +1,10 @@
 package db_test
 
 import (
-	"errors"
-	"github.com/akfaiz/quill/db"
 	"testing"
+
+	"github.com/akfaiz/quill/db"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSubqueryAndUnionGolden(t *testing.T) {
@@ -81,9 +82,8 @@ func TestSubqueryAndUnionErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := tc.build.ToSQL(); !errors.Is(err, tc.want) {
-				t.Errorf("got %v want %v", err, tc.want)
-			}
+			_, _, err := tc.build.ToSQL()
+			assert.ErrorIs(t, err, tc.want)
 		})
 	}
 }

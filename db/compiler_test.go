@@ -4,6 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/db"
 )
 
@@ -24,13 +28,9 @@ func FuzzIdentifierQuoting(f *testing.F) {
 			q string
 		}{{db.Postgres, `"`}, {db.SQLite, `"`}, {db.MySQL, "`"}} {
 			sql, _, err := db.Use(tc.d).Table("t").Select(col).ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			want := "select " + tc.q + strings.ReplaceAll(col, tc.q, tc.q+tc.q) + tc.q + " from " + tc.q + "t" + tc.q
-			if sql != want {
-				t.Fatalf("%s: column %q compiled to %q, want %q", tc.d, col, sql, want)
-			}
+			assert.Equal(t, want, sql)
 		}
 	})
 }
@@ -43,9 +43,7 @@ func FuzzRawPlaceholders(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
 		sql, args, err := db.Use(db.Postgres).Table("t").WhereRaw(raw, 1, 2).Where("z", 3).ToSQL()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		if len(args) < 1 || len(args) > 3 {
 			t.Fatalf("got %d args for %q", len(args), raw)
 		}

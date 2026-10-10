@@ -2,8 +2,10 @@ package db_test
 
 import (
 	"errors"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -38,23 +40,15 @@ func runStmts(t *testing.T, cases []stmtCase) {
 			t.Run(tc.name+"/"+dl.d.String(), func(t *testing.T) {
 				sql, args, err := tc.build(dl.d)
 				if dl.want == unsupported {
-					if !errors.Is(err, db.ErrUnsupported) {
-						t.Fatalf("want ErrUnsupported, got sql=%q err=%v", sql, err)
-					}
+					require.ErrorIs(t, err, db.ErrUnsupported, "sql=%q", sql)
 					return
 				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if sql != dl.want {
-					t.Errorf("sql\n got: %s\nwant: %s", sql, dl.want)
-				}
+				require.NoError(t, err)
+				assert.Equal(t, dl.want, sql)
 				if len(args) == 0 && len(tc.args) == 0 {
 					return
 				}
-				if !reflect.DeepEqual(args, tc.args) {
-					t.Errorf("args got %v want %v", args, tc.args)
-				}
+				assert.Equal(t, tc.args, args)
 			})
 		}
 	}
@@ -392,12 +386,8 @@ func TestTruncate(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.d.String()+"/"+tc.tbl, func(t *testing.T) {
 			got, err := db.Use(tc.d).Table(tc.tbl).Prefix("pre_").TruncateSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("got %+v\nwant %+v", got, tc.want)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }

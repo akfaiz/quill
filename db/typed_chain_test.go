@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/db"
 )
 
@@ -124,9 +126,7 @@ func TestTypedChainHelpers(t *testing.T) {
 	conn := db.Use(db.Postgres)
 	sql := func(q *db.Query[chainRow]) string {
 		s, _, err := q.Builder().ToSQL()
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		return s
 	}
 	q := db.From[chainRow](conn).

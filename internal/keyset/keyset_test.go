@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/internal/errs"
 )
 
@@ -33,9 +37,7 @@ func TestRoundTrip(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tok, err := Encode(tc.in)
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			got, err := Decode(tok)
 			if err != nil || !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("Decode(Encode(%#v)) = %#v, %v; want %#v", tc.in, got, err, tc.want)
@@ -70,14 +72,12 @@ func TestDecodeRejectsBadInput(t *testing.T) {
 	}
 	for name, tok := range tests {
 		t.Run(name, func(t *testing.T) {
-			v, err := Decode(tok)
+			_, err := Decode(tok)
 			if name == "trailing garbage" {
 				// the first JSON value is read and the rest ignored: still a valid number, never a panic
 				return
 			}
-			if !errors.Is(err, errs.ErrInvalidArgs) {
-				t.Errorf("Decode(%q) = %#v, %v; want ErrInvalidArgs", tok, v, err)
-			}
+			assert.ErrorIs(t, err, errs.ErrInvalidArgs, "Decode(%q)", tok)
 		})
 	}
 }
@@ -92,9 +92,7 @@ func TestDecodeBeyondInt64FallsBackToFloat(t *testing.T) {
 func TestEncodeNilProducesATokenThatDoesNotDecode(t *testing.T) {
 	// a NULL key cannot be a cursor: it encodes, but the next request is rejected cleanly
 	tok, err := Encode(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if _, err := Decode(tok); !errors.Is(err, errs.ErrInvalidArgs) {
 		t.Errorf("got %v, want ErrInvalidArgs", err)
 	}
@@ -115,9 +113,7 @@ func FuzzDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, tok string) {
 		v, err := Decode(tok)
 		if err != nil {
-			if !errors.Is(err, errs.ErrInvalidArgs) {
-				t.Fatalf("Decode(%q) returned a non-ErrInvalidArgs error: %v", tok, err)
-			}
+			assert.ErrorIs(t, err, errs.ErrInvalidArgs)
 			return
 		}
 		switch v.(type) {
@@ -126,9 +122,7 @@ func FuzzDecode(f *testing.F) {
 			t.Fatalf("Decode(%q) returned %T, want a scalar", tok, v)
 		}
 		again, err := Encode(v)
-		if err != nil {
-			t.Fatalf("a decoded value must re-encode: %v", err)
-		}
+		assert.Equal(t, nil, err)
 		back, err := Decode(again)
 		if err != nil || !sameValue(v, back) {
 			t.Fatalf("round trip of %#v gave %#v (%v)", v, back, err)

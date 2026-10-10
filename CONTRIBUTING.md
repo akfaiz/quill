@@ -19,8 +19,10 @@ and hidden from users. Code that works on `Builder`'s unexported state (the comp
 `where`/`join`/`write` code, the executor) has to stay in `db/`, because Go cannot define methods
 on a type from another package.
 
-The root module has **no third-party dependencies** and should stay that way. Anything that needs
-a driver or test infrastructure belongs in `test/integration/`.
+The root module has **no third-party runtime dependencies** and should stay that way. The only
+exception is `github.com/stretchr/testify`, imported from `_test.go` files alone (`require` for steps
+later code depends on, `assert` otherwise). Anything that needs a driver or test infrastructure
+belongs in `test/integration/`.
 
 ## Running the tests
 

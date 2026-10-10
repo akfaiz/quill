@@ -1,10 +1,12 @@
 package db_test
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -160,18 +162,12 @@ func runGolden(t *testing.T, tests []golden) {
 		for _, dl := range dialects {
 			t.Run(tc.name+"/"+dl.d.String(), func(t *testing.T) {
 				sql, args, err := tc.build(dl.d).ToSQL()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if want := dl.want(tc); sql != want {
-					t.Errorf("sql\n got: %s\nwant: %s", sql, want)
-				}
+				require.NoError(t, err)
+				assert.Equal(t, dl.want(tc), sql)
 				if len(args) == 0 && len(tc.args) == 0 {
 					return
 				}
-				if !reflect.DeepEqual(args, tc.args) {
-					t.Errorf("args got %v want %v", args, tc.args)
-				}
+				assert.Equal(t, tc.args, args)
 			})
 		}
 	}
@@ -191,9 +187,8 @@ func TestErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := tc.build.ToSQL(); !errors.Is(err, tc.want) {
-				t.Errorf("got %v want %v", err, tc.want)
-			}
+			_, _, err := tc.build.ToSQL()
+			assert.ErrorIs(t, err, tc.want)
 		})
 	}
 }
@@ -214,13 +209,9 @@ func TestCloneIndependent(t *testing.T) {
 func TestToRawSQL(t *testing.T) {
 	q := db.Use(db.Postgres).Table("t").Where("name", "o'brien").Where("n", ">", 3).Where("ok", true)
 	got, err := q.ToRawSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := `select * from "t" where "name" = 'o''brien' and "n" > 3 and "ok" = true`
-	if got != want {
-		t.Errorf("got %s want %s", got, want)
-	}
+	assert.Equal(t, want, got)
 
 	m, _ := db.Use(db.MySQL).Table("t").Where("a", 1).Where("b", "x").ToRawSQL()
 	if m != "select * from `t` where `a` = 1 and `b` = 'x'" {
@@ -262,12 +253,8 @@ func TestBuilderWrappers(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sql, args, err := tc.build.ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if sql != tc.sql {
-				t.Errorf("sql\n got: %s\nwant: %s", sql, tc.sql)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.sql, sql)
 			if len(args)+len(tc.args) > 0 && !reflect.DeepEqual(args, tc.args) {
 				t.Errorf("args got %v want %v", args, tc.args)
 			}
@@ -287,24 +274,16 @@ func TestErrAccessorAndRawSQLLiterals(t *testing.T) {
 	got, err := db.Use(db.SQLite).Table("t").
 		Where("a", nil).Where("b", []byte("x'y")).Where("c", at).Where("d", 1.5).Where("e", false).
 		ToRawSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := `select * from "t" where "a" is null and "b" = 'x''y' and "c" = '2024-01-02 03:04:05' and "d" = 1.5 and "e" = false`
-	if got != want {
-		t.Errorf("got %s\nwant %s", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestToRawSQLKeepsPostgresJSONQuestionMark(t *testing.T) {
 	got, err := db.Use(db.Postgres).Table("t").WhereJsonContainsKey("o->k").Where("a", 1).ToRawSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := `select * from "t" where coalesce(("o")::jsonb ? 'k', false) and "a" = 1`
-	if got != want {
-		t.Errorf("got %s\nwant %s", got, want)
-	}
+	assert.Equal(t, want, got)
 }
 
 func TestMustSQLAndMustRawSQL(t *testing.T) {
@@ -341,9 +320,7 @@ func TestMustSQLAndMustRawSQL(t *testing.T) {
 				if !ok {
 					t.Fatalf("panic value is %T (%v), want an error", r, r)
 				}
-				if !errors.Is(err, tc.want) {
-					t.Errorf("recovered %v, want it to wrap %v", err, tc.want)
-				}
+				assert.ErrorIs(t, err, tc.want)
 			}()
 			tc.call()
 			t.Error("expected a panic")

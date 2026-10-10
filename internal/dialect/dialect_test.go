@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/akfaiz/quill/internal/errs"
 )
 
@@ -51,9 +53,7 @@ func FuzzQuoteCannotBeEscaped(f *testing.F) {
 		}{{Postgres(), `"`}, {SQLite(), `"`}, {MySQL(), "`"}} {
 			out := tc.g.Quote(in)
 			want := tc.q + strings.ReplaceAll(in, tc.q, tc.q+tc.q) + tc.q
-			if out != want {
-				t.Fatalf("Quote(%q) = %q, want %q", in, out, want)
-			}
+			assert.Equal(t, want, out)
 		}
 	})
 }
@@ -206,9 +206,7 @@ func TestMariaDBInheritsMySQL(t *testing.T) {
 		"Random":         {my.Random(&seed), ma.Random(&seed)},
 	}
 	for name, pair := range same {
-		if pair[0] != pair[1] {
-			t.Errorf("%s: mysql %q, mariadb %q", name, pair[0], pair[1])
-		}
+		assert.Equal(t, pair[1], pair[0], name)
 	}
 	pre1, post1 := my.DateValueWrap()
 	pre2, post2 := ma.DateValueWrap()

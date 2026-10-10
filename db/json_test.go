@@ -1,9 +1,11 @@
 package db_test
 
 import (
-	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -44,23 +46,15 @@ func runPer(t *testing.T, cases []perCase) {
 			t.Run(tc.name+"/"+dl.d.String(), func(t *testing.T) {
 				sql, args, err := tc.build(dl.d)
 				if dl.w.err != nil {
-					if !errors.Is(err, dl.w.err) {
-						t.Fatalf("want error %v, got sql=%q err=%v", dl.w.err, sql, err)
-					}
+					require.ErrorIs(t, err, dl.w.err, "sql=%q", sql)
 					return
 				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if sql != dl.w.sql {
-					t.Errorf("sql\n got: %s\nwant: %s", sql, dl.w.sql)
-				}
+				require.NoError(t, err)
+				assert.Equal(t, dl.w.sql, sql)
 				if len(args) == 0 && len(dl.w.args) == 0 {
 					return
 				}
-				if !reflect.DeepEqual(args, dl.w.args) {
-					t.Errorf("args got %#v want %#v", args, dl.w.args)
-				}
+				assert.Equal(t, dl.w.args, args)
 			})
 		}
 	}
@@ -228,9 +222,8 @@ func TestJSONErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := tc.build.ToSQL(); !errors.Is(err, tc.want) {
-				t.Errorf("got %v want %v", err, tc.want)
-			}
+			_, _, err := tc.build.ToSQL()
+			assert.ErrorIs(t, err, tc.want)
 		})
 	}
 }
@@ -241,9 +234,7 @@ func TestJSONNegatedAndOrVariantsPostgres(t *testing.T) {
 		WhereJsonDoesntContainKey("o->b").
 		OrWhereJsonContainsKey("o->c").
 		ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := `select * from "t" where ("o"->'a')::jsonb @> $1 and not coalesce(("o")::jsonb ? 'b', false) or coalesce(("o")::jsonb ? 'c', false)`
 	if sql != want || !reflect.DeepEqual(args, []any{"1"}) {
 		t.Errorf("got %s %v", sql, args)
@@ -256,9 +247,7 @@ func TestJSONOverlapVariantsMySQL(t *testing.T) {
 		WhereJsonDoesntOverlap("o->x", []int{2}).
 		OrWhereJsonDoesntOverlap("o->y", []int{3}).
 		ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := "select * from `t` where json_overlaps(`o`, ?) and not json_overlaps(json_extract(`o`, '$.\"x\"'), ?) or not json_overlaps(json_extract(`o`, '$.\"y\"'), ?)"
 	if sql != want || !reflect.DeepEqual(args, []any{"[1]", "[2]", "[3]"}) {
 		t.Errorf("got %s %v", sql, args)

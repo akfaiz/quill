@@ -5,7 +5,7 @@ arguments and can optionally run it through `database/sql`. **It is not an ORM**
 models, relations, hooks or migrations.
 
 - Dialects: PostgreSQL, MySQL, MariaDB, SQLite
-- Standard library only at runtime (no third-party dependencies)
+- Standard library only at runtime (no third-party dependencies; testify is used by tests only)
 - Go 1.25 or newer
 - Values are always bound, identifiers are always quoted, and risky operations (an unbounded
   `UPDATE` or `DELETE`) are refused unless you confirm them

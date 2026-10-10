@@ -3,9 +3,12 @@ package db_test
 import (
 	"database/sql"
 	"errors"
-	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -51,12 +54,8 @@ func TestRow(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := db.Row(tc.in)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("got  %#v\nwant %#v", got, tc.want)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -87,18 +86,14 @@ func TestRowErrors(t *testing.T) {
 func TestRowsBatchUsesTheUnionOfColumns(t *testing.T) {
 	// ID is omitempty: zero in every row -> dropped; non-zero in one row -> kept for all
 	rows, err := db.Rows([]account{{Name: "a"}, {Name: "b"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, r := range rows {
 		if _, has := r["id"]; has {
 			t.Errorf("id should be dropped when zero everywhere: %v", r)
 		}
 	}
 	rows, err = db.Rows([]account{{Name: "a"}, {ID: 9, Name: "b"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if rows[0]["id"] != int64(0) || rows[1]["id"] != int64(9) {
 		t.Errorf("id should be written for every row once any row sets it: %v", rows)
 	}
@@ -126,19 +121,13 @@ func TestRowsPointersAndEmpty(t *testing.T) {
 
 func TestRowFeedsTheSQLBuilders(t *testing.T) {
 	row, err := db.Row(account{Name: "Ann", Email: str("a@x")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	sql, args, err := db.Use(db.Postgres).Table("accounts").InsertSQL(row)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := `insert into "accounts" ("email", "name", "nick") values ($1, $2, $3)`; sql != want {
 		t.Errorf("got %s\nwant %s", sql, want)
 	}
-	if len(args) != 3 {
-		t.Errorf("args = %v", args)
-	}
+	require.Len(t, args, 3)
 	// an all-omitted struct becomes "default values"
 	row, _ = db.Row(struct {
 		A int `db:"a,omitempty"`

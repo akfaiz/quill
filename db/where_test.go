@@ -1,10 +1,13 @@
 package db_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -246,19 +249,11 @@ func TestWhereFamilyGolden(t *testing.T) {
 	} {
 		t.Run("like/"+c.d.String(), func(t *testing.T) {
 			sql, args, err := likeCase.build(c.d).ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if sql != c.want {
-				t.Errorf("sql\n got: %s\nwant: %s", sql, c.want)
-			}
-			if len(args) != len(c.args) {
-				t.Fatalf("args got %v want %v", args, c.args)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, c.want, sql)
+			assert.Equal(t, len(c.args), len(args))
 			for i := range args {
-				if args[i] != c.args[i] {
-					t.Errorf("arg %d got %v want %v", i, args[i], c.args[i])
-				}
+				assert.Equal(t, c.args[i], args[i])
 			}
 		})
 	}
@@ -283,9 +278,8 @@ func TestWhereFamilyErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := tc.build.ToSQL(); !errors.Is(err, tc.want) {
-				t.Errorf("got %v want %v", err, tc.want)
-			}
+			_, _, err := tc.build.ToSQL()
+			assert.ErrorIs(t, err, tc.want)
 		})
 	}
 }
@@ -359,12 +353,8 @@ func TestEveryWhereVariantUsesTheRightConnective(t *testing.T) {
 	for _, v := range vs {
 		t.Run(v.name, func(t *testing.T) {
 			sql, _, err := v.add(db.Use(d).Table("t").Where("a", 1)).ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.HasPrefix(sql, `select * from "t" where "a" = $1`+v.want) {
-				t.Errorf("connective %q expected after the first predicate:\n%s", v.want, sql)
-			}
+			require.NoError(t, err)
+			assert.True(t, strings.HasPrefix(sql, `select * from "t" where "a" = $1`+v.want))
 		})
 	}
 
@@ -385,12 +375,8 @@ func TestEveryWhereVariantUsesTheRightConnective(t *testing.T) {
 	for _, v := range havings {
 		t.Run(v.name, func(t *testing.T) {
 			sql, _, err := v.add(db.Use(d).Table("t").GroupBy("g").Having("a", 1)).ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(sql, `having "a" = $1`+v.want) {
-				t.Errorf("connective %q expected after the first having:\n%s", v.want, sql)
-			}
+			require.NoError(t, err)
+			assert.Contains(t, sql, `having "a" = $1`+v.want)
 		})
 	}
 }

@@ -2,8 +2,11 @@ package db_test
 
 import (
 	"errors"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -93,27 +96,19 @@ func TestJoinDialectSpecific(t *testing.T) {
 	}
 
 	got, args, err := lateral(db.Postgres).ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := `select * from "users" inner join lateral (select * from "posts" where "user_id" = $1 limit 3) as "recent" on true left join lateral (select * from "c") as "cc" on true`
 	if got != want || len(args) != 1 {
 		t.Errorf("pg lateral\n got: %s %v\nwant: %s", got, args, want)
 	}
 
 	got, _, err = lateral(db.MySQL).ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want = "select * from `users` inner join lateral (select * from `posts` where `user_id` = ? limit 3) as `recent` on true left join lateral (select * from `c`) as `cc` on true"
-	if got != want {
-		t.Errorf("mysql lateral\n got: %s\nwant: %s", got, want)
-	}
+	assert.Equal(t, want, got)
 
 	got, _, err = straight(db.MySQL).ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want = "select * from `a` straight_join `b` on `b`.`id` = `a`.`id`"; got != want {
 		t.Errorf("mysql straight\n got: %s\nwant: %s", got, want)
 	}
@@ -153,9 +148,8 @@ func TestJoinErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := tc.build.ToSQL(); !errors.Is(err, tc.want) {
-				t.Errorf("got %v want %v", err, tc.want)
-			}
+			_, _, err := tc.build.ToSQL()
+			assert.ErrorIs(t, err, tc.want)
 		})
 	}
 }
@@ -211,15 +205,9 @@ func TestJoinVariantsPostgres(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			sql, args, err := tc.build.ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if sql != tc.sql {
-				t.Errorf("sql\n got: %s\nwant: %s", sql, tc.sql)
-			}
-			if !reflect.DeepEqual(args, tc.args) {
-				t.Errorf("args got %v want %v", args, tc.args)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.sql, sql)
+			assert.Equal(t, tc.args, args)
 		})
 	}
 }

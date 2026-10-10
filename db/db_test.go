@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/db"
 )
 
@@ -27,9 +29,7 @@ func TestUseSetsTheDialectThenChainsFromTable(t *testing.T) {
 				OrderByDesc("id").
 				Limit(10).
 				ToSQL()
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
 			if sql != tc.want || !reflect.DeepEqual(args, []any{100}) {
 				t.Errorf("got  %s %v\nwant %s [100]", sql, args, tc.want)
 			}
@@ -53,9 +53,7 @@ func TestUseIsReusableAndKeepsBuildersIndependent(t *testing.T) {
 
 func TestUseAppliesOptions(t *testing.T) {
 	sql, _, err := db.Use(db.MySQL, db.WithPrefix("app_")).Table("users as u").Where("u.id", 1).ToSQL()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	if want := "select * from `app_users` as `app_u` where `app_u`.`id` = ?"; sql != want {
 		t.Errorf("got %s\nwant %s", sql, want)
 	}
