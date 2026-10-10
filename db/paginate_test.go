@@ -121,6 +121,12 @@ func TestCursorPaginate(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("a union is rejected", func(t *testing.T) {
+		q := conn.Table("people").Union(conn.Table("others"))
+		_, err := q.CursorPaginate(ctx, 2, "", &out)
+		require.ErrorIs(t, err, db.ErrInvalidArgs)
+	})
+
 	t.Run("descending on another column", func(t *testing.T) {
 		mock.ExpectQuery(`SELECT * FROM "people" ORDER BY "id" DESC LIMIT 2`).WillReturnRows(people(1))
 		_, err := conn.Table("people").CursorPaginate(ctx, 1, "", &out, db.CursorOptions{Desc: true})

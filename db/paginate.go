@@ -184,6 +184,9 @@ func (b *Builder) CursorPaginate(
 			o.Column = "id"
 		}
 	}
+	if len(b.unions) > 0 {
+		return CursorPage{}, errKeysetUnion
+	}
 	q := b.Clone().Reorder()
 	dir, cmp := "asc", ">"
 	if o.Desc {

@@ -103,6 +103,21 @@ func TestChunkByID(t *testing.T) {
 		}
 	})
 
+	t.Run("user order by is replaced by the key order", func(t *testing.T) {
+		mock.ExpectQuery(`SELECT * FROM "people" WHERE "id" IS NOT NULL ORDER BY "id" ASC LIMIT 2`).
+			WillReturnRows(people(2))
+		mock.ExpectQuery(`SELECT * FROM "people" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 2`).
+			WithArgs(2).
+			WillReturnRows(people(0))
+		require.NoError(t, conn.Table("people").OrderBy("name").OrderByDesc("id").
+			ChunkByID(ctx, 2, &batch, func() (bool, error) { return true, nil }))
+	})
+	t.Run("a union is rejected", func(t *testing.T) {
+		q := conn.Table("people").Union(conn.Table("others"))
+		err := q.ChunkByID(ctx, 2, &batch, func() (bool, error) { return true, nil })
+		require.ErrorIs(t, err, db.ErrInvalidArgs)
+	})
+
 	t.Run("custom column", func(t *testing.T) {
 		mock.ExpectQuery(`SELECT * FROM "people" WHERE "name" IS NOT NULL ORDER BY "name" ASC LIMIT 5`).
 			WillReturnRows(people(0))
