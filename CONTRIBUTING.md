@@ -27,6 +27,9 @@ belongs in `test/integration/`.
 
 ## Running the tests
 
+CI (`.github/workflows/ci.yml`) runs build, vet, lint, unit tests and the integration suites on every
+pull request to `main` and every push to `main`; run the same commands below before you push.
+
 ```sh
 go build ./...
 go vet ./...
