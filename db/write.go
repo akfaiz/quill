@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -450,7 +451,20 @@ func (c *compiler) rowIDSubquery(b *Builder) error {
 	return c.subquery(sub)
 }
 
+// joinedOrderLimit rejects ORDER BY and LIMIT on a MySQL-family UPDATE or DELETE
+// with joins: the multiple-table syntax does not accept them, and dropping the
+// LIMIT would widen the write (the limit may be what satisfied requireWhere).
+func (c *compiler) joinedOrderLimit(b *Builder, stmt string) error {
+	if c.d.mysqlFamily() && len(b.joins) > 0 && (b.limit != nil || len(b.orders) > 0) {
+		return fmt.Errorf("%w: order by or limit on %s with joins on %s", ErrUnsupported, stmt, c.d)
+	}
+	return nil
+}
+
 func (c *compiler) update(b *Builder, sets []setItem) error {
+	if err := c.joinedOrderLimit(b, "update"); err != nil {
+		return err
+	}
 	c.write("UPDATE " + c.wrapTable(b.table))
 	viaRowID := !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil)
 	if c.d.mysqlFamily() {
@@ -473,7 +487,7 @@ func (c *compiler) update(b *Builder, sets []setItem) error {
 		if err := c.whereSuffix(b); err != nil {
 			return err
 		}
-		if c.d.mysqlFamily() && len(b.joins) == 0 {
+		if c.d.mysqlFamily() {
 			if err := c.orderLimitSuffix(b); err != nil {
 				return err
 			}
@@ -533,7 +547,9 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 	if err := c.setList(sortedSets(values)); err != nil {
 		return "", nil, err
 	}
-	var onClauses []clause
+	// The wheres and each join's ON conditions are separate predicates ANDed
+	// together; isolated keeps an OR inside one from spilling into the others.
+	conds := isolated(b.wheres)
 	if len(b.joins) > 0 {
 		tables := make([]string, len(b.joins))
 		for i, j := range b.joins {
@@ -541,27 +557,13 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 				return "", nil, fmt.Errorf("%w: subquery joins in UpdateFrom", ErrUnsupported)
 			}
 			tables[i] = c.wrapTable(j.table)
-			onClauses = append(onClauses, j.on...)
+			conds = append(slices.Clip(conds), isolated(j.on)...)
 		}
 		c.write(" FROM " + strings.Join(tables, ", "))
 	}
-	switch {
-	case len(b.wheres) > 0:
+	if len(conds) > 0 {
 		c.write(" WHERE ")
-		if err := c.clauses(b.wheres); err != nil {
-			return "", nil, err
-		}
-		for _, cl := range onClauses {
-			c.write(" ")
-			c.write(cl.conn.String())
-			c.write(" ")
-			if err := c.clause(cl); err != nil {
-				return "", nil, err
-			}
-		}
-	case len(onClauses) > 0:
-		c.write(" WHERE ")
-		if err := c.clauses(onClauses); err != nil {
+		if err := c.clauses(conds); err != nil {
 			return "", nil, err
 		}
 	}
@@ -652,6 +654,9 @@ func (b *Builder) DecrementEachSQL(amounts, extra map[string]any) (string, []any
 // ---- delete / truncate ----
 
 func (c *compiler) delete(b *Builder) error {
+	if err := c.joinedOrderLimit(b, "delete"); err != nil {
+		return err
+	}
 	switch {
 	case !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil):
 		c.write("DELETE FROM " + c.wrapTable(b.table))
@@ -671,9 +676,6 @@ func (c *compiler) delete(b *Builder) error {
 			}
 		}
 		if err := c.whereSuffix(b); err != nil {
-			return err
-		}
-		if err := c.orderLimitSuffix(b); err != nil {
 			return err
 		}
 	default:

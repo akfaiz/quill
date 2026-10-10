@@ -54,7 +54,7 @@ zero-padded for every dialect.
 | `InsertOrIgnore` | `ON CONFLICT DO NOTHING` | `INSERT IGNORE` | `INSERT OR IGNORE` |
 | `Upsert` | `ON CONFLICT (...) DO UPDATE SET x = "excluded"."x"` | `ON DUPLICATE KEY UPDATE x = VALUES(x)` | as PostgreSQL |
 | `RETURNING` | yes | `ErrUnsupported` | yes, SQLite 3.35+ |
-| Update/delete with a join or limit | `ctid` subquery | native | `rowid` subquery |
+| Update/delete with a join or limit | `ctid` subquery | native; join plus order/limit is `ErrUnsupported` | `rowid` subquery |
 | `UpdateFrom` | yes | `ErrUnsupported` | `ErrUnsupported` |
 | `Truncate` | `TRUNCATE ... RESTART IDENTITY` | `TRUNCATE TABLE` | `DELETE` + reset `sqlite_sequence` |
 | `InsertGetID` | `RETURNING "id"` | last insert id | last insert id |

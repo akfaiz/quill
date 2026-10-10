@@ -194,6 +194,7 @@ func (b *Builder) CursorPaginate(
 		if err != nil {
 			return CursorPage{}, err
 		}
+		q.wheres = isolated(q.wheres)
 		q.Where(o.Column, cmp, v)
 	}
 	if err := q.OrderBy(o.Column, dir).Limit(perPage+1).Get(ctx, dest); err != nil {

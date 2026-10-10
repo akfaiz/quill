@@ -102,6 +102,7 @@ func TestCursorPaginate(t *testing.T) {
 	assert.True(t, p.HasMore)
 	assert.NotEmpty(t, p.NextCursor)
 	assert.Len(t, out, 2)
+	afterTwo := p.NextCursor
 
 	// the cursor round-trips into a keyset condition
 	mock.ExpectQuery(`SELECT * FROM "people" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 3`).
@@ -111,6 +112,14 @@ func TestCursorPaginate(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, p.HasMore)
 	assert.Empty(t, p.NextCursor)
+
+	t.Run("keyset condition applies to an existing OR as a whole", func(t *testing.T) {
+		mock.ExpectQuery(`SELECT * FROM "people" WHERE ("a" = $1 OR "b" = $2) AND "id" > $3 ORDER BY "id" ASC LIMIT 3`).
+			WithArgs(1, 2, 2).
+			WillReturnRows(people(1))
+		_, err := conn.Table("people").Where("a", 1).OrWhere("b", 2).CursorPaginate(ctx, 2, afterTwo, &out)
+		require.NoError(t, err)
+	})
 
 	t.Run("descending on another column", func(t *testing.T) {
 		mock.ExpectQuery(`SELECT * FROM "people" ORDER BY "id" DESC LIMIT 2`).WillReturnRows(people(1))

@@ -231,7 +231,10 @@ ReorderBy("id", "desc")          // drop, then order
 ```
 
 `ForPageAfterID(perPage, lastID, column...)` and `ForPageBeforeID(...)` build keyset paging:
-`WHERE "id" > $1 ORDER BY "id" ASC LIMIT n` (a `nil` last id selects `IS NOT NULL`).
+`WHERE "id" > $1 ORDER BY "id" ASC LIMIT n` (a `nil` last id selects `IS NOT NULL`). Existing
+conditions that contain an `OR` or a raw fragment are wrapped in parentheses first, so
+`Where("a", 1).OrWhere("b", 2)` becomes `("a" = $1 OR "b" = $2) AND "id" > $3`. `Find`,
+`CursorPaginate`, `ChunkByID` and `UpdateOrInsert` group their added conditions the same way.
 
 ## Limit and offset
 

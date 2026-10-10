@@ -119,6 +119,19 @@ func (b *Builder) group(dst *[]clause, boolean string, fn func(*Builder), having
 	return b.push(dst, boolean, clause{kind: clauseNested, x: &clauseExt{nested: nested}})
 }
 
+// isolated returns cs wrapped in one parenthesized group when it holds an OR or a
+// raw fragment, so a predicate appended after it with AND applies to the whole
+// condition: "(a OR b) AND id > ?" instead of "a OR b AND id > ?". A list of
+// plain AND clauses is returned unchanged.
+func isolated(cs []clause) []clause {
+	for _, cl := range cs {
+		if cl.kind == clauseRaw || cl.conn == connOr || cl.conn == connOrNot {
+			return []clause{{kind: clauseNested, x: &clauseExt{nested: cs}}}
+		}
+	}
+	return cs
+}
+
 func (b *Builder) dateClause(dst *[]clause, boolean, part, column string, args []any) *Builder {
 	op, val, err := parseOpValue(column, args)
 	if err != nil {

@@ -105,6 +105,8 @@ conn.Table("jobs").Where("state", "queued").OrderBy("id").Limit(10).Update(ctx, 
 ```
 
 MySQL runs these natively (`UPDATE ... JOIN ... SET`, and `ORDER BY ... LIMIT` on a single table).
+MySQL and MariaDB do not accept `ORDER BY` or `LIMIT` on a write with joins, so that combination
+returns `ErrUnsupported` there instead of dropping the limit and touching every joined row.
 PostgreSQL and SQLite rewrite them to `WHERE "ctid" IN (SELECT ...)` and `WHERE "rowid" IN (SELECT ...)`,
 so the join conditions and the limit still apply. On those two, qualified `SET` columns such as
 `"u.vip"` lose their qualifier.
@@ -153,8 +155,9 @@ incremented column of the same name. `DecrementEach` is the counterpart.
 n, err := conn.Table("sessions").Where("expires_at", "<", now).Delete(ctx)
 ```
 
-Joins and limits work like `Update`: native on MySQL (`DELETE alias FROM ... JOIN ...`, plus
-`ORDER BY ... LIMIT`), and a `ctid`/`rowid` subquery on PostgreSQL and SQLite.
+Joins and limits work like `Update`: native on MySQL (`DELETE alias FROM ... JOIN ...`, or
+`ORDER BY ... LIMIT` on a single table; both together return `ErrUnsupported`), and a `ctid`/`rowid`
+subquery on PostgreSQL and SQLite.
 
 ```go
 conn.Table("posts as p").Join("users as u", "u.id", "p.user_id").Where("u.banned", true).Delete(ctx)

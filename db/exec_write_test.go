@@ -203,6 +203,22 @@ func TestUpdateOrInsert(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, changed)
 	})
+	t.Run("attributes apply to an existing OR as a whole", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		conn := db.New(sqlDB, db.Postgres)
+		const where = `WHERE ("tenant" = $1 OR "tenant" = $2) AND "email" = $3`
+		mock.ExpectQuery(`SELECT EXISTS(SELECT * FROM "users" `+where+`) AS "exists"`).
+			WithArgs(1, 2, "a@x").
+			WillReturnRows(exists(true))
+		mock.ExpectExec(`UPDATE "users" SET "name" = $1 WHERE "ctid" IN (SELECT "users"."ctid" FROM "users" `+
+			`WHERE ("tenant" = $2 OR "tenant" = $3) AND "email" = $4 LIMIT 1)`).
+			WithArgs("ann", 1, 2, "a@x").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		changed, err := conn.Table("users").Where("tenant", 1).OrWhere("tenant", 2).
+			UpdateOrInsert(ctx, m("email", "a@x"), m("name", "ann"))
+		require.NoError(t, err)
+		assert.True(t, changed)
+	})
 	t.Run("present with no values is a no-op", func(t *testing.T) {
 		sqlDB, mock := newMock(t)
 		conn := db.New(sqlDB, db.Postgres)
