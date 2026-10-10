@@ -58,7 +58,7 @@ func (r *rows) Next(dest []driver.Value) error {
 	return nil
 }
 
-func result(t *testing.T, cols []string, data ...[]driver.Value) *sql.Rows {
+func result(t testing.TB, cols []string, data ...[]driver.Value) *sql.Rows {
 	t.Helper()
 	db := sql.OpenDB(connector{dataset{cols, data}})
 	t.Cleanup(func() { _ = db.Close() })

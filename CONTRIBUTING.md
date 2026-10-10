@@ -86,6 +86,13 @@ go test -run TestMariaDB ./...                           # only the MariaDB cont
 - Shared code: `helpers_test.go` (row types, assertions, the seed rows used by PostgreSQL and
   MySQL) and `containers_test.go` (`TestMain`, the Docker check and container cleanup).
 
+### Benchmarks
+
+`make bench` runs every benchmark with allocation stats (`BENCH=SelectComplex` to filter,
+`BENCHTIME=3s` for steadier numbers). The `db` benchmarks build and compile SQL for each dialect
+without a database; `internal/*` benchmarks cover scanning, cursors, interpolation and JSON paths.
+Compare runs with `benchstat`.
+
 ### Fuzzing
 
 ```sh

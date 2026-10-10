@@ -1,10 +1,12 @@
 GO       ?= go
 FUZZTIME ?= 20s
+BENCH    ?= .
+BENCHTIME ?= 1s
 INTEGRATION_DIR := test/integration
 
 .DEFAULT_GOAL := help
 .PHONY: help build fmt vet lint test test-integration test-integration-lite \
-        test-postgres test-mysql test-mariadb test-sqlite fuzz tidy check ci
+        test-postgres test-mysql test-mariadb test-sqlite bench fuzz tidy check ci
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -43,6 +45,9 @@ test-mariadb: ## Integration tests, MariaDB only (needs Docker)
 
 test-sqlite: ## Integration tests, SQLite only (no Docker)
 	cd $(INTEGRATION_DIR) && $(GO) test -race -run TestSQLite ./...
+
+bench: ## Run benchmarks (BENCH=regexp, BENCHTIME=1s); no tests
+	$(GO) test -run=NONE -bench=$(BENCH) -benchmem -benchtime=$(BENCHTIME) ./...
 
 fuzz: ## Run every fuzz target for FUZZTIME (default 20s)
 	$(GO) test -run=NONE -fuzz=FuzzIdentifierQuoting          -fuzztime=$(FUZZTIME) ./db
