@@ -11,7 +11,7 @@ import (
 )
 
 // snapshot clones any subquery held by c so later mutation of the caller's
-// builder cannot change this query (Laravel compiles subqueries eagerly).
+// builder cannot change this query.
 func snapshot(c *clause) {
 	if c.x != nil && c.x.sub != nil {
 		c.x.sub = c.x.sub.Clone()
@@ -141,7 +141,7 @@ var dateLayouts = map[string]string{
 	"year":  "2006",
 }
 
-// dateValue formats time.Time per part, and zero-pads numeric day/month like Laravel.
+// dateValue formats time.Time per part, and zero-pads numeric day/month.
 func dateValue(part string, v any) (any, error) {
 	if t, ok := v.(time.Time); ok {
 		return t.Format(dateLayouts[part]), nil

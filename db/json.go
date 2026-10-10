@@ -477,7 +477,7 @@ func (c *compiler) jsonUpdateGroup(items []setItem) error {
 type jsonPatch struct{ doc map[string]any }
 
 // groupSQLiteJSON folds "col->a->b" sets into one json_patch per column,
-// placed after the plain sets (as Laravel does).
+// placed after the plain sets.
 func groupSQLiteJSON(sets []setItem) ([]setItem, error) {
 	var plain []setItem
 	groups := map[string]map[string]any{}

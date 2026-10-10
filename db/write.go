@@ -711,8 +711,8 @@ func (b *Builder) DeleteSQL() (string, []any, error) {
 }
 
 // TruncateSQL builds the statements that empty the table and reset its identity.
-// Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE, unlike Laravel's default,
-// so referencing tables are never emptied implicitly). MySQL: "TRUNCATE TABLE t".
+// Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE),
+// so referencing tables are never emptied implicitly. MySQL: "TRUNCATE TABLE t".
 // SQLite has no TRUNCATE: it deletes the sqlite_sequence row, then every row.
 //
 // Example:

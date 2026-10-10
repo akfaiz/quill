@@ -7,7 +7,7 @@ import (
 )
 
 // selectQuery compiles a SELECT, with a WITH prefix and unions when present. Components follow
-// Laravel's order: columns, from, index hint, joins, wheres, groups, havings,
+// the usual order: columns, from, index hint, joins, wheres, groups, havings,
 // orders, limit, offset, lock.
 func (c *compiler) selectQuery(b *Builder) error {
 	if err := c.with(b); err != nil {

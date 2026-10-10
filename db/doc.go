@@ -1,5 +1,4 @@
-// Package db is a fluent SQL query builder for Go modelled on Laravel's
-// query builder (Illuminate\Database\Query). It builds SQL and bind arguments
+// Package db is a fluent SQL query builder for Go. It builds SQL and bind arguments
 // and, optionally, runs them through database/sql. It is not an ORM: there are
 // no models, relations, hooks or migrations.
 //

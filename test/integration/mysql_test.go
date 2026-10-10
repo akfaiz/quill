@@ -363,7 +363,7 @@ func TestMySQLJSON(t *testing.T) {
 		pluckNames(t, ordered().WhereJsonContains("meta", map[string]any{"theme": "light"})),
 	)
 	// a missing path makes json_contains / @> NULL on Postgres and MySQL, so "doesn't contain" skips Cy
-	// (SQLite's json_each form returns true there); same as Laravel.
+	// (SQLite's json_each form returns true there).
 	assert.Equal(
 		t,
 		[]string{"Bob"},
