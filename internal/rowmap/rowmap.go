@@ -1,5 +1,5 @@
-// Package scan maps database/sql rows onto structs, maps and scalars.
-package scan
+// Package rowmap maps database/sql rows onto structs, maps and scalars.
+package rowmap
 
 import (
 	"database/sql"

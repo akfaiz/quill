@@ -78,5 +78,5 @@ API documentation is also available through `go doc github.com/akfaiz/quill/db`.
 Verified against PostgreSQL 16, MySQL 8.4, MariaDB 11.4 and SQLite (pure-Go driver) with
 end-to-end tests, plus golden SQL tests for every dialect. Other server versions are untested.
 
-Not supported yet: SQL Server, common table expressions, full-text and vector search,
+Not supported yet: SQL Server, full-text and vector search,
 per-group limits, query timeouts, and a conflict target for insert-or-ignore.

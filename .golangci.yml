@@ -123,7 +123,7 @@ linters:
       # Dialect/kind switches use `default` to return ErrUnsupported on purpose.
       default-signifies-exhaustive: true
       # Partial switches over these enums are deliberate.
-      ignore-enum-types: "reflect.Kind|db.Dialect|db.connKind|db.clauseKind|dialect.LockKind|scan.elemKind"
+      ignore-enum-types: "reflect.Kind|db.Dialect|db.connKind|db.clauseKind|dialect.LockKind|rowmap.elemKind"
 
     funcorder:
       # Checks if the exported methods of a structure are placed before the non-exported ones.

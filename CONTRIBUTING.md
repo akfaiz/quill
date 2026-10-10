@@ -6,12 +6,12 @@
 | --- | --- |
 | `db/` | The public package. Builder, compiler, executor, typed API |
 | `internal/dialect` | The per-database `Grammar` implementations (quoting, placeholders, LIKE, dates, locks, index hints) |
-| `internal/scan` | Rows to structs, maps and scalars, and structs back to rows |
+| `internal/rowmap` | Rows to structs, maps and scalars, and structs back to rows |
 | `internal/jsonpath` | `col->a->b[0]` selectors rendered into JSON path literals |
 | `internal/keyset` | The cursor token codec (decodes untrusted input) |
 | `internal/rawsql` | Argument interpolation for `ToRawSQL` |
 | `internal/errs` | Error values shared with `db`, which re-exports them |
-| `test/benchmark/` | A separate module: quill vs squirrel, goqu and sqlbuilder (`make bench-libs`) |
+| `test/bench-libs/` | A separate module: quill vs squirrel, goqu and sqlbuilder (`make bench-libs`) |
 | `test/integration/` | A separate module: end-to-end tests on SQLite, PostgreSQL, MySQL and MariaDB |
 | `docs/` | The guides |
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/akfaiz/quill/internal/scan"
+	"github.com/akfaiz/quill/internal/rowmap"
 )
 
 // run executes the compiled SELECT and hands the rows to fn, always closing them.
@@ -27,13 +27,13 @@ func (b *Builder) run(ctx context.Context, fn func(rows *sql.Rows) error) error 
 // map[string]any, or scalars (single column). NULL leaves a plain field at its zero
 // value; use pointer or sql.Null* fields to tell NULL apart.
 func (b *Builder) Get(ctx context.Context, dest any) error {
-	return b.run(ctx, func(rows *sql.Rows) error { return scan.Slice(rows, dest) })
+	return b.run(ctx, func(rows *sql.Rows) error { return rowmap.Slice(rows, dest) })
 }
 
 // First scans the first row into dest (*struct, *map[string]any or *scalar).
 // It returns ErrNotFound when nothing matches.
 func (b *Builder) First(ctx context.Context, dest any) error {
-	return b.Clone().Limit(1).run(ctx, func(rows *sql.Rows) error { return scan.First(rows, dest) })
+	return b.Clone().Limit(1).run(ctx, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
 }
 
 // Find is Where("id", id).First.
@@ -44,7 +44,7 @@ func (b *Builder) Find(ctx context.Context, id any, dest any) error {
 // Sole returns the only matching row: ErrNotFound for none, ErrMultipleRecords for several.
 func (b *Builder) Sole(ctx context.Context, dest any) error {
 	return b.Clone().Limit(2).run(ctx, func(rows *sql.Rows) error {
-		if err := scan.First(rows, dest); err != nil {
+		if err := rowmap.First(rows, dest); err != nil {
 			return err
 		}
 		if rows.Next() {
@@ -56,7 +56,7 @@ func (b *Builder) Sole(ctx context.Context, dest any) error {
 
 // Value scans a single column of the first row into dest (a pointer to a scalar).
 func (b *Builder) Value(ctx context.Context, column string, dest any) error {
-	return b.Clone().Select(column).Limit(1).run(ctx, func(rows *sql.Rows) error { return scan.First(rows, dest) })
+	return b.Clone().Select(column).Limit(1).run(ctx, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
 }
 
 // Pluck scans one column of every row into dest, a pointer to a slice of scalars.
@@ -75,8 +75,8 @@ func (b *Builder) PluckMap(ctx context.Context, column, key string, dest any) er
 		out := reflect.MakeMap(mt)
 		for rows.Next() {
 			v, k := reflect.New(mt.Elem()).Elem(), reflect.New(mt.Key()).Elem()
-			vt, vpost := scan.Target(v)
-			kt, kpost := scan.Target(k)
+			vt, vpost := rowmap.Target(v)
+			kt, kpost := rowmap.Target(k)
 			if err := rows.Scan(vt, kt); err != nil {
 				return err
 			}
@@ -120,7 +120,7 @@ func (b *Builder) Exists(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	var ok bool
-	err = db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return scan.First(rows, &ok) })
+	err = db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return rowmap.First(rows, &ok) })
 	return ok, err
 }
 
@@ -180,7 +180,7 @@ func (b *Builder) Aggregate(ctx context.Context, fn, column string, dest any) er
 	if err != nil {
 		return err
 	}
-	return db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return scan.First(rows, dest) })
+	return db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
 }
 
 // Count returns count(*), or count(column) when a column is given.

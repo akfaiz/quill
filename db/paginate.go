@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/akfaiz/quill/internal/scan"
+	"github.com/akfaiz/quill/internal/rowmap"
 
 	"github.com/akfaiz/quill/internal/keyset"
 )
@@ -154,7 +154,7 @@ func (b *Builder) CursorPaginate(
 		return p, nil
 	}
 	truncateSlice(dest, perPage)
-	last, err := scan.ValueOfColumn(reflect.ValueOf(dest).Elem().Index(perPage-1), bareColumn(o.Column))
+	last, err := rowmap.ValueOfColumn(reflect.ValueOf(dest).Elem().Index(perPage-1), bareColumn(o.Column))
 	if err != nil {
 		return CursorPage{}, err
 	}

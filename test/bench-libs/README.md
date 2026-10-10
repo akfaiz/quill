@@ -7,8 +7,9 @@ Compares how fast quill builds SQL against three other Go query builders:
 root module stays free of third-party dependencies.
 
 ```sh
-make bench-libs                 # from the repo root: 6 runs per benchmark
-cd test/benchmark && go test -v -run Comparable .   # print the SQL each library produces
+make bench-libs                 # from the repo root: 6 runs per benchmark, saved to results.txt
+make bench-libs-update          # rewrite the Results table below from results.txt (no re-run)
+cd test/bench-libs && go test -v -run Comparable .   # print the SQL each library produces
 ```
 
 ## What is measured
@@ -24,35 +25,37 @@ building a different query. goqu and sqlbuilder bind `LIMIT` and `OFFSET` as par
 
 ## Results
 
-Apple M1 Pro, Go 1.25, median of 6 runs (`go test -bench -benchmem -count=6`). Lower is
+<!-- bench:start -->
+Apple M1 Pro, Go 1.25.14, median of 6 runs (`make bench-libs`, then `make bench-libs-update`). Lower is
 better; the last column is time relative to quill.
 
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
-|---|---|---:|---:|---:|---:|
-| SimpleSelect | quill | 567 | 904 | 8 | 1.0x |
-| | squirrel | 3,822 | 3,881 | 69 | 6.7x |
-| | goqu | 2,376 | 3,832 | 77 | 4.2x |
-| | sqlbuilder | 1,086 | 1,488 | 37 | 1.9x |
-| ComplexSelect | quill | 2,717 | 3,384 | 28 | 1.0x |
-| | squirrel | 10,586 | 10,900 | 180 | 3.9x |
-| | goqu | 8,880 | 11,328 | 329 | 3.3x |
-| | sqlbuilder | 2,420 | 3,849 | 59 | 0.9x |
-| WideWhere (12 predicates) | quill | 2,046 | 4,960 | 18 | 1.0x |
-| | squirrel | 12,372 | 12,989 | 230 | 6.0x |
-| | goqu | 6,304 | 7,024 | 214 | 3.1x |
-| | sqlbuilder | 2,795 | 3,793 | 57 | 1.4x |
-| Insert3Rows | quill | 1,330 | 2,432 | 24 | 1.0x |
-| | squirrel | 4,410 | 4,505 | 93 | 3.3x |
-| | goqu | 2,990 | 3,944 | 105 | 2.2x |
-| | sqlbuilder | 1,990 | 2,168 | 41 | 1.5x |
-| Update | quill | 946 | 1,040 | 16 | 1.0x |
-| | squirrel | 3,358 | 3,217 | 65 | 3.5x |
-| | goqu | 2,197 | 2,616 | 71 | 2.3x |
-| | sqlbuilder | 1,319 | 1,400 | 41 | 1.4x |
-| Delete | quill | 345 | 720 | 7 | 1.0x |
-| | squirrel | 1,764 | 1,808 | 34 | 5.1x |
-| | goqu | 1,042 | 1,284 | 37 | 3.0x |
-| | sqlbuilder | 702 | 936 | 28 | 2.0x |
+| --- | --- | ---: | ---: | ---: | ---: |
+| SimpleSelect | quill | 541 | 904 | 8 | 1.0x |
+| | squirrel | 4,156 | 3,881 | 69 | 7.7x |
+| | goqu | 2,417 | 3,832 | 77 | 4.5x |
+| | sqlbuilder | 1,042 | 1,488 | 37 | 1.9x |
+| ComplexSelect | quill | 2,828 | 3,384 | 28 | 1.0x |
+| | squirrel | 10,941 | 10,901 | 180 | 3.9x |
+| | goqu | 9,060 | 11,328 | 329 | 3.2x |
+| | sqlbuilder | 2,500 | 3,865 | 60 | 0.9x |
+| WideWhere (12 predicates) | quill | 2,126 | 4,960 | 18 | 1.0x |
+| | squirrel | 12,282 | 12,989 | 230 | 5.8x |
+| | goqu | 5,842 | 7,024 | 214 | 2.7x |
+| | sqlbuilder | 2,729 | 3,793 | 57 | 1.3x |
+| Insert3Rows | quill | 1,338 | 2,432 | 24 | 1.0x |
+| | squirrel | 4,660 | 4,505 | 93 | 3.5x |
+| | goqu | 2,844 | 3,944 | 105 | 2.1x |
+| | sqlbuilder | 1,879 | 2,168 | 41 | 1.4x |
+| Update | quill | 792 | 1,040 | 16 | 1.0x |
+| | squirrel | 3,243 | 3,217 | 65 | 4.1x |
+| | goqu | 2,258 | 2,616 | 71 | 2.9x |
+| | sqlbuilder | 1,312 | 1,400 | 41 | 1.7x |
+| Delete | quill | 350 | 720 | 7 | 1.0x |
+| | squirrel | 1,757 | 1,808 | 34 | 5.0x |
+| | goqu | 1,009 | 1,284 | 37 | 2.9x |
+| | sqlbuilder | 705 | 936 | 28 | 2.0x |
+<!-- bench:end -->
 
 sqlbuilder is the closest competitor. On ComplexSelect it is on par with quill or slightly
 faster (about 0.9x; run-to-run noise is around 5-10%), even though quill makes about half

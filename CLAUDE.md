@@ -54,7 +54,7 @@ curated set of Builder methods (a parity test fails if one is added without a ca
 `ErrInvalidArgs`). Struct writes use `Row`/`Rows` (`structs.go`) and the `db:"name,omitempty"` tags.
 
 **`internal/` packages** exist because they cannot import `db` (no cycles) and are unit-tested alone: `dialect`,
-`scan` (rows <-> structs/maps/scalars), `jsonpath`, `keyset` (decodes untrusted cursors), `rawsql` (`ToRawSQL`
+`rowmap` (rows <-> structs/maps/scalars), `jsonpath`, `keyset` (decodes untrusted cursors), `rawsql` (`ToRawSQL`
 interpolation), `errs` (shared sentinel errors, re-exported by `db`).
 
 **Behavioural invariants to preserve**

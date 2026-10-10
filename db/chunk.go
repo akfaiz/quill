@@ -7,7 +7,7 @@ import (
 	"iter"
 	"reflect"
 
-	"github.com/akfaiz/quill/internal/scan"
+	"github.com/akfaiz/quill/internal/rowmap"
 )
 
 // Chunk reads size rows at a time into dest (a pointer to a slice, refilled each
@@ -60,7 +60,7 @@ func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (
 		if n < size {
 			return nil
 		}
-		v, err := scan.ValueOfColumn(reflect.ValueOf(dest).Elem().Index(n-1), bareColumn(col))
+		v, err := rowmap.ValueOfColumn(reflect.ValueOf(dest).Elem().Index(n-1), bareColumn(col))
 		if err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func (b *Builder) Each(ctx context.Context, dest any, fn func() error) error {
 		if err != nil {
 			return err
 		}
-		m, err := scan.NewMapper(target.Type(), cols)
+		m, err := rowmap.NewMapper(target.Type(), cols)
 		if err != nil {
 			return err
 		}

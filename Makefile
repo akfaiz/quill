@@ -5,11 +5,11 @@ BENCHTIME ?= 1s
 BENCHSET ?= Select|Insert|Update|Upsert|Delete|ToRaw|Clone|Join
 BASELINE := test/bench/baseline.txt
 INTEGRATION_DIR := test/integration
-BENCHMARK_DIR   := test/benchmark
+BENCHMARK_DIR   := test/bench-libs
 
 .DEFAULT_GOAL := help
 .PHONY: help build fmt vet lint test test-integration test-integration-lite \
-        test-postgres test-mysql test-mariadb test-sqlite bench bench-libs bench-baseline bench-compare fuzz tidy check ci
+        test-postgres test-mysql test-mariadb test-sqlite bench bench-libs bench-libs-update bench-baseline bench-compare fuzz tidy check ci
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -54,8 +54,13 @@ test-sqlite: ## Integration tests, SQLite only (no Docker)
 bench: ## Run benchmarks (BENCH=regexp, BENCHTIME=1s); no tests
 	$(GO) test -run=NONE -bench=$(BENCH) -benchmem -benchtime=$(BENCHTIME) ./...
 
-bench-libs: ## Compare quill with squirrel, goqu and sqlbuilder (test/benchmark, 6 runs)
-	cd $(BENCHMARK_DIR) && $(GO) test -run Comparable . && $(GO) test -run=NONE -bench=. -benchmem -count=6 .
+bench-libs: ## Compare quill with squirrel, goqu and sqlbuilder (6 runs); saves test/bench-libs/results.txt
+	cd $(BENCHMARK_DIR) && $(GO) test -run Comparable .
+	cd $(BENCHMARK_DIR) && { echo "go: $$($(GO) env GOVERSION | sed 's/^go//')"; \
+		$(GO) test -run=NONE -bench=. -benchmem -count=6 .; } | tee results.txt
+
+bench-libs-update: ## Rewrite the Results table in test/bench-libs/README.md from results.txt (run bench-libs first)
+	cd $(BENCHMARK_DIR) && $(GO) run update_readme.go
 
 bench-baseline: ## Record the db benchmarks (6 runs) as the comparison baseline
 	$(GO) test -run=NONE -bench='$(BENCHSET)' -benchmem -count=6 ./db | tee $(BASELINE)

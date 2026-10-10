@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/akfaiz/quill/internal/scan"
+	"github.com/akfaiz/quill/internal/rowmap"
 )
 
 var (
@@ -154,7 +154,7 @@ func (db *DB) Query(ctx context.Context, dest any, sqlText string, args ...any) 
 		return err
 	}
 	defer func() { _ = rows.Close() }()
-	return scan.Slice(rows, dest)
+	return rowmap.Slice(rows, dest)
 }
 
 // Exec runs a raw statement and returns the rows affected.

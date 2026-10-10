@@ -8,7 +8,7 @@ import (
 	"maps"
 	"sort"
 
-	"github.com/akfaiz/quill/internal/scan"
+	"github.com/akfaiz/quill/internal/rowmap"
 )
 
 // execSQL runs a write statement and returns the rows affected.
@@ -69,7 +69,7 @@ func (b *Builder) InsertGetID(ctx context.Context, row map[string]any, sequence 
 	}
 	if db.dialect == Postgres {
 		var id int64
-		err = db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return scan.First(rows, &id) })
+		err = db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return rowmap.First(rows, &id) })
 		return id, err
 	}
 	res, err := db.exec(ctx, sqlText, args)
@@ -187,7 +187,7 @@ func (b *Builder) returningInto(ctx context.Context, dest any, build func() (str
 	if err != nil {
 		return err
 	}
-	return db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return scan.Slice(rows, dest) })
+	return db.runSQL(ctx, sqlText, args, func(rows *sql.Rows) error { return rowmap.Slice(rows, dest) })
 }
 
 // InsertReturning inserts rows and scans the Returning(...) columns into dest

@@ -1,4 +1,4 @@
-package scan
+package rowmap
 
 import (
 	"database/sql/driver"

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/akfaiz/quill/internal/scan"
+	"github.com/akfaiz/quill/internal/rowmap"
 )
 
 // Row converts a struct (or non-nil pointer to one) into a column map for the
@@ -24,15 +24,15 @@ func Row(v any) (map[string]any, error) {
 		return nil, fmt.Errorf("%w: nil row", ErrInvalidArgs)
 	}
 	rv := reflect.ValueOf(v)
-	t, err := scan.StructType(rv.Type())
+	t, err := rowmap.StructType(rv.Type())
 	if err != nil {
 		return nil, err
 	}
-	sv, err := scan.StructValue(rv)
+	sv, err := rowmap.StructValue(rv)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := scan.ToRows(t, []reflect.Value{sv})
+	rows, err := rowmap.ToRows(t, []reflect.Value{sv})
 	if err != nil {
 		return nil, err
 	}
@@ -46,15 +46,15 @@ func Rows[T any](vs []T) ([]map[string]any, error) {
 	if len(vs) == 0 {
 		return nil, nil
 	}
-	t, err := scan.StructType(reflect.TypeFor[T]())
+	t, err := rowmap.StructType(reflect.TypeFor[T]())
 	if err != nil {
 		return nil, err
 	}
 	vals := make([]reflect.Value, len(vs))
 	for i := range vs {
-		if vals[i], err = scan.StructValue(reflect.ValueOf(&vs[i]).Elem()); err != nil {
+		if vals[i], err = rowmap.StructValue(reflect.ValueOf(&vs[i]).Elem()); err != nil {
 			return nil, fmt.Errorf("row %d: %w", i, err)
 		}
 	}
-	return scan.ToRows(t, vals)
+	return rowmap.ToRows(t, vals)
 }
