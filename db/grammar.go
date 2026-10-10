@@ -339,6 +339,9 @@ func (c *compiler) valueList(vs []any, closer string) error {
 
 // subquery writes "(SELECT ...)" sharing this compiler's arg numbering.
 func (c *compiler) subquery(q *Builder) error {
+	if q == nil {
+		return errNilSubquery
+	}
 	if q.err != nil {
 		return q.err
 	}

@@ -245,6 +245,9 @@ func (b *Builder) finishJoin(j joinClause, on []clause, err error) *Builder {
 	if err != nil {
 		return b.fail(err)
 	}
+	if j.sub == nil && j.table == "" {
+		return b.fail(fmt.Errorf("%w: join needs a table or a non-nil subquery", ErrInvalidArgs))
+	}
 	j.on = on
 	b.joins = append(b.joins, j)
 	return b

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -208,6 +209,23 @@ func TestTransactionCommitsRollsBackAndRepanics(t *testing.T) {
 		assert.PanicsWithValue(t, "kaboom", func() {
 			_ = db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error { panic("kaboom") })
 		})
+	})
+	t.Run("rollback on Goexit without a nil panic", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		var recovered any
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { recovered = recover() }()
+			_ = db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error {
+				runtime.Goexit() // what t.FailNow does inside the callback
+				return nil
+			})
+		}()
+		<-done
+		assert.Nil(t, recovered)
 	})
 	t.Run("begin failure", func(t *testing.T) {
 		sqlDB, mock := newMock(t)

@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/akfaiz/quill/internal/errs"
 )
@@ -31,3 +32,6 @@ var (
 	// unless AllRows was called.
 	ErrNoWhere = errors.New("quill: update/delete without a where clause; call AllRows() to confirm")
 )
+
+// errNilSubquery is recorded when a nil *Builder is passed where a subquery belongs.
+var errNilSubquery = fmt.Errorf("%w: nil subquery", ErrInvalidArgs)

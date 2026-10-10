@@ -242,7 +242,12 @@ func (b *Builder) Prefix(p string) *Builder { b.prefix = p; return b }
 //	// base:   SELECT * FROM "users" WHERE "active" = $1
 //	// admins: SELECT * FROM "users" WHERE "active" = $1 AND "role" = $2
 //	// args: [true admin] (admins)
+//
+// Cloning a nil *Builder returns nil.
 func (b *Builder) Clone() *Builder {
+	if b == nil {
+		return nil
+	}
 	n := *b
 	n.columns = append([]selectItem(nil), b.columns...)
 	n.joins = cloneJoins(b.joins)

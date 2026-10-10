@@ -149,6 +149,9 @@ func TestJoinErrors(t *testing.T) {
 		{"second column not string", db.Use(d).Table("a").Join("b", "b.x", 5), db.ErrInvalidArgs},
 		{"sub needs alias", db.Use(d).Table("a").JoinSub(db.Use(d).Table("s"), "", "s.x", "a.x"), db.ErrInvalidArgs},
 		{"bad sub propagates", db.Use(d).Table("a").JoinSub(db.NewBuilder(d), "s", "s.x", "a.x"), db.ErrNoTable},
+		{"nil sub", db.Use(d).Table("a").JoinSub(nil, "s", "s.x", "a.x"), db.ErrInvalidArgs},
+		{"nil cross sub", db.Use(d).Table("a").CrossJoinSub(nil, "s"), db.ErrInvalidArgs},
+		{"empty table", db.Use(d).Table("a").Join("", "s.x", "a.x"), db.ErrInvalidArgs},
 		{
 			"error inside on func",
 			db.Use(d).Table("a").JoinFunc("b", func(j *db.JoinClause) { j.Where("x", "bogus", 1) }),

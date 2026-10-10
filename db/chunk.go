@@ -73,21 +73,39 @@ func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (
 		if n == 0 {
 			return nil
 		}
+		// Read the next key before fn runs: fn may reorder, truncate or edit the batch.
+		var next any
+		if n == size {
+			v, err := lastKey(dest, n, col)
+			if err != nil {
+				return err
+			}
+			next = v
+		}
 		if more, err := fn(); err != nil || !more {
 			return err
 		}
 		if n < size {
 			return nil
 		}
-		v, err := rowmap.ValueOfColumn(reflect.ValueOf(dest).Elem().Index(n-1), bareColumn(col))
-		if err != nil {
-			return err
-		}
-		if isNilValue(v) {
-			return fmt.Errorf("%w: ChunkByID column %q is NULL", ErrInvalidArgs, col)
-		}
-		last = v
+		last = next
 	}
+}
+
+// lastKey returns the key column of row n-1 in dest, copied out of the row so a
+// later change to the row (or to what a pointer field points at) cannot move it.
+func lastKey(dest any, n int, col string) (any, error) {
+	v, err := rowmap.ValueOfColumn(reflect.ValueOf(dest).Elem().Index(n-1), bareColumn(col))
+	if err != nil {
+		return nil, err
+	}
+	if isNilValue(v) {
+		return nil, fmt.Errorf("%w: ChunkByID column %q is NULL", ErrInvalidArgs, col)
+	}
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Pointer {
+		v = rv.Elem().Interface()
+	}
+	return v, nil
 }
 
 // isNilValue reports whether v is nil or a nil pointer (a NULL *T field).

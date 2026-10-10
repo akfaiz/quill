@@ -79,6 +79,30 @@ func TestChunkByID(t *testing.T) {
 	}))
 	assert.Equal(t, []int{2, 1}, sizes)
 
+	t.Run("callback may truncate or reorder the batch", func(t *testing.T) {
+		for name, edit := range map[string]func(){
+			"truncate": func() { batch = batch[:0] },
+			"reverse":  func() { batch[0], batch[1] = batch[1], batch[0] },
+		} {
+			t.Run(name, func(t *testing.T) {
+				mock.ExpectQuery(`SELECT * FROM "people" WHERE "id" IS NOT NULL ORDER BY "id" ASC LIMIT 2`).
+					WillReturnRows(people(2))
+				// the next page still starts after id 2, the last row as fetched
+				mock.ExpectQuery(`SELECT * FROM "people" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 2`).
+					WithArgs(2).
+					WillReturnRows(people(0))
+				require.NotPanics(t, func() {
+					require.NoError(t, conn.Table("people").ChunkByID(ctx, 2, &batch, func() (bool, error) {
+						if len(batch) == 2 {
+							edit()
+						}
+						return true, nil
+					}))
+				})
+			})
+		}
+	})
+
 	t.Run("custom column", func(t *testing.T) {
 		mock.ExpectQuery(`SELECT * FROM "people" WHERE "name" IS NOT NULL ORDER BY "name" ASC LIMIT 5`).
 			WillReturnRows(people(0))
