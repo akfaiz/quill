@@ -5,6 +5,12 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/akfaiz/quill/db"><img src="https://pkg.go.dev/badge/github.com/akfaiz/quill/db.svg" alt="Go Reference"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/akfaiz/quill" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/akfaiz/quill" alt="License: MIT"></a>
+</p>
+
 A fluent SQL query builder for Go, modelled on Laravel's query builder. It builds SQL with bind
 arguments and can optionally run it through `database/sql`. **It is not an ORM**: there are no
 models, relations, hooks or migrations.
@@ -12,10 +18,6 @@ models, relations, hooks or migrations.
 - Dialects: PostgreSQL, MySQL, MariaDB, SQLite
 - Standard library only at runtime (no third-party dependencies; testify is used by tests only)
 - Go 1.25 or newer
-
-```go
-import "github.com/akfaiz/quill/db"
-```
 
 ## Features
 
@@ -53,13 +55,17 @@ import "github.com/akfaiz/quill/db"
   `UPDATE` or `DELETE` without a `WHERE` is refused unless you call `AllRows()`.
 - **Errors, not panics.** A bad argument is recorded and returned from the terminal call. Only the
   `Must*` variants panic.
-- **Fast to build.** Query construction is several times faster than squirrel and goqu, with far
-  fewer allocations; see the [benchmarks](test/benchmark/README.md).
+- **Fast to build.** Query construction is about 2 to 7 times faster than squirrel and goqu in
+  the benchmark scenarios, with far fewer allocations; see the [benchmarks](test/benchmark/README.md).
 
-## Install
+## Installation
 
 ```sh
 go get github.com/akfaiz/quill
+```
+
+```go
+import "github.com/akfaiz/quill/db"
 ```
 
 ## Quick start
@@ -134,10 +140,6 @@ err := conn.Transaction(ctx, func(tx *db.DB) error {
 
 API documentation is also available through `go doc github.com/akfaiz/quill/db`.
 
-## Status
+## License
 
-Verified against PostgreSQL 16, MySQL 8.4, MariaDB 11.4 and SQLite (pure-Go driver) with
-end-to-end tests, plus golden SQL tests for every dialect. Other server versions are untested.
-
-Not supported yet: SQL Server, full-text and vector search,
-per-group limits, query timeouts, and a conflict target for insert-or-ignore.
+MIT License. See [LICENSE](LICENSE) for details.
