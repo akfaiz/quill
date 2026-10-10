@@ -11,6 +11,7 @@
 | `internal/keyset` | The cursor token codec (decodes untrusted input) |
 | `internal/rawsql` | Argument interpolation for `ToRawSQL` |
 | `internal/errs` | Error values shared with `db`, which re-exports them |
+| `test/benchmark/` | A separate module: quill vs squirrel, goqu and sqlbuilder (`make bench-libs`) |
 | `test/integration/` | A separate module: end-to-end tests on SQLite, PostgreSQL, MySQL and MariaDB |
 | `docs/` | The guides |
 

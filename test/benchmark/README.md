@@ -1,0 +1,185 @@
+# Library comparison benchmarks
+
+Compares how fast quill builds SQL against three other Go query builders:
+[squirrel](https://github.com/Masterminds/squirrel) v1.5.4,
+[goqu](https://github.com/doug-martin/goqu) v9.19.0 and
+[go-sqlbuilder](https://github.com/huandu/go-sqlbuilder) v1.44.0. This is a separate module, so the
+root module stays free of third-party dependencies.
+
+```sh
+make bench-libs                 # from the repo root: 6 runs per benchmark
+cd test/benchmark && go test -v -run Comparable .   # print the SQL each library produces
+```
+
+## What is measured
+
+Only **building** a query: from the first builder call to the `(sql, args)` pair. No
+database, no network, no execution. Every scenario targets PostgreSQL with bound `$n`
+placeholders, which is what an application actually sends.
+
+`TestScenariosAreComparable` runs first in spirit: every library must build each query
+without error and bind the same number of arguments, so a benchmark cannot win by quietly
+building a different query. goqu and sqlbuilder bind `LIMIT` and `OFFSET` as parameters
+(quill and squirrel inline them as literals), and the test accounts for that explicitly.
+
+## Results
+
+Apple M1 Pro, Go 1.25, median of 6 runs (`go test -bench -benchmem -count=6`). Lower is
+better; the last column is time relative to quill.
+
+| Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
+|---|---|---:|---:|---:|---:|
+| SimpleSelect | quill | 567 | 904 | 8 | 1.0x |
+| | squirrel | 3,822 | 3,881 | 69 | 6.7x |
+| | goqu | 2,376 | 3,832 | 77 | 4.2x |
+| | sqlbuilder | 1,086 | 1,488 | 37 | 1.9x |
+| ComplexSelect | quill | 2,717 | 3,384 | 28 | 1.0x |
+| | squirrel | 10,586 | 10,900 | 180 | 3.9x |
+| | goqu | 8,880 | 11,328 | 329 | 3.3x |
+| | sqlbuilder | 2,420 | 3,849 | 59 | 0.9x |
+| WideWhere (12 predicates) | quill | 2,046 | 4,960 | 18 | 1.0x |
+| | squirrel | 12,372 | 12,989 | 230 | 6.0x |
+| | goqu | 6,304 | 7,024 | 214 | 3.1x |
+| | sqlbuilder | 2,795 | 3,793 | 57 | 1.4x |
+| Insert3Rows | quill | 1,330 | 2,432 | 24 | 1.0x |
+| | squirrel | 4,410 | 4,505 | 93 | 3.3x |
+| | goqu | 2,990 | 3,944 | 105 | 2.2x |
+| | sqlbuilder | 1,990 | 2,168 | 41 | 1.5x |
+| Update | quill | 946 | 1,040 | 16 | 1.0x |
+| | squirrel | 3,358 | 3,217 | 65 | 3.5x |
+| | goqu | 2,197 | 2,616 | 71 | 2.3x |
+| | sqlbuilder | 1,319 | 1,400 | 41 | 1.4x |
+| Delete | quill | 345 | 720 | 7 | 1.0x |
+| | squirrel | 1,764 | 1,808 | 34 | 5.1x |
+| | goqu | 1,042 | 1,284 | 37 | 3.0x |
+| | sqlbuilder | 702 | 936 | 28 | 2.0x |
+
+sqlbuilder is the closest competitor. On ComplexSelect it is on par with quill or slightly
+faster (about 0.9x; run-to-run noise is around 5-10%), even though quill makes about half
+as many allocations. On WideWhere and Insert3Rows quill allocates more bytes than it does.
+
+Absolute numbers depend on the machine; compare the ratios, and re-run on your own
+hardware before quoting them.
+
+## SQL each library generates
+
+The real output of `go test -v -run Comparable .`, pasted here. It is a snapshot: re-run that
+command and update this section if a library version or a scenario changes. Arguments are
+what is bound to the `$n` placeholders.
+
+### SimpleSelect
+
+```sql
+-- quill   args: [100]
+select "id", "name" from "users" where "votes" > $1 order by "id" desc limit 10
+
+-- squirrel   args: [100]
+SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT 10
+
+-- goqu   args: [100 10]
+SELECT "id", "name" FROM "users" WHERE ("votes" > $1) ORDER BY "id" DESC LIMIT $2
+
+-- sqlbuilder   args: [100 10]
+SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT $2
+```
+
+### ComplexSelect
+
+```sql
+-- quill   args: [18 1 2 3 4 5 1]
+select "u"."id", "u"."name", "p"."title" from "users" as "u" inner join "posts" as "p" on "p"."user_id" = "u"."id" left join "profiles" on "profiles"."user_id" = "u"."id" where "u"."age" >= $1 and "u"."id" in ($2, $3, $4, $5, $6) and "u"."deleted_at" is null group by "u"."id", "u"."name", "p"."title" having "count(*)" > $7 order by "u"."name" asc limit 50 offset 100
+
+-- squirrel   args: [18 1 2 3 4 5 1]
+SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2,$3,$4,$5,$6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT 50 OFFSET 100
+
+-- goqu   args: [18 1 2 3 4 5 1 50 100]
+SELECT "u"."id", "u"."name", "p"."title" FROM "users" AS "u" INNER JOIN "posts" AS "p" ON ("p"."user_id" = "u"."id") LEFT JOIN "profiles" ON ("profiles"."user_id" = "u"."id") WHERE (("u"."age" >= $1) AND ("u"."id" IN ($2, $3, $4, $5, $6)) AND ("u"."deleted_at" IS NULL)) GROUP BY "u"."id", "u"."name", "p"."title" HAVING (COUNT(*) > $7) ORDER BY "u"."name" ASC LIMIT $8 OFFSET $9
+
+-- sqlbuilder   args: [18 1 2 3 4 5 1 50 100]
+SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2, $3, $4, $5, $6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT $8 OFFSET $9
+```
+
+### WideWhere (12 predicates)
+
+```sql
+-- quill   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
+select * from "orders" where "a" = $1 and "b" > $2 and "c" < $3 and "d" != $4 and "e" >= $5 and "f" <= $6 and "g" in ($7, $8, $9, $10, $11) and "h" is null and "i" is not null and "j" between $12 and $13 and "k"::text ilike $14 and "l" = $15
+
+-- squirrel   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
+SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7,$8,$9,$10,$11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
+
+-- goqu   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
+SELECT * FROM "orders" WHERE (("a" = $1) AND ("b" > $2) AND ("c" < $3) AND ("d" != $4) AND ("e" >= $5) AND ("f" <= $6) AND ("g" IN ($7, $8, $9, $10, $11)) AND ("h" IS NULL) AND ("i" IS NOT NULL) AND ("j" BETWEEN $12 AND $13) AND ("k" LIKE $14) AND ("l" = $15))
+
+-- sqlbuilder   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
+SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7, $8, $9, $10, $11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
+```
+
+### Insert3Rows
+
+```sql
+-- quill   args: [30 a@x ann 25 b@x bob 41 c@x cy]
+insert into "users" ("age", "email", "name") values ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
+
+-- squirrel   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
+INSERT INTO users (name,age,email) VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9)
+
+-- goqu   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
+INSERT INTO "users" ("name", "age", "email") VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
+
+-- sqlbuilder   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
+INSERT INTO users (name, age, email) VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
+```
+
+### Update
+
+```sql
+-- quill   args: [31 ann 1]
+update "users" set "age" = $1, "name" = $2 where "id" = $3
+
+-- squirrel   args: [ann 31 1]
+UPDATE users SET name = $1, age = $2 WHERE id = $3
+
+-- goqu   args: [31 ann 1]
+UPDATE "users" SET "age"=$1,"name"=$2 WHERE ("id" = $3)
+
+-- sqlbuilder   args: [ann 31 1]
+UPDATE users SET name = $1, age = $2 WHERE id = $3
+```
+
+### Delete
+
+```sql
+-- quill   args: [1]
+delete from "users" where "id" = $1
+
+-- squirrel   args: [1]
+DELETE FROM users WHERE id = $1
+
+-- goqu   args: [1]
+DELETE FROM "users" WHERE ("id" = $1)
+
+-- sqlbuilder   args: [1]
+DELETE FROM users WHERE id = $1
+```
+
+## Reading the numbers fairly
+
+- **Build time is rarely the bottleneck.** A query round trip to a database costs
+  hundreds of microseconds to milliseconds. Microseconds saved here matter for
+  allocation pressure and very hot paths, not for typical request latency.
+- **Squirrel and sqlbuilder do less work.** Neither quotes identifiers, so their output
+  (`SELECT id FROM users`) is not hardened the way quill's and goqu's are
+  (`select "id" from "users"`). Quoting is real work, which makes a tie with sqlbuilder
+  more favourable to quill than the raw number suggests. Squirrel is the slowest here
+  even without it.
+- **Query style differs.** sqlbuilder takes conditions as pre-rendered strings
+  (`sb.GreaterThan("votes", 100)`) and needs a new builder per query; quill and the others
+  chain methods directly.
+- **Quill's `Like` is case-insensitive on PostgreSQL** (`ilike`), the others emit
+  plain `LIKE`. Quill's insert takes maps and sorts the column names; the others take
+  ordered column and value lists.
+- **Not covered:** result scanning, struct mapping, CTEs/unions/JSON (not every library
+  supports them), and one-time setup cost such as `goqu.Dialect(...)`.
+- Library features differ. This compares speed on queries all four can express, not
+  which library is better for your use case.
