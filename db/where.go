@@ -36,8 +36,16 @@ func (b *Builder) push(dst *[]clause, boolean string, c clause) *Builder {
 // flatten turns a slice/array (any element type) into []any; a scalar becomes a
 // one-element list. []byte is treated as a scalar.
 func flatten(v any) []any {
-	if vs, ok := v.([]any); ok {
+	// Common element types skip reflection, which boxes every element on the heap.
+	switch vs := v.(type) {
+	case []any:
 		return vs
+	case []int:
+		return toAny(vs)
+	case []int64:
+		return toAny(vs)
+	case []string:
+		return toAny(vs)
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array || rv.Type().Elem().Kind() == reflect.Uint8 {
@@ -46,6 +54,14 @@ func flatten(v any) []any {
 	out := make([]any, rv.Len())
 	for i := range out {
 		out[i] = rv.Index(i).Interface()
+	}
+	return out
+}
+
+func toAny[T any](vs []T) []any {
+	out := make([]any, len(vs))
+	for i, v := range vs {
+		out[i] = v
 	}
 	return out
 }

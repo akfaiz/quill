@@ -2,11 +2,11 @@ package db
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/akfaiz/quill/internal/jsonpath"
 	"github.com/akfaiz/quill/internal/rawsql"
-
 	"github.com/akfaiz/quill/internal/dialect"
 )
 
@@ -293,6 +293,7 @@ func (b *Builder) Select(columns ...string) *Builder {
 
 // AddSelect appends columns.
 func (b *Builder) AddSelect(columns ...string) *Builder {
+	b.columns = slices.Grow(b.columns, len(columns))
 	for _, c := range columns {
 		b.columns = append(b.columns, selectItem{column: c})
 	}
@@ -334,6 +335,7 @@ func (b *Builder) OrWhereRaw(sql string, args ...any) *Builder {
 
 // GroupBy adds GROUP BY columns.
 func (b *Builder) GroupBy(columns ...string) *Builder {
+	b.groups = slices.Grow(b.groups, len(columns))
 	for _, c := range columns {
 		b.groups = append(b.groups, selectItem{column: c})
 	}

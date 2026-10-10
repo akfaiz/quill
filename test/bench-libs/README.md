@@ -31,35 +31,35 @@ better; the last column is time relative to quill.
 
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
 | --- | --- | ---: | ---: | ---: | ---: |
-| SimpleSelect | quill | 541 | 904 | 8 | 1.0x |
-| | squirrel | 4,156 | 3,881 | 69 | 7.7x |
-| | goqu | 2,417 | 3,832 | 77 | 4.5x |
-| | sqlbuilder | 1,042 | 1,488 | 37 | 1.9x |
-| ComplexSelect | quill | 2,828 | 3,384 | 28 | 1.0x |
-| | squirrel | 10,941 | 10,901 | 180 | 3.9x |
-| | goqu | 9,060 | 11,328 | 329 | 3.2x |
-| | sqlbuilder | 2,500 | 3,865 | 60 | 0.9x |
-| WideWhere (12 predicates) | quill | 2,126 | 4,960 | 18 | 1.0x |
-| | squirrel | 12,282 | 12,989 | 230 | 5.8x |
-| | goqu | 5,842 | 7,024 | 214 | 2.7x |
-| | sqlbuilder | 2,729 | 3,793 | 57 | 1.3x |
-| Insert3Rows | quill | 1,338 | 2,432 | 24 | 1.0x |
-| | squirrel | 4,660 | 4,505 | 93 | 3.5x |
-| | goqu | 2,844 | 3,944 | 105 | 2.1x |
-| | sqlbuilder | 1,879 | 2,168 | 41 | 1.4x |
-| Update | quill | 792 | 1,040 | 16 | 1.0x |
-| | squirrel | 3,243 | 3,217 | 65 | 4.1x |
-| | goqu | 2,258 | 2,616 | 71 | 2.9x |
-| | sqlbuilder | 1,312 | 1,400 | 41 | 1.7x |
-| Delete | quill | 350 | 720 | 7 | 1.0x |
-| | squirrel | 1,757 | 1,808 | 34 | 5.0x |
-| | goqu | 1,009 | 1,284 | 37 | 2.9x |
-| | sqlbuilder | 705 | 936 | 28 | 2.0x |
+| SimpleSelect | quill | 547 | 856 | 7 | 1.0x |
+| | squirrel | 3,810 | 3,881 | 69 | 7.0x |
+| | goqu | 2,428 | 3,832 | 77 | 4.4x |
+| | sqlbuilder | 1,060 | 1,488 | 37 | 1.9x |
+| ComplexSelect | quill | 2,559 | 2,955 | 19 | 1.0x |
+| | squirrel | 10,490 | 10,901 | 180 | 4.1x |
+| | goqu | 9,146 | 11,328 | 329 | 3.6x |
+| | sqlbuilder | 2,511 | 3,865 | 60 | 1.0x |
+| WideWhere (12 predicates) | quill | 1,984 | 4,920 | 13 | 1.0x |
+| | squirrel | 12,646 | 12,989 | 230 | 6.4x |
+| | goqu | 6,210 | 7,024 | 214 | 3.1x |
+| | sqlbuilder | 2,812 | 3,793 | 57 | 1.4x |
+| Insert3Rows | quill | 1,446 | 2,432 | 24 | 1.0x |
+| | squirrel | 4,298 | 4,505 | 93 | 3.0x |
+| | goqu | 2,823 | 3,944 | 105 | 2.0x |
+| | sqlbuilder | 1,967 | 2,168 | 41 | 1.4x |
+| Update | quill | 820 | 1,040 | 16 | 1.0x |
+| | squirrel | 3,189 | 3,217 | 65 | 3.9x |
+| | goqu | 1,990 | 2,616 | 71 | 2.4x |
+| | sqlbuilder | 1,247 | 1,400 | 41 | 1.5x |
+| Delete | quill | 365 | 720 | 7 | 1.0x |
+| | squirrel | 1,719 | 1,808 | 34 | 4.7x |
+| | goqu | 1,091 | 1,284 | 37 | 3.0x |
+| | sqlbuilder | 779 | 936 | 28 | 2.1x |
 <!-- bench:end -->
 
-sqlbuilder is the closest competitor. On ComplexSelect it is on par with quill or slightly
-faster (about 0.9x; run-to-run noise is around 5-10%), even though quill makes about half
-as many allocations. On WideWhere and Insert3Rows quill allocates more bytes than it does.
+sqlbuilder is the closest competitor. On ComplexSelect it is level with quill (about 1.0x;
+run-to-run noise is around 5-10%), even though quill makes about a third as many allocations.
+On WideWhere and Insert3Rows quill allocates more bytes than it does.
 
 Absolute numbers depend on the machine; compare the ratios, and re-run on your own
 hardware before quoting them.

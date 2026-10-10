@@ -1,8 +1,6 @@
 package db
 
-import (
-	"github.com/akfaiz/quill/internal/dialect"
-)
+import "github.com/akfaiz/quill/internal/dialect"
 
 // LockForUpdate adds "for update" (Postgres, MySQL; ignored on SQLite).
 func (b *Builder) LockForUpdate() *Builder { b.lock, b.lockRaw = dialect.LockUpdate, ""; return b }

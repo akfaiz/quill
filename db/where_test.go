@@ -431,3 +431,28 @@ func TestEveryWhereVariantUsesTheRightConnective(t *testing.T) {
 		})
 	}
 }
+
+// WhereIn takes typed fast paths for common slices and falls back to reflection for the rest;
+// both must bind the same arguments.
+func TestWhereInSliceTypes(t *testing.T) {
+	type ids []int
+	cases := []struct {
+		name string
+		in   any
+		want []any
+	}{
+		{"ints", []int{1, 2, 3}, []any{1, 2, 3}},
+		{"int64s", []int64{1, 2}, []any{int64(1), int64(2)}},
+		{"strings", []string{"a", "b"}, []any{"a", "b"}},
+		{"anys", []any{1, "b"}, []any{1, "b"}},
+		{"named slice type", ids{4, 5}, []any{4, 5}},
+		{"int32s via reflection", []int32{6, 7}, []any{int32(6), int32(7)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, args, err := newT(db.Postgres).WhereIn("id", tc.in).ToSQL()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, args)
+		})
+	}
+}
