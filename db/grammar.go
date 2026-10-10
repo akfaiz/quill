@@ -177,8 +177,10 @@ func (c *compiler) clauses(cs []clause) error {
 	for i, cl := range cs {
 		switch {
 		case i > 0:
-			c.write(" " + cl.boolean + " ")
-		case strings.HasSuffix(cl.boolean, "not"):
+			c.write(" ")
+			c.write(cl.conn.String())
+			c.write(" ")
+		case cl.conn.negated():
 			c.write("not ")
 		}
 		if err := c.clause(cl); err != nil {
@@ -191,7 +193,7 @@ func (c *compiler) clauses(cs []clause) error {
 func (c *compiler) clause(cl clause) error {
 	switch cl.kind {
 	case clauseRaw:
-		c.raw(cl.raw)
+		c.raw(cl.rawExpr())
 	case clauseNull:
 		c.writeColumn(cl.column)
 		if cl.not {
@@ -230,7 +232,7 @@ func (c *compiler) clause(cl clause) error {
 		c.write(" ")
 		c.write(cl.op)
 		c.write(" ")
-		c.writeColumn(cl.columns[0])
+		c.writeColumn(cl.column2)
 	case clauseIn, clauseInRaw:
 		return c.inClause(cl)
 	case clauseBetween:
@@ -244,28 +246,28 @@ func (c *compiler) clause(cl clause) error {
 	case clauseBetweenColumns:
 		c.writeColumn(cl.column)
 		c.write(betweenKw(cl.not))
-		c.writeColumn(cl.columns[0])
+		c.writeColumn(cl.cols()[0])
 		c.write(" and ")
-		c.writeColumn(cl.columns[1])
+		c.writeColumn(cl.cols()[1])
 	case clauseValueBetween:
 		if err := c.value(cl.value); err != nil {
 			return err
 		}
 		c.write(betweenKw(cl.not))
-		c.writeColumn(cl.columns[0])
+		c.writeColumn(cl.cols()[0])
 		c.write(" and ")
-		c.writeColumn(cl.columns[1])
+		c.writeColumn(cl.cols()[1])
 	case clauseNested:
 		c.write("(")
-		if err := c.clauses(cl.nested); err != nil {
+		if err := c.clauses(cl.kids()); err != nil {
 			return err
 		}
 		c.write(")")
 	case clauseExists:
 		c.write("exists ")
-		return c.subquery(cl.sub)
+		return c.subquery(cl.subquery())
 	case clauseDate:
-		c.write(c.g.DatePart(cl.part, c.wrapColumn(cl.column)) + " " + cl.op + " ")
+		c.write(c.g.DatePart(cl.datePart(), c.wrapColumn(cl.column)) + " " + cl.op + " ")
 		pre, post := c.g.DateValueWrap()
 		c.write(pre)
 		if err := c.value(cl.value); err != nil {
@@ -273,8 +275,9 @@ func (c *compiler) clause(cl clause) error {
 		}
 		c.write(post)
 	case clauseRowValues:
-		cols := make([]string, len(cl.columns))
-		for i, col := range cl.columns {
+		rowCols := cl.cols()
+		cols := make([]string, len(rowCols))
+		for i, col := range rowCols {
 			cols[i] = c.wrapColumn(col)
 		}
 		c.write("(" + strings.Join(cols, ", ") + ") " + cl.op + " (")
@@ -295,10 +298,10 @@ func (c *compiler) inClause(cl clause) error {
 	if cl.not {
 		kw, empty = " not in ", "1 = 1"
 	}
-	if cl.sub != nil {
+	if sub := cl.subquery(); sub != nil {
 		c.writeColumn(cl.column)
 		c.write(kw)
-		return c.subquery(cl.sub)
+		return c.subquery(cl.subquery())
 	}
 	if len(cl.values) == 0 {
 		c.write(empty)

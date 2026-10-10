@@ -489,7 +489,9 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 			return "", nil, err
 		}
 		for _, cl := range onClauses {
-			c.write(" " + cl.boolean + " ")
+			c.write(" ")
+			c.write(cl.conn.String())
+			c.write(" ")
 			if err := c.clause(cl); err != nil {
 				return "", nil, err
 			}

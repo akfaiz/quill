@@ -12,8 +12,8 @@ import (
 // snapshot clones any subquery held by c so later mutation of the caller's
 // builder cannot change this query (Laravel compiles subqueries eagerly).
 func snapshot(c *clause) {
-	if c.sub != nil {
-		c.sub = c.sub.Clone()
+	if c.x != nil && c.x.sub != nil {
+		c.x.sub = c.x.sub.Clone()
 	}
 	if q, ok := c.value.(*Builder); ok {
 		c.value = q.Clone()
@@ -27,7 +27,7 @@ func snapshot(c *clause) {
 
 func (b *Builder) push(dst *[]clause, boolean string, c clause) *Builder {
 	snapshot(&c)
-	c.boolean = boolean
+	c.conn = parseConn(boolean)
 	*dst = append(*dst, c)
 	return b
 }
@@ -51,7 +51,7 @@ func flatten(v any) []any {
 
 func (b *Builder) inClause(dst *[]clause, boolean, column string, values any, not bool) *Builder {
 	if sub, ok := values.(*Builder); ok {
-		return b.push(dst, boolean, clause{kind: clauseIn, column: column, sub: sub, not: not})
+		return b.push(dst, boolean, clause{kind: clauseIn, column: column, x: &clauseExt{sub: sub}, not: not})
 	}
 	return b.push(dst, boolean, clause{kind: clauseIn, column: column, values: flatten(values), not: not})
 }
@@ -95,7 +95,7 @@ func (b *Builder) group(dst *[]clause, boolean string, fn func(*Builder), having
 	if len(nested) == 0 {
 		return b
 	}
-	return b.push(dst, boolean, clause{kind: clauseNested, nested: nested})
+	return b.push(dst, boolean, clause{kind: clauseNested, x: &clauseExt{nested: nested}})
 }
 
 func (b *Builder) dateClause(dst *[]clause, boolean, part, column string, args []any) *Builder {
@@ -109,7 +109,7 @@ func (b *Builder) dateClause(dst *[]clause, boolean, part, column string, args [
 	if val, err = dateValue(part, val); err != nil {
 		return b.fail(err)
 	}
-	return b.push(dst, boolean, clause{kind: clauseDate, column: column, part: part, op: op, value: val})
+	return b.push(dst, boolean, clause{kind: clauseDate, column: column, x: &clauseExt{part: part}, op: op, value: val})
 }
 
 var dateLayouts = map[string]string{"date": "2006-01-02", "time": "15:04:05", "day": "02", "month": "01", "year": "2006"}
@@ -152,7 +152,7 @@ func (b *Builder) multi(boolean, inner string, columns []string, args []any) *Bu
 	if len(q.wheres) == 0 {
 		return b
 	}
-	return b.push(&b.wheres, boolean, clause{kind: clauseNested, nested: q.wheres})
+	return b.push(&b.wheres, boolean, clause{kind: clauseNested, x: &clauseExt{nested: q.wheres}})
 }
 
 // ---- NOT ----
@@ -188,7 +188,7 @@ func (b *Builder) columnClause(boolean, first string, args []any) *Builder {
 	if !ok {
 		return b.fail(fmt.Errorf("%w: second column must be a string", ErrInvalidArgs))
 	}
-	return b.push(&b.wheres, boolean, clause{kind: clauseColumn, column: first, op: op, columns: []string{second}})
+	return b.push(&b.wheres, boolean, clause{kind: clauseColumn, column: first, op: op, column2: second})
 }
 
 // ---- IN ----
@@ -280,7 +280,7 @@ func (b *Builder) OrWhereNotBetween(column string, lo, hi any) *Builder {
 }
 
 func (b *Builder) betweenColumns(boolean, column, c1, c2 string, not bool) *Builder {
-	return b.push(&b.wheres, boolean, clause{kind: clauseBetweenColumns, column: column, columns: []string{c1, c2}, not: not})
+	return b.push(&b.wheres, boolean, clause{kind: clauseBetweenColumns, column: column, x: &clauseExt{columns: []string{c1, c2}}, not: not})
 }
 
 // WhereBetweenColumns adds "col between c1 and c2" comparing against columns.
@@ -304,7 +304,7 @@ func (b *Builder) OrWhereNotBetweenColumns(column, c1, c2 string) *Builder {
 }
 
 func (b *Builder) valueBetween(boolean string, value any, c1, c2 string, not bool) *Builder {
-	return b.push(&b.wheres, boolean, clause{kind: clauseValueBetween, value: value, columns: []string{c1, c2}, not: not})
+	return b.push(&b.wheres, boolean, clause{kind: clauseValueBetween, value: value, x: &clauseExt{columns: []string{c1, c2}}, not: not})
 }
 
 // WhereValueBetween adds "? between c1 and c2" (a value between two columns).
@@ -400,22 +400,22 @@ func (b *Builder) whereMap(boolean string, m map[string]any) *Builder {
 
 // WhereExists adds "exists (subquery)". Build sub with NewQuery() or NewBuilder.
 func (b *Builder) WhereExists(sub *Builder) *Builder {
-	return b.push(&b.wheres, "and", clause{kind: clauseExists, sub: sub})
+	return b.push(&b.wheres, "and", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
 // OrWhereExists is WhereExists joined with OR.
 func (b *Builder) OrWhereExists(sub *Builder) *Builder {
-	return b.push(&b.wheres, "or", clause{kind: clauseExists, sub: sub})
+	return b.push(&b.wheres, "or", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
 // WhereNotExists adds "not exists (subquery)".
 func (b *Builder) WhereNotExists(sub *Builder) *Builder {
-	return b.push(&b.wheres, "and not", clause{kind: clauseExists, sub: sub})
+	return b.push(&b.wheres, "and not", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
 // OrWhereNotExists is WhereNotExists joined with OR.
 func (b *Builder) OrWhereNotExists(sub *Builder) *Builder {
-	return b.push(&b.wheres, "or not", clause{kind: clauseExists, sub: sub})
+	return b.push(&b.wheres, "or not", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
 // ---- date parts: args are (value) or (operator, value); time.Time is formatted per part ----
@@ -512,7 +512,7 @@ func (b *Builder) rowValues(boolean string, columns []string, op string, values 
 	if len(columns) == 0 || len(columns) != len(values) {
 		return b.fail(fmt.Errorf("%w: row values need equal, non-zero columns and values", ErrInvalidArgs))
 	}
-	return b.push(&b.wheres, boolean, clause{kind: clauseRowValues, columns: columns, op: op, values: values})
+	return b.push(&b.wheres, boolean, clause{kind: clauseRowValues, x: &clauseExt{columns: columns}, op: op, values: values})
 }
 
 // WhereRowValues adds "(a, b) op (?, ?)".

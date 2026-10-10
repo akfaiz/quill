@@ -10,7 +10,7 @@ import (
 	"github.com/akfaiz/quill/internal/dialect"
 )
 
-type clauseKind int
+type clauseKind uint8
 
 const (
 	clauseBasic clauseKind = iota
@@ -38,19 +38,100 @@ const (
 // clause is one WHERE or HAVING predicate.
 type clause struct {
 	kind clauseKind
-	// boolean joins this clause to the previous one: "and", "or", "and not", "or not".
-	boolean string
+	conn connKind
+	not  bool // is not null / not in / not between / not like
+	cs   bool // case sensitive, for clauseLike
+
 	column  string
 	op      string
 	value   any
-	values  []any
+	values  []any  // IN / BETWEEN / row-value lists
+	column2 string // the right-hand column of clauseColumn
+	x       *clauseExt
+}
+
+// clauseExt holds the fields only a few clause kinds use, so the common ones
+// (basic, null, column, in) stay small: a query holds many clauses and copies
+// them when slices grow and on Clone.
+type clauseExt struct {
 	columns []string
-	not     bool // is not null / not in / not between / not like
 	nested  []clause
 	sub     *Builder
 	raw     Expression
 	part    string // date part for clauseDate
-	cs      bool   // case sensitive, for clauseLike
+}
+
+// connKind is how a clause joins the one before it. The two "not" forms only
+// differ from and/or on the first clause, where they write a leading "not".
+type connKind uint8
+
+const (
+	connAnd connKind = iota
+	connOr
+	connAndNot
+	connOrNot
+)
+
+func parseConn(s string) connKind {
+	switch s {
+	case "or":
+		return connOr
+	case "and not":
+		return connAndNot
+	case "or not":
+		return connOrNot
+	}
+	return connAnd
+}
+
+func (k connKind) String() string {
+	switch k {
+	case connOr:
+		return "or"
+	case connAndNot:
+		return "and not"
+	case connOrNot:
+		return "or not"
+	}
+	return "and"
+}
+
+func (k connKind) negated() bool { return k == connAndNot || k == connOrNot }
+
+// Nil-safe views of the extension fields.
+func (c *clause) subquery() *Builder {
+	if c.x == nil {
+		return nil
+	}
+	return c.x.sub
+}
+
+func (c *clause) cols() []string {
+	if c.x == nil {
+		return nil
+	}
+	return c.x.columns
+}
+
+func (c *clause) kids() []clause {
+	if c.x == nil {
+		return nil
+	}
+	return c.x.nested
+}
+
+func (c *clause) rawExpr() Expression {
+	if c.x == nil {
+		return Expression{}
+	}
+	return c.x.raw
+}
+
+func (c *clause) datePart() string {
+	if c.x == nil {
+		return ""
+	}
+	return c.x.part
 }
 
 type selectItem struct {
@@ -186,9 +267,13 @@ func cloneClauses(cs []clause) []clause {
 	out := make([]clause, len(cs))
 	copy(out, cs)
 	for i := range out {
-		out[i].nested = cloneClauses(out[i].nested)
-		if out[i].sub != nil {
-			out[i].sub = out[i].sub.Clone()
+		if x := out[i].x; x != nil {
+			n := *x
+			n.nested = cloneClauses(n.nested)
+			if n.sub != nil {
+				n.sub = n.sub.Clone()
+			}
+			out[i].x = &n
 		}
 	}
 	return out
@@ -237,13 +322,13 @@ func (b *Builder) OrWhere(column string, args ...any) *Builder {
 
 // WhereRaw adds a raw predicate (caller-trusted SQL).
 func (b *Builder) WhereRaw(sql string, args ...any) *Builder {
-	b.wheres = append(b.wheres, clause{kind: clauseRaw, boolean: "and", raw: Raw(sql, args...)})
+	b.wheres = append(b.wheres, clause{kind: clauseRaw, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
 
 // OrWhereRaw is WhereRaw joined with OR.
 func (b *Builder) OrWhereRaw(sql string, args ...any) *Builder {
-	b.wheres = append(b.wheres, clause{kind: clauseRaw, boolean: "or", raw: Raw(sql, args...)})
+	b.wheres = append(b.wheres, clause{kind: clauseRaw, conn: connOr, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
 
@@ -274,13 +359,13 @@ func (b *Builder) OrHaving(column string, args ...any) *Builder {
 
 // HavingRaw adds a raw HAVING predicate (caller-trusted SQL).
 func (b *Builder) HavingRaw(sql string, args ...any) *Builder {
-	b.havings = append(b.havings, clause{kind: clauseRaw, boolean: "and", raw: Raw(sql, args...)})
+	b.havings = append(b.havings, clause{kind: clauseRaw, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
 
 // OrHavingRaw is HavingRaw joined with OR.
 func (b *Builder) OrHavingRaw(sql string, args ...any) *Builder {
-	b.havings = append(b.havings, clause{kind: clauseRaw, boolean: "or", raw: Raw(sql, args...)})
+	b.havings = append(b.havings, clause{kind: clauseRaw, conn: connOr, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
 
