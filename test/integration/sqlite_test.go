@@ -1077,3 +1077,47 @@ func TestSQLiteFromTakesTheTableFromTheType(t *testing.T) {
 		eq(t, int64(len(us)), total)
 	})
 }
+
+func TestSQLiteCTE(t *testing.T) {
+	conn := newDB(t)
+	active := func() *db.Builder { return conn.Table("users").Where("active", true) }
+
+	t.Run("plain", func(t *testing.T) {
+		eq(t, pluckNames(t, conn.Table("au").With("au", active()).OrderBy("name")), []string{"Ann", "Cy", "Di"})
+	})
+	t.Run("recursive series", func(t *testing.T) {
+		anchor := conn.Table("users").SelectRaw("1 as n").Where("id", 1)
+		step := conn.Table("seq").SelectRaw("n + 1").Where("n", "<", 5)
+		var got []int64
+		noErr(t, conn.Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got))
+		eq(t, got, []int64{1, 2, 3, 4, 5})
+	})
+	t.Run("inside where in", func(t *testing.T) {
+		var got []string
+		sub := conn.Table("au").Select("id").With("au", active())
+		noErr(t, conn.Table("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got))
+		eq(t, got, []string{"p1", "p2", "p4"})
+	})
+	t.Run("with an outer union", func(t *testing.T) {
+		q := conn.Table("au").Select("name").With("au", active()).Where("name", "Ann").
+			UnionAll(conn.Table("users").Select("name").Where("name", "Bob")).OrderBy("name")
+		eq(t, pluckNames(t, q), []string{"Ann", "Bob"})
+	})
+	t.Run("count and exists", func(t *testing.T) {
+		n, err := conn.Table("au").With("au", active()).Count(ctx)
+		noErr(t, err)
+		eq(t, n, int64(3))
+		ok, err := conn.Table("au").With("au", active()).Where("name", "Bob").Exists(ctx)
+		noErr(t, err)
+		eq(t, ok, false)
+	})
+	t.Run("insert using", func(t *testing.T) {
+		sub := conn.Table("inactive").Select("name").With("inactive", conn.Table("users").Where("active", false))
+		n, err := conn.Table("users").InsertUsing(ctx, []string{"name"}, sub)
+		noErr(t, err)
+		eq(t, n, int64(1))
+		c, err := conn.Table("users").Where("name", "Bob").Count(ctx)
+		noErr(t, err)
+		eq(t, c, int64(2))
+	})
+}

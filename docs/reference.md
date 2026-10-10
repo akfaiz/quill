@@ -129,6 +129,10 @@ Every exported method, grouped by purpose. The guides explain each group.
 `ForPage`, `ForPageAfterID`, `ForPageBeforeID`, `InRandomOrder`, `Latest`, `Limit`, `Offset`,
 `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`, `ReorderBy`, `Skip`, `Take`
 
+### Common table expressions (5)
+
+`With`, `WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
+
 ### Unions, locks, index hints (8)
 
 `ForceIndex`, `IgnoreIndex`, `Lock`, `LockForUpdate`, `SharedLock`, `Union`, `UnionAll`, `UseIndex`
@@ -159,7 +163,7 @@ Every exported method, grouped by purpose. The guides explain each group.
 `OrWhereNull`, `OrWhereRaw`, `Where`, `WhereIn`, `WhereNotIn`, `WhereNotNull`, `WhereNull`,
 `WhereRaw`
 
-### `db.Query[T]` (75)
+### `db.Query[T]` (80)
 
 `AddSelect`, `AllRows`, `Apply`, `Avg`, `Builder`, `Chunk`, `ChunkByID`, `Clone`, `Count`,
 `CursorPaginate`, `Delete`, `DeleteReturning`, `Distinct`, `DoesntExist`, `Each`, `Exists`, `Find`,
@@ -170,7 +174,8 @@ Every exported method, grouped by purpose. The guides explain each group.
 `Select`, `SelectRaw`, `SharedLock`, `SimplePaginate`, `Sole`, `Stream`, `Sum`, `Truncate`,
 `Unless`, `Update`, `UpdateMap`, `UpdateReturning`, `Upsert`, `When`, `Where`, `WhereBetween`,
 `WhereColumn`, `WhereExists`, `WhereGroup`, `WhereIn`, `WhereLike`, `WhereNot`, `WhereNotBetween`,
-`WhereNotExists`, `WhereNotIn`, `WhereNotNull`, `WhereNull`, `WhereRaw`
+`WhereNotExists`, `WhereNotIn`, `WhereNotNull`, `WhereNull`, `WhereRaw`, `With`,
+`WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
 
 The typed chain methods forward to the builder method of the same name; see
 [Typed API](typed-api.md#the-typed-chain).

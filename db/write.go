@@ -42,6 +42,10 @@ func (b *Builder) writeCompiler() (*compiler, error) {
 	if b.table == "" {
 		return nil, ErrNoTable
 	}
+	if len(b.ctes) > 0 {
+		// put the WITH on the select passed to InsertUsing instead
+		return nil, fmt.Errorf("%w: with clause on a write statement", ErrUnsupported)
+	}
 	return c, nil
 }
 

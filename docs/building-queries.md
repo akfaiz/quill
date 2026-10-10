@@ -273,6 +273,46 @@ Bind arguments are numbered across the whole statement, so `$1, $2, ...` stay co
 deeply queries nest. Build the inner query with `conn.NewQuery().From("t")` or
 `conn.Table("t")`. Subqueries are copied when added.
 
+## Common table expressions
+
+`With` adds a named query in front of the statement. Reference it by name in `From`, joins or
+subqueries:
+
+```go
+active := conn.Table("users").Where("active", true)
+
+conn.Table("au").With("au", active).Where("age", ">", 30)
+// with "au" as (select * from "users" where "active" = $1) select * from "au" where "age" > $2
+
+conn.Table("a").With("a", conn.Table("users").Select("id", "name"), "uid", "uname")
+// with "a" ("uid", "uname") as (select "id", "name" from "users") select * from "a"
+```
+
+`WithRecursive` takes the anchor query with the recursive member added by `UnionAll` (or `Union`).
+The clause becomes `with recursive`, and the members are written without parentheses, because
+SQLite rejects a recursive reference inside a subquery:
+
+```go
+anchor := conn.Table("categories").Where("id", 1)
+step := conn.Table("categories as c").Select("c.*").Join("tree", "tree.id", "c.parent_id")
+
+conn.Table("tree").WithRecursive("tree", anchor.UnionAll(step))
+// with recursive "tree" as (select * from "categories" where "id" = $1 union all
+//   select "c".* from "categories" as "c" inner join "tree" on "tree"."id" = "c"."parent_id")
+//   select * from "tree"
+```
+
+- `WithRaw(name, db.Raw(sql, args...), cols...)` uses caller-trusted SQL as the body.
+- `WithMaterialized` and `WithNotMaterialized` add `as [not] materialized` (PostgreSQL only; other
+  dialects return `ErrUnsupported`).
+- A CTE name is a table reference, so the table prefix applies to it just as it does in `From`.
+- The query passed in is copied when added. Duplicate or qualified names return `ErrInvalidArgs`.
+- WITH belongs to a select. A select carrying CTEs works as a subquery, a union member, in
+  `Count`/`Exists`/`Paginate`, and as the source of `InsertUsing`
+  (`insert into t (cols) with ... select ...`). Calling `With` on the builder that runs
+  `Insert`, `Update`, `Delete`, `Upsert` or `Truncate` returns `ErrUnsupported`; filter the write
+  with `WhereIn("id", cteQuery)` instead.
+
 ## Locks and index hints
 
 ```go

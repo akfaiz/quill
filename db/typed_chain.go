@@ -283,3 +283,33 @@ func (q *Query[T]) Returning(columns ...string) *Query[T] {
 	q.b.Returning(columns...)
 	return q
 }
+
+// With adds a common table expression "with name (cols) as (q)".
+func (q *Query[T]) With(name string, sub *Builder, cols ...string) *Query[T] {
+	q.b.With(name, sub, cols...)
+	return q
+}
+
+// WithRecursive adds a recursive common table expression.
+func (q *Query[T]) WithRecursive(name string, sub *Builder, cols ...string) *Query[T] {
+	q.b.WithRecursive(name, sub, cols...)
+	return q
+}
+
+// WithRaw adds a common table expression with a raw SQL body (caller-trusted SQL).
+func (q *Query[T]) WithRaw(name string, e Expression, cols ...string) *Query[T] {
+	q.b.WithRaw(name, e, cols...)
+	return q
+}
+
+// WithMaterialized adds "name as materialized (q)" (PostgreSQL only).
+func (q *Query[T]) WithMaterialized(name string, sub *Builder, cols ...string) *Query[T] {
+	q.b.WithMaterialized(name, sub, cols...)
+	return q
+}
+
+// WithNotMaterialized adds "name as not materialized (q)" (PostgreSQL only).
+func (q *Query[T]) WithNotMaterialized(name string, sub *Builder, cols ...string) *Query[T] {
+	q.b.WithNotMaterialized(name, sub, cols...)
+	return q
+}

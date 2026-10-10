@@ -6,10 +6,13 @@ import (
 	"strings"
 )
 
-// selectQuery compiles a SELECT, with unions when present. Components follow
+// selectQuery compiles a SELECT, with a WITH prefix and unions when present. Components follow
 // Laravel's order: columns, from, index hint, joins, wheres, groups, havings,
 // orders, limit, offset, lock.
 func (c *compiler) selectQuery(b *Builder) error {
+	if err := c.with(b); err != nil {
+		return err
+	}
 	if len(b.unions) == 0 {
 		return c.selectCore(b)
 	}

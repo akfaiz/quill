@@ -98,6 +98,8 @@ type Builder struct {
 	limit     *int
 	offset    *int
 
+	ctes []cteClause
+
 	unions      []unionClause
 	unionOrders []orderItem
 	unionLimit  *int
@@ -151,6 +153,7 @@ func (b *Builder) Clone() *Builder {
 	if b.fromSub != nil {
 		n.fromSub = b.fromSub.Clone()
 	}
+	n.ctes = cloneCTEs(b.ctes)
 	n.unions = make([]unionClause, len(b.unions))
 	for i, u := range b.unions {
 		n.unions[i] = unionClause{q: u.q.Clone(), all: u.all}

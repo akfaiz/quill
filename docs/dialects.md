@@ -23,6 +23,8 @@ and SQLite; [MariaDB](#mariadb) is the MySQL column except where its section say
 | `OFFSET` with no `LIMIT` | `offset n` | adds `limit 18446744073709551615` | adds `limit -1` |
 | Random order | `RANDOM()` | `RAND()` / `RAND(seed)` | `RANDOM()` |
 | Union members | `(select ...)` | `(select ...)` | `select * from (select ...)` |
+| Recursive CTE members | `anchor union all step` | same | same |
+| `WithMaterialized` | `as [not] materialized` | `ErrUnsupported` | `ErrUnsupported` |
 | Insert, no columns | `default values` | `() values ()` | `default values` |
 
 ## Matching and comparison
@@ -105,7 +107,11 @@ Differences you can observe:
   derived table. MySQL rejects duplicate column names in a derived table, so a join that selects
   `*` from two tables sharing a column name should select explicit columns.
 - **Affected rows on MySQL** count changed rows, so updating a row to its current value reports 0.
-- **Version floors:** SQLite `RETURNING` needs 3.35; MySQL lateral joins need 8.0.14.
+- **Version floors:** SQLite `RETURNING` needs 3.35; MySQL lateral joins need 8.0.14. CTEs need
+  MySQL 8.0, MariaDB 10.2 and SQLite 3.8.3; `materialized` needs PostgreSQL 12. The CTE floors
+  are the vendors' documented minimums and are untested here.
+- **Recursion depth on MySQL** is capped by `cte_max_recursion_depth` (default 1000); a deeper
+  recursive CTE fails at run time.
 
 ## MariaDB
 
