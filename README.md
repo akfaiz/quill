@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/akfaiz/quill/actions/workflows/ci.yml"><img src="https://github.com/akfaiz/quill/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://codecov.io/gh/akfaiz/quill"><img src="https://codecov.io/gh/akfaiz/quill/graph/badge.svg" alt="Coverage"></a>
   <a href="https://pkg.go.dev/github.com/akfaiz/quill/db"><img src="https://pkg.go.dev/badge/github.com/akfaiz/quill/db.svg" alt="Go Reference"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/akfaiz/quill" alt="Go version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/akfaiz/quill" alt="License: MIT"></a>
