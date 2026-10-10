@@ -264,12 +264,36 @@ func (b *Builder) Truncate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range stmts {
-		if _, err := db.exec(ctx, s.SQL, s.Args); err != nil {
+	if len(stmts) == 1 {
+		_, err = db.exec(ctx, stmts[0].SQL, stmts[0].Args)
+		return err
+	}
+	// SQLite: reset the AUTOINCREMENT counter and empty the table, or neither.
+	c, err := b.writeCompiler()
+	if err != nil {
+		return err
+	}
+	probe := "SELECT 1 FROM " + c.sqliteSchema(
+		b.table,
+	) + "sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
+	return db.Transaction(ctx, func(tx *DB) error {
+		hasSeq := false
+		if err := tx.runSQL(ctx, probe, nil, func(rows *sql.Rows) error {
+			hasSeq = rows.Next()
+			return rows.Err()
+		}); err != nil {
 			return err
 		}
-	}
-	return nil
+		for i, s := range stmts {
+			if i == 0 && !hasSeq {
+				continue // sqlite_sequence appears with the first AUTOINCREMENT table
+			}
+			if _, err := tx.exec(ctx, s.SQL, s.Args); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ---- RETURNING ----

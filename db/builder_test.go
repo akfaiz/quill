@@ -106,6 +106,21 @@ func TestSelectGolden(t *testing.T) {
 			args: []any{1},
 		},
 		{
+			name: "prefix on a schema-qualified column goes on the table segment",
+			build: func(d db.Dialect) *db.Builder {
+				return db.Use(d).Table("public.users").Prefix("app_").
+					Select("public.users.id", "public.users.*", "users.name").
+					Where("public.users.id", 1)
+			},
+			pg: `SELECT "public"."app_users"."id", "public"."app_users".*, "app_users"."name" ` +
+				`FROM "public"."app_users" WHERE "public"."app_users"."id" = $1`,
+			my: "SELECT `public`.`app_users`.`id`, `public`.`app_users`.*, `app_users`.`name` " +
+				"FROM `public`.`app_users` WHERE `public`.`app_users`.`id` = ?",
+			lite: `SELECT "public"."app_users"."id", "public"."app_users".*, "app_users"."name" ` +
+				`FROM "public"."app_users" WHERE "public"."app_users"."id" = ?`,
+			args: []any{1},
+		},
+		{
 			name: "identifier quote escaped",
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("t").Select(`a"b` + "`c")
