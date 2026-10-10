@@ -2,12 +2,13 @@ GO       ?= go
 FUZZTIME ?= 20s
 BENCH    ?= .
 BENCHTIME ?= 1s
+COVERFILE ?= coverage.out
 BENCHSET ?= Select|Insert|Update|Upsert|Delete|ToRaw|Clone|Join
 INTEGRATION_DIR := test/integration
 BENCHMARK_DIR   := test/benchmark
 
 .DEFAULT_GOAL := help
-.PHONY: help build fmt vet lint test test-integration test-integration-lite \
+.PHONY: help build fmt vet lint test test-cover cover-html test-integration test-integration-lite \
         test-postgres test-mysql test-mariadb test-sqlite bench bench-libs bench-libs-update fuzz tidy check ci
 
 help: ## Show this help
@@ -31,6 +32,13 @@ lint: ## Run golangci-lint on every module
 
 test: ## Unit and golden tests (root module, race detector on)
 	$(GO) test -race ./...
+
+test-cover: ## Unit tests with coverage (COVERFILE=coverage.out); prints per-function summary
+	$(GO) test -race -covermode=atomic -coverpkg=./... -coverprofile=$(COVERFILE) ./...
+	$(GO) tool cover -func=$(COVERFILE) | tail -n 1
+
+cover-html: test-cover ## Open the HTML coverage report in a browser
+	$(GO) tool cover -html=$(COVERFILE)
 
 test-integration: ## End-to-end tests on all databases (needs Docker)
 	cd $(INTEGRATION_DIR) && $(GO) test -race ./...
