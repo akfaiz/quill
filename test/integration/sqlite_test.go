@@ -565,6 +565,23 @@ func TestSQLiteWrites(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), id)
 	})
+	t.Run("truncate without any AUTOINCREMENT table", func(t *testing.T) {
+		sdb, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		sdb.SetMaxOpenConns(1)
+		t.Cleanup(func() { _ = sdb.Close() })
+		// INTEGER PRIMARY KEY without AUTOINCREMENT: SQLite never creates sqlite_sequence
+		_, err = sdb.Exec(`CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)`)
+		require.NoError(t, err)
+		conn := db.New(sdb, db.SQLite)
+		_, err = conn.Table("notes").Insert(ctx, map[string]any{"body": "a"})
+		require.NoError(t, err)
+
+		require.NoError(t, conn.Table("notes").Truncate(ctx))
+		c, err := conn.Table("notes").Count(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), c)
+	})
 	t.Run("returning", func(t *testing.T) {
 		conn := newDB(t)
 		var out []struct {

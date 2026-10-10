@@ -260,14 +260,43 @@ func TestTruncateExecutor(t *testing.T) {
 	mock.ExpectExec(`TRUNCATE "users" RESTART IDENTITY`).WillReturnError(errors.New("boom"))
 	require.Error(t, db.New(sqlDB, db.Postgres).Table("users").Truncate(ctx))
 
-	// SQLite needs two statements
+	// SQLite needs two statements, run in one transaction
 	lite := db.New(sqlDB, db.SQLite)
 	stmts, err := lite.Table("users").TruncateSQL()
 	require.NoError(t, err)
-	for _, s := range stmts {
-		mock.ExpectExec(s.SQL).WillReturnResult(sqlmock.NewResult(0, 0))
-	}
-	require.NoError(t, lite.Table("users").Truncate(ctx))
+	const probe = `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'`
+	t.Run("sqlite with sqlite_sequence", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(probe).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+		for _, s := range stmts {
+			mock.ExpectExec(s.SQL).WillReturnResult(sqlmock.NewResult(0, 0))
+		}
+		mock.ExpectCommit()
+		require.NoError(t, lite.Table("users").Truncate(ctx))
+	})
+	t.Run("sqlite without sqlite_sequence skips the reset", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(probe).WillReturnRows(sqlmock.NewRows([]string{"1"}))
+		mock.ExpectExec(stmts[1].SQL).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		require.NoError(t, lite.Table("users").Truncate(ctx))
+	})
+	t.Run("sqlite rolls back when the delete fails", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(probe).WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
+		mock.ExpectExec(stmts[0].SQL).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(stmts[1].SQL).WillReturnError(errors.New("boom"))
+		mock.ExpectRollback()
+		require.Error(t, lite.Table("users").Truncate(ctx))
+	})
+	t.Run("sqlite schema-qualified table probes that schema", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(`SELECT 1 FROM "aux".sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'`).
+			WillReturnRows(sqlmock.NewRows([]string{"1"}))
+		mock.ExpectExec(`DELETE FROM "aux"."users"`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
+		require.NoError(t, lite.Table("aux.users").Truncate(ctx))
+	})
 
 	require.ErrorIs(t, db.Use(db.Postgres).Table("users").Truncate(ctx), db.ErrNotBound)
 	require.Error(t, db.New(sqlDB, db.Postgres).Table("users").Where("a", "bogus-op", 1).Truncate(ctx))

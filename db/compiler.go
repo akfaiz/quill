@@ -117,13 +117,16 @@ func (c *compiler) columnTo(sb *strings.Builder, s string) {
 		sb.WriteString(c.wrapJSONSelector(s))
 		return
 	}
+	// The segment before the column is the table name or alias, so it takes the
+	// prefix; in "schema.table.col" that is "table", as in tableTo.
+	tableSeg := strings.Count(s, ".") - 1
 	for i := 0; ; i++ {
 		seg, rest, more := strings.Cut(s, ".")
 		switch {
 		case seg == "*":
 			sb.WriteString(seg)
-		case i == 0 && more:
-			c.quoteTo(sb, c.prefix+seg) // a qualifier is a table name or alias: prefixed
+		case i == tableSeg:
+			c.quoteTo(sb, c.prefix+seg)
 		default:
 			c.quoteTo(sb, seg)
 		}

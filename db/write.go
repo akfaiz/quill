@@ -712,10 +712,21 @@ func (b *Builder) DeleteSQL() (string, []any, error) {
 	return c.result(c.delete(b))
 }
 
+// sqliteSchema is the quoted `"schema".` prefix of a "schema.table" name, or "".
+func (c *compiler) sqliteSchema(table string) string {
+	if i := strings.LastIndex(table, "."); i >= 0 {
+		return c.g.Quote(table[:i]) + "."
+	}
+	return ""
+}
+
 // TruncateSQL builds the statements that empty the table and reset its identity.
 // Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE),
 // so referencing tables are never emptied implicitly. MySQL: "TRUNCATE TABLE t".
 // SQLite has no TRUNCATE: it deletes the sqlite_sequence row, then every row.
+// Truncate runs both in one transaction and skips the first when the database has
+// no sqlite_sequence table yet (no table uses AUTOINCREMENT); run TruncateSQL's
+// statements yourself only if you handle that case.
 //
 // Example:
 //
@@ -735,9 +746,9 @@ func (b *Builder) TruncateSQL() ([]Stmt, error) {
 	case MySQL, MariaDB:
 		return []Stmt{{SQL: "TRUNCATE TABLE " + c.wrapTable(b.table)}}, nil
 	}
-	schema, name := "", b.table
+	schema, name := c.sqliteSchema(b.table), b.table
 	if i := strings.LastIndex(b.table, "."); i >= 0 {
-		schema, name = c.g.Quote(b.table[:i])+".", b.table[i+1:]
+		name = b.table[i+1:]
 	}
 	return []Stmt{
 		{SQL: "DELETE FROM " + schema + "sqlite_sequence WHERE name = ?", Args: []any{b.prefix + name}},
