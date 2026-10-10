@@ -28,7 +28,7 @@ func (b *Builder) execSQL(ctx context.Context, build func() (string, []any, erro
 	return res.RowsAffected()
 }
 
-// noop turns "nothing to write" into a successful no-op, as Laravel does.
+// noop turns "nothing to write" into a successful no-op,.
 func noop(n int64, err error) (int64, error) {
 	if errors.Is(err, ErrNoValues) {
 		return 0, nil

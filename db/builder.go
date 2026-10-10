@@ -526,7 +526,7 @@ func (b *Builder) OrderByRaw(sql string, args ...any) *Builder {
 	return b
 }
 
-// Limit sets LIMIT; negative values are ignored (as in Laravel).
+// Limit sets LIMIT; negative values are ignored.
 //
 // Example:
 //
@@ -543,7 +543,7 @@ func (b *Builder) Limit(n int) *Builder {
 	return b
 }
 
-// addOrder appends to the union's ORDER BY once a union exists (as Laravel does).
+// addOrder appends to the union's ORDER BY once a union exists.
 func (b *Builder) addOrder(o orderItem) {
 	if len(b.unions) > 0 {
 		b.unionOrders = append(b.unionOrders, o)

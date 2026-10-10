@@ -15,13 +15,12 @@
 
 </div>
 
-A fluent SQL query builder for Go, modelled on Laravel's query builder. It builds SQL with bind
-arguments and can optionally run it through `database/sql`. **It is not an ORM**: there are no
-models, relations, hooks or migrations.
+A fluent SQL query builder for Go, with an API inspired by Laravel's query builder. It builds SQL
+with bind arguments and can optionally run it through `database/sql`. **It is not an ORM**: there
+are no models, relations, model lifecycle hooks or migrations.
 
 - Dialects: PostgreSQL, MySQL, MariaDB, SQLite
-- Standard library only at runtime (no third-party dependencies; testify is used by tests only)
-- Go 1.25 or newer
+- Standard library only at runtime (testify and go-sqlmock are used by tests only)
 
 ## Features
 
@@ -51,7 +50,8 @@ models, relations, hooks or migrations.
 
 ## Why quill
 
-- **Not an ORM.** No models, relations, hooks or migrations; you keep control of the SQL.
+- **You keep control of the SQL.** No models or relations to learn; every query reads like the SQL
+  it produces.
 - **One API, four dialects.** Quoting, placeholders and syntax differences are handled for you, and
   a feature a dialect cannot express returns `ErrUnsupported` instead of emitting SQL that
   behaves differently.
@@ -87,7 +87,8 @@ sql, args, err := db.Use(db.Postgres).Table("users").
 // args: [100]
 ```
 
-Run queries (wrap any `*sql.DB`, `*sql.Tx` or `*sql.Conn`):
+Run queries (wrap any `*sql.DB`, `*sql.Tx` or `*sql.Conn`). `db.Use` only builds SQL: running a
+query on it returns `ErrNotBound`. `db.New` also executes:
 
 ```go
 conn := db.New(sqlDB, db.Postgres)
@@ -95,6 +96,9 @@ conn := db.New(sqlDB, db.Postgres)
 var users []User
 err := conn.Table("users").Where("active", true).OrderBy("id").Get(ctx, &users)
 ```
+
+> Name the variable `conn` (or anything but `db`): a local variable called `db` hides the
+> package inside its scope.
 
 Let a struct name its own table, and skip the destination variable:
 
@@ -123,9 +127,6 @@ err := conn.Transaction(ctx, func(tx *db.DB) error {
     return err
 })
 ```
-
-> Name the variable `conn` (or anything but `db`): a local variable called `db` hides the
-> package inside its scope.
 
 ## Documentation
 
