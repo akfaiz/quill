@@ -55,6 +55,7 @@ func (pgGrammar) IndexHint(string, string) (string, error) { return "", nil }
 func (pgGrammar) Random(*int) string                       { return "RANDOM()" }
 
 func (pgGrammar) Quote(s string) string { return `"` + doubleChar(s, '"') + `"` }
+func (pgGrammar) QuoteChar() byte       { return '"' }
 func (pgGrammar) Placeholder(n int) string {
 	if n >= 0 && n < len(pgPlaceholders) {
 		return pgPlaceholders[n]

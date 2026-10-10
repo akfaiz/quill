@@ -70,9 +70,10 @@ func (c *compiler) selectCore(b *Builder) error {
 		if err := c.subquery(b.fromSub); err != nil {
 			return err
 		}
-		c.write(" as " + c.wrapTable(b.fromAlias))
+		c.write(" as ")
+		c.writeTable(b.fromAlias)
 	default:
-		c.write(c.wrapTable(b.table))
+		c.writeTable(b.table)
 	}
 
 	if b.hint != nil {
@@ -136,7 +137,9 @@ func (c *compiler) orderLimitOffset(orders []orderItem, limit, offset *int) erro
 				c.raw(*o.raw)
 				continue
 			}
-			c.write(c.wrapColumn(o.column) + " " + o.dir)
+			c.writeColumn(o.column)
+			c.write(" ")
+			c.write(o.dir)
 		}
 	}
 	lim := ""
@@ -162,9 +165,10 @@ func (c *compiler) item(it selectItem) error {
 		if err := c.subquery(it.sub); err != nil {
 			return err
 		}
-		c.write(" as " + c.wrapColumn(it.alias))
+		c.write(" as ")
+		c.writeColumn(it.alias)
 	default:
-		c.write(c.wrapColumn(it.column))
+		c.writeColumn(it.column)
 	}
 	return nil
 }
@@ -189,18 +193,26 @@ func (c *compiler) clause(cl clause) error {
 	case clauseRaw:
 		c.raw(cl.raw)
 	case clauseNull:
-		c.write(c.wrapColumn(cl.column))
+		c.writeColumn(cl.column)
 		if cl.not {
 			c.write(" is not null")
 		} else {
 			c.write(" is null")
 		}
 	case clauseBasic:
-		c.write(c.wrapColumn(cl.column) + c.g.LikeCast(cl.op) + " " + cl.op + " ")
+		c.writeColumn(cl.column)
+		c.write(c.g.LikeCast(cl.op))
+		c.write(" ")
+		c.write(cl.op)
+		c.write(" ")
 		return c.value(cl.value)
 	case clauseLike:
 		op := c.g.LikeOp(cl.cs, cl.not)
-		c.write(c.wrapColumn(cl.column) + c.g.LikeCast(op) + " " + op + " ")
+		c.writeColumn(cl.column)
+		c.write(c.g.LikeCast(op))
+		c.write(" ")
+		c.write(op)
+		c.write(" ")
 		if s, ok := cl.value.(string); ok {
 			cl.value = c.g.LikeValue(s, cl.cs)
 		}
@@ -208,26 +220,41 @@ func (c *compiler) clause(cl clause) error {
 	case clauseJSONBool, clauseJSONContains, clauseJSONOverlaps, clauseJSONContainsKey, clauseJSONLength:
 		return c.jsonClause(cl)
 	case clauseNullSafe:
-		c.write(c.wrapColumn(cl.column) + " " + c.g.NullSafeOp() + " ")
+		c.writeColumn(cl.column)
+		c.write(" ")
+		c.write(c.g.NullSafeOp())
+		c.write(" ")
 		return c.value(cl.value)
 	case clauseColumn:
-		c.write(c.wrapColumn(cl.column) + " " + cl.op + " " + c.wrapColumn(cl.columns[0]))
+		c.writeColumn(cl.column)
+		c.write(" ")
+		c.write(cl.op)
+		c.write(" ")
+		c.writeColumn(cl.columns[0])
 	case clauseIn, clauseInRaw:
 		return c.inClause(cl)
 	case clauseBetween:
-		c.write(c.wrapColumn(cl.column) + betweenKw(cl.not))
+		c.writeColumn(cl.column)
+		c.write(betweenKw(cl.not))
 		if err := c.value(cl.values[0]); err != nil {
 			return err
 		}
 		c.write(" and ")
 		return c.value(cl.values[1])
 	case clauseBetweenColumns:
-		c.write(c.wrapColumn(cl.column) + betweenKw(cl.not) + c.wrapColumn(cl.columns[0]) + " and " + c.wrapColumn(cl.columns[1]))
+		c.writeColumn(cl.column)
+		c.write(betweenKw(cl.not))
+		c.writeColumn(cl.columns[0])
+		c.write(" and ")
+		c.writeColumn(cl.columns[1])
 	case clauseValueBetween:
 		if err := c.value(cl.value); err != nil {
 			return err
 		}
-		c.write(betweenKw(cl.not) + c.wrapColumn(cl.columns[0]) + " and " + c.wrapColumn(cl.columns[1]))
+		c.write(betweenKw(cl.not))
+		c.writeColumn(cl.columns[0])
+		c.write(" and ")
+		c.writeColumn(cl.columns[1])
 	case clauseNested:
 		c.write("(")
 		if err := c.clauses(cl.nested); err != nil {
@@ -269,14 +296,17 @@ func (c *compiler) inClause(cl clause) error {
 		kw, empty = " not in ", "1 = 1"
 	}
 	if cl.sub != nil {
-		c.write(c.wrapColumn(cl.column) + kw)
+		c.writeColumn(cl.column)
+		c.write(kw)
 		return c.subquery(cl.sub)
 	}
 	if len(cl.values) == 0 {
 		c.write(empty)
 		return nil
 	}
-	c.write(c.wrapColumn(cl.column) + kw + "(")
+	c.writeColumn(cl.column)
+	c.write(kw)
+	c.write("(")
 	if cl.kind == clauseInRaw {
 		for i, v := range cl.values {
 			if i > 0 {

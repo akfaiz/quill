@@ -26,6 +26,9 @@ const (
 type Grammar interface {
 	// Quote wraps a single identifier segment, escaping embedded quote chars.
 	Quote(segment string) string
+	// QuoteChar is the identifier quote byte Quote wraps with, so callers can write a
+	// quoted identifier straight into a buffer without allocating.
+	QuoteChar() byte
 	// Placeholder returns the bind marker for the n-th (1-based) argument.
 	Placeholder(n int) string
 	// UnboundedLimit returns the limit literal required when OFFSET is used

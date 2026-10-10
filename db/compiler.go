@@ -11,15 +11,6 @@ import (
 
 var aliasRe = regexp.MustCompile(`(?i)^(.+?)\s+as\s+(.+)$`)
 
-// matchAlias is aliasRe.FindStringSubmatch with a cheap pre-check: an alias needs
-// whitespace around "as" (RE2 \s is [\t\n\f\r ]), so most identifiers skip the regexp.
-func matchAlias(s string) []string {
-	if !strings.ContainsAny(s, " \t\n\f\r") {
-		return nil
-	}
-	return aliasRe.FindStringSubmatch(s)
-}
-
 // compiler accumulates SQL text and bind arguments in order, so placeholder
 // numbering stays correct across nested subqueries.
 type compiler struct {
@@ -31,6 +22,22 @@ type compiler struct {
 }
 
 func (c *compiler) write(s string) { c.sb.WriteString(s) }
+
+// reserve sizes the output buffer and the args slice from the root query's shape,
+// so a typical query grows each at most once instead of doubling repeatedly.
+// The numbers are estimates: undershooting only costs a regrow, never correctness.
+func (c *compiler) reserve(b *Builder) {
+	onCount := 0
+	for _, j := range b.joins {
+		onCount += len(j.on)
+	}
+	parts := len(b.columns) + len(b.joins) + onCount + len(b.wheres) + len(b.groups) +
+		len(b.havings) + len(b.orders) + 2*len(b.ctes) + 4*len(b.unions)
+	c.sb.Grow(64 + 24*parts)
+	if n := onCount + len(b.wheres) + len(b.havings); n > 0 {
+		c.args = make([]any, 0, n)
+	}
+}
 
 // param appends a bind argument and writes its placeholder.
 func (c *compiler) param(v any) {
@@ -71,34 +78,57 @@ func (c *compiler) raw(e Expression) {
 	}
 }
 
+// quoteTo writes one identifier segment, quoted and with embedded quote chars
+// doubled, without allocating (see Grammar.QuoteChar).
+func (c *compiler) quoteTo(sb *strings.Builder, seg string) {
+	q := c.g.QuoteChar()
+	sb.WriteByte(q)
+	for {
+		i := strings.IndexByte(seg, q)
+		if i < 0 {
+			break
+		}
+		sb.WriteString(seg[:i+1])
+		sb.WriteByte(q)
+		seg = seg[i+1:]
+	}
+	sb.WriteString(seg)
+	sb.WriteByte(q)
+}
+
 // wrapColumn quotes a column reference: "t.col", "col as alias", "*", "t.*".
 func (c *compiler) wrapColumn(s string) string {
-	if m := matchAlias(s); m != nil {
-		return c.wrapColumn(m[1]) + " as " + c.g.Quote(m[2])
+	var sb strings.Builder
+	c.columnTo(&sb, s)
+	return sb.String()
+}
+
+// writeColumn is wrapColumn written straight into the output buffer.
+func (c *compiler) writeColumn(s string) { c.columnTo(&c.sb, s) }
+
+func (c *compiler) columnTo(sb *strings.Builder, s string) {
+	if name, alias, ok := matchAlias(s); ok {
+		c.columnTo(sb, name)
+		sb.WriteString(" as ")
+		c.quoteTo(sb, alias)
+		return
 	}
 	if jsonpath.IsSelector(s) {
-		return c.wrapJSONSelector(s)
+		sb.WriteString(c.wrapJSONSelector(s))
+		return
 	}
-	if !strings.Contains(s, ".") { // common case: one segment, nothing to split or join
-		if s == "*" {
-			return s
-		}
-		return c.g.Quote(s)
-	}
-	var sb strings.Builder
-	sb.Grow(len(s) + 8)
 	for i := 0; ; i++ {
 		seg, rest, more := strings.Cut(s, ".")
 		switch {
 		case seg == "*":
 			sb.WriteString(seg)
 		case i == 0 && more:
-			sb.WriteString(c.g.Quote(c.prefix + seg))
+			c.quoteTo(sb, c.prefix+seg) // a qualifier is a table name or alias: prefixed
 		default:
-			sb.WriteString(c.g.Quote(seg))
+			c.quoteTo(sb, seg)
 		}
 		if !more {
-			return sb.String()
+			return
 		}
 		sb.WriteByte('.')
 		s = rest
@@ -108,21 +138,28 @@ func (c *compiler) wrapColumn(s string) string {
 // wrapTable quotes a table reference ("schema.tbl", "tbl as t"), applying the
 // table prefix to the table name and alias.
 func (c *compiler) wrapTable(s string) string {
-	if m := matchAlias(s); m != nil {
-		return c.wrapTable(m[1]) + " as " + c.g.Quote(c.prefix+m[2])
-	}
-	if !strings.Contains(s, ".") {
-		return c.g.Quote(c.prefix + s)
-	}
 	var sb strings.Builder
-	sb.Grow(len(s) + 8)
+	c.tableTo(&sb, s)
+	return sb.String()
+}
+
+// writeTable is wrapTable written straight into the output buffer.
+func (c *compiler) writeTable(s string) { c.tableTo(&c.sb, s) }
+
+func (c *compiler) tableTo(sb *strings.Builder, s string) {
+	if name, alias, ok := matchAlias(s); ok {
+		c.tableTo(sb, name)
+		sb.WriteString(" as ")
+		c.quoteTo(sb, c.prefix+alias)
+		return
+	}
 	for {
 		seg, rest, more := strings.Cut(s, ".")
 		if !more {
-			sb.WriteString(c.g.Quote(c.prefix + seg)) // only the last segment is the table name
-			return sb.String()
+			c.quoteTo(sb, c.prefix+seg) // only the last segment is the table name
+			return
 		}
-		sb.WriteString(c.g.Quote(seg))
+		c.quoteTo(sb, seg)
 		sb.WriteByte('.')
 		s = rest
 	}
@@ -130,8 +167,8 @@ func (c *compiler) wrapTable(s string) string {
 
 // bareColumn strips a table qualifier and alias: "t.id", "id as x" -> "id" / "x".
 func bareColumn(c string) string {
-	if m := matchAlias(c); m != nil {
-		return strings.TrimSpace(m[2])
+	if _, alias, ok := matchAlias(c); ok {
+		return strings.TrimSpace(alias)
 	}
 	if i := strings.LastIndex(c, "."); i >= 0 {
 		return c[i+1:]

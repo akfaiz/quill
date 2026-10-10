@@ -53,5 +53,6 @@ func (mysqlGrammar) Random(seed *int) string {
 }
 
 func (mysqlGrammar) Quote(s string) string  { return "`" + doubleChar(s, '`') + "`" }
+func (mysqlGrammar) QuoteChar() byte        { return '`' }
 func (mysqlGrammar) Placeholder(int) string { return "?" }
 func (mysqlGrammar) UnboundedLimit() string { return "18446744073709551615" }

@@ -102,7 +102,7 @@ func (c *compiler) with(b *Builder) error {
 		if i > 0 {
 			c.write(", ")
 		}
-		c.write(c.wrapTable(cte.name))
+		c.writeTable(cte.name)
 		if len(cte.cols) > 0 {
 			quoted := make([]string, len(cte.cols))
 			for j, col := range cte.cols {

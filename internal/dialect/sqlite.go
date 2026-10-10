@@ -53,5 +53,6 @@ func (sqliteGrammar) IndexHint(kind, index string) (string, error) {
 func (sqliteGrammar) Random(*int) string { return "RANDOM()" }
 
 func (sqliteGrammar) Quote(s string) string  { return `"` + doubleChar(s, '"') + `"` }
+func (sqliteGrammar) QuoteChar() byte        { return '"' }
 func (sqliteGrammar) Placeholder(int) string { return "?" }
 func (sqliteGrammar) UnboundedLimit() string { return "-1" }

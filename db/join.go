@@ -259,9 +259,10 @@ func (c *compiler) join(j joinClause) error {
 		if err := c.subquery(j.sub); err != nil {
 			return err
 		}
-		c.write(" as " + c.wrapTable(j.alias))
+		c.write(" as ")
+		c.writeTable(j.alias)
 	} else {
-		c.write(c.wrapTable(j.table))
+		c.writeTable(j.table)
 	}
 	if j.lateral {
 		c.write(" on true")

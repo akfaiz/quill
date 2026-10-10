@@ -431,8 +431,12 @@ func (b *Builder) ToSQL() (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	c.reserve(b)
 	if err := c.selectQuery(b); err != nil {
 		return "", nil, err
+	}
+	if len(c.args) == 0 {
+		c.args = nil // the reserved capacity is not an observable empty slice
 	}
 	return c.sb.String(), c.args, nil
 }
