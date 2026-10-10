@@ -1,0 +1,638 @@
+package db
+
+import (
+	"fmt"
+	"reflect"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/akfaiz/quill/internal/jsonpath"
+)
+
+// Stmt is one compiled statement and its ordered bind arguments.
+type Stmt struct {
+	SQL  string
+	Args []any
+}
+
+type setItem struct {
+	column string
+	value  any
+}
+
+var tableAliasRe = regexp.MustCompile(`(?i)\s+as\s+`)
+
+// Returning adds a RETURNING clause to insert/update/delete/upsert
+// (Postgres, SQLite >= 3.35; MySQL returns ErrUnsupported). "*" is allowed.
+func (b *Builder) Returning(columns ...string) *Builder {
+	b.returning = append(b.returning, columns...)
+	return b
+}
+
+// AllRows confirms that an update/delete without a where clause is intended.
+// Without it, UpdateSQL/DeleteSQL/IncrementSQL refuse to build (ErrNoWhere).
+func (b *Builder) AllRows() *Builder { b.allRows = true; return b }
+
+func (b *Builder) writeCompiler() (*compiler, error) {
+	c, err := b.newCompiler()
+	if err != nil {
+		return nil, err
+	}
+	if b.table == "" {
+		return nil, ErrNoTable
+	}
+	return c, nil
+}
+
+func (b *Builder) requireWhere() error {
+	if len(b.wheres) == 0 && b.limit == nil && !b.allRows {
+		return ErrNoWhere
+	}
+	return nil
+}
+
+func (c *compiler) result(err error) (string, []any, error) {
+	if err != nil {
+		return "", nil, err
+	}
+	return c.sb.String(), c.args, nil
+}
+
+// ---- insert ----
+
+// normalizeRows returns the sorted column list shared by every row.
+func normalizeRows(rows []map[string]any) ([]string, error) {
+	if len(rows) == 0 {
+		return nil, ErrNoValues
+	}
+	cols := make([]string, 0, len(rows[0]))
+	for k := range rows[0] {
+		cols = append(cols, k)
+	}
+	sort.Strings(cols)
+	for i, r := range rows[1:] {
+		if len(r) != len(cols) {
+			return nil, fmt.Errorf("%w: row %d has different columns than row 0", ErrInvalidArgs, i+1)
+		}
+		for _, k := range cols {
+			if _, ok := r[k]; !ok {
+				return nil, fmt.Errorf("%w: row %d is missing column %q", ErrInvalidArgs, i+1, k)
+			}
+		}
+	}
+	if len(cols) == 0 && len(rows) > 1 {
+		return nil, fmt.Errorf("%w: multiple rows need at least one column", ErrInvalidArgs)
+	}
+	return cols, nil
+}
+
+func (c *compiler) insertVerb(ignore bool) string {
+	if ignore {
+		switch c.d {
+		case MySQL, MariaDB:
+			return "insert ignore into "
+		case SQLite:
+			return "insert or ignore into "
+		}
+	}
+	return "insert into "
+}
+
+func (c *compiler) wrapColumns(cols []string) string {
+	out := make([]string, len(cols))
+	for i, col := range cols {
+		out[i] = c.wrapColumn(col)
+	}
+	return strings.Join(out, ", ")
+}
+
+func (c *compiler) returningClause(cols []string) error {
+	if len(cols) == 0 {
+		return nil
+	}
+	if c.d.mysqlFamily() {
+		return fmt.Errorf("%w: RETURNING on mysql", ErrUnsupported)
+	}
+	c.write(" returning " + c.wrapColumns(cols))
+	return nil
+}
+
+func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error {
+	cols, err := normalizeRows(rows)
+	if err != nil {
+		return err
+	}
+	c.write(c.insertVerb(ignore) + c.wrapTable(b.table))
+	if len(cols) == 0 {
+		if c.d.mysqlFamily() {
+			c.write(" () values ()")
+		} else {
+			c.write(" default values")
+		}
+	} else {
+		c.write(" (" + c.wrapColumns(cols) + ") values ")
+		for i, r := range rows {
+			if i > 0 {
+				c.write(", ")
+			}
+			c.write("(")
+			for j, k := range cols {
+				if j > 0 {
+					c.write(", ")
+				}
+				if err := c.value(r[k]); err != nil {
+					return err
+				}
+			}
+			c.write(")")
+		}
+	}
+	if ignore && c.d == Postgres {
+		c.write(" on conflict do nothing")
+	}
+	return c.returningClause(b.returning)
+}
+
+// InsertSQL builds "insert into t (cols) values (...), (...)". Columns are the
+// sorted keys of the first row; every row must have the same keys. A single
+// empty row inserts default values.
+func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	return c.result(c.insert(b, rows, false))
+}
+
+// InsertOrIgnoreSQL builds an insert that skips conflicting rows
+// (mysql "insert ignore", sqlite "insert or ignore", postgres "on conflict do nothing").
+func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	return c.result(c.insert(b, rows, true))
+}
+
+// InsertGetIDSQL builds a single-row insert. On Postgres it appends
+// `returning "<sequence>"` (default "id"); on MySQL/SQLite read the id from
+// the driver's LastInsertId.
+func (b *Builder) InsertGetIDSQL(row map[string]any, sequence ...string) (string, []any, error) {
+	if b.dialect == Postgres {
+		seq := "id"
+		if len(sequence) > 0 && sequence[0] != "" {
+			seq = sequence[0]
+		}
+		b = b.Clone()
+		b.returning = []string{seq}
+	}
+	return b.InsertSQL(row)
+}
+
+func (c *compiler) insertUsing(b *Builder, columns []string, sub *Builder, ignore bool) error {
+	if sub == nil {
+		return fmt.Errorf("%w: nil subquery", ErrInvalidArgs)
+	}
+	if sub.err != nil {
+		return sub.err
+	}
+	c.write(c.insertVerb(ignore) + c.wrapTable(b.table))
+	if len(columns) > 0 && (len(columns) != 1 || columns[0] != "*") {
+		c.write(" (" + c.wrapColumns(columns) + ")")
+	}
+	c.write(" ")
+	if err := c.selectQuery(sub); err != nil {
+		return err
+	}
+	if ignore && c.d == Postgres {
+		c.write(" on conflict do nothing")
+	}
+	return c.returningClause(b.returning)
+}
+
+// InsertUsingSQL builds "insert into t (cols) select ...".
+func (b *Builder) InsertUsingSQL(columns []string, sub *Builder) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	return c.result(c.insertUsing(b, columns, sub, false))
+}
+
+// InsertOrIgnoreUsingSQL is InsertUsingSQL that skips conflicting rows.
+func (b *Builder) InsertOrIgnoreUsingSQL(columns []string, sub *Builder) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	return c.result(c.insertUsing(b, columns, sub, true))
+}
+
+// ---- upsert ----
+
+// UpsertSQL builds an insert that updates on conflict. update lists the columns
+// that take the inserted value (nil means every inserted column). uniqueBy is
+// required on Postgres/SQLite (conflict target) and ignored on MySQL.
+func (b *Builder) UpsertSQL(rows []map[string]any, uniqueBy, update []string) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	cols, err := normalizeRows(rows)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(cols) == 0 {
+		return "", nil, fmt.Errorf("%w: upsert needs at least one column", ErrInvalidArgs)
+	}
+	if update == nil {
+		update = cols
+	}
+	if len(update) == 0 {
+		return "", nil, fmt.Errorf("%w: upsert has no columns to update", ErrInvalidArgs)
+	}
+	if !c.d.mysqlFamily() && len(uniqueBy) == 0 {
+		return "", nil, fmt.Errorf("%w: upsert needs uniqueBy columns on %s", ErrInvalidArgs, c.d)
+	}
+	if err := c.insert(b.withoutReturning(), rows, false); err != nil {
+		return "", nil, err
+	}
+	sets := make([]string, len(update))
+	if c.d.mysqlFamily() {
+		c.write(" on duplicate key update ")
+		for i, u := range update {
+			sets[i] = c.wrapColumn(u) + " = values(" + c.wrapColumn(u) + ")"
+		}
+	} else {
+		c.write(" on conflict (" + c.wrapColumns(uniqueBy) + ") do update set ")
+		for i, u := range update {
+			sets[i] = c.wrapColumn(u) + " = " + c.g.Quote("excluded") + "." + c.wrapColumn(u)
+		}
+	}
+	c.write(strings.Join(sets, ", "))
+	return c.result(c.returningClause(b.returning))
+}
+
+func (b *Builder) withoutReturning() *Builder {
+	n := *b
+	n.returning = nil
+	return &n
+}
+
+// ---- update ----
+
+func sortedSets(values map[string]any) []setItem {
+	items := make([]setItem, 0, len(values))
+	for k, v := range values {
+		items = append(items, setItem{k, v})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].column < items[j].column })
+	return items
+}
+
+// setColumn wraps an update target. Postgres/SQLite reject qualified SET
+// targets, so only the last segment is kept; MySQL keeps the qualifier
+// (needed for multi-table updates).
+func (c *compiler) setColumn(key string) string {
+	if !c.d.mysqlFamily() {
+		if i := strings.LastIndex(key, "."); i >= 0 {
+			key = key[i+1:]
+		}
+	}
+	return c.wrapColumn(key)
+}
+
+func (c *compiler) setList(sets []setItem) error {
+	if c.d == SQLite {
+		var err error
+		if sets, err = groupSQLiteJSON(sets); err != nil {
+			return err
+		}
+	}
+	written := false
+	done := map[string]bool{}
+	for _, s := range sets {
+		if v, isPatch := s.value.(jsonPatch); isPatch {
+			if written {
+				c.write(", ")
+			}
+			enc, err := jsonpath.Encode(v.doc)
+			if err != nil {
+				return err
+			}
+			col := c.setColumn(s.column)
+			c.write(col + " = json_patch(ifnull(" + col + ", json('{}')), json(")
+			c.param(enc)
+			c.write("))")
+			written = true
+			continue
+		}
+		if jsonpath.IsSelector(s.column) {
+			key := c.jsonColumnKey(s.column)
+			if done[key] {
+				continue
+			}
+			done[key] = true
+			var group []setItem
+			for _, o := range sets {
+				if _, p := o.value.(jsonPatch); !p && jsonpath.IsSelector(o.column) && c.jsonColumnKey(o.column) == key {
+					group = append(group, o)
+				}
+			}
+			if written {
+				c.write(", ")
+			}
+			if err := c.jsonUpdateGroup(group); err != nil {
+				return err
+			}
+			written = true
+			continue
+		}
+		if written {
+			c.write(", ")
+		}
+		c.write(c.setColumn(s.column) + " = ")
+		if err := c.value(s.value); err != nil {
+			return err
+		}
+		written = true
+	}
+	return nil
+}
+
+func (c *compiler) whereSuffix(b *Builder) error {
+	if len(b.wheres) == 0 {
+		return nil
+	}
+	c.write(" where ")
+	return c.clauses(b.wheres)
+}
+
+func (c *compiler) orderLimitSuffix(b *Builder) error {
+	return c.orderLimitOffset(b.orders, b.limit, nil)
+}
+
+// rowIDColumn is the physical row locator used to emulate joined/limited writes.
+func (c *compiler) rowIDColumn() string {
+	if c.d == Postgres {
+		return "ctid"
+	}
+	return "rowid"
+}
+
+// rowIDSubquery writes `where "ctid" in (select alias.ctid from ... )` for
+// Postgres/SQLite updates and deletes that carry joins or a limit.
+func (c *compiler) rowIDSubquery(b *Builder) error {
+	alias := b.table
+	if parts := tableAliasRe.Split(b.table, -1); len(parts) > 1 {
+		alias = parts[len(parts)-1]
+	}
+	sub := b.Clone()
+	sub.columns = []selectItem{{column: alias + "." + c.rowIDColumn()}}
+	sub.returning = nil
+	c.write(" where " + c.g.Quote(c.rowIDColumn()) + " in ")
+	return c.subquery(sub)
+}
+
+func (c *compiler) update(b *Builder, sets []setItem) error {
+	c.write("update " + c.wrapTable(b.table))
+	viaRowID := !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil)
+	if c.d.mysqlFamily() {
+		for _, j := range b.joins {
+			c.write(" ")
+			if err := c.join(j); err != nil {
+				return err
+			}
+		}
+	}
+	c.write(" set ")
+	if err := c.setList(sets); err != nil {
+		return err
+	}
+	if viaRowID {
+		if err := c.rowIDSubquery(b); err != nil {
+			return err
+		}
+	} else {
+		if err := c.whereSuffix(b); err != nil {
+			return err
+		}
+		if c.d.mysqlFamily() && len(b.joins) == 0 {
+			if err := c.orderLimitSuffix(b); err != nil {
+				return err
+			}
+		}
+	}
+	return c.returningClause(b.returning)
+}
+
+// UpdateSQL builds "update t set a = ?, ... where ...". Columns are sorted.
+// Values may be Raw expressions or *Builder subqueries. Joins use native
+// UPDATE ... JOIN on MySQL and a ctid/rowid subquery on Postgres/SQLite.
+// Refuses to build without a where clause or limit unless AllRows() was called.
+func (b *Builder) UpdateSQL(values map[string]any) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	if len(values) == 0 {
+		return "", nil, ErrNoValues
+	}
+	if err := b.requireWhere(); err != nil {
+		return "", nil, err
+	}
+	return c.result(c.update(b, sortedSets(values)))
+}
+
+// UpdateFromSQL builds a Postgres "update t set ... from j1, j2 where <join conditions> and <wheres>",
+// where each Join's ON conditions become part of the WHERE. Other dialects return
+// ErrUnsupported (use UpdateSQL with joins on MySQL).
+func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	if c.d != Postgres {
+		return "", nil, fmt.Errorf("%w: UpdateFrom on %s", ErrUnsupported, c.d)
+	}
+	if len(values) == 0 {
+		return "", nil, ErrNoValues
+	}
+	if len(b.wheres) == 0 && len(b.joins) == 0 && !b.allRows {
+		return "", nil, ErrNoWhere
+	}
+	c.write("update " + c.wrapTable(b.table) + " set ")
+	if err := c.setList(sortedSets(values)); err != nil {
+		return "", nil, err
+	}
+	var onClauses []clause
+	if len(b.joins) > 0 {
+		tables := make([]string, len(b.joins))
+		for i, j := range b.joins {
+			if j.sub != nil {
+				return "", nil, fmt.Errorf("%w: subquery joins in UpdateFrom", ErrUnsupported)
+			}
+			tables[i] = c.wrapTable(j.table)
+			onClauses = append(onClauses, j.on...)
+		}
+		c.write(" from " + strings.Join(tables, ", "))
+	}
+	switch {
+	case len(b.wheres) > 0:
+		c.write(" where ")
+		if err := c.clauses(b.wheres); err != nil {
+			return "", nil, err
+		}
+		for _, cl := range onClauses {
+			c.write(" " + cl.boolean + " ")
+			if err := c.clause(cl); err != nil {
+				return "", nil, err
+			}
+		}
+	case len(onClauses) > 0:
+		c.write(" where ")
+		if err := c.clauses(onClauses); err != nil {
+			return "", nil, err
+		}
+	}
+	return c.result(c.returningClause(b.returning))
+}
+
+func isNumber(v any) bool {
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
+}
+
+// adjust builds "col = col <op> ?" updates for increment/decrement; extra columns
+// are set verbatim and win over an adjusted column of the same name.
+func (b *Builder) adjust(op string, amounts map[string]any, extra map[string]any) (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	if len(amounts) == 0 {
+		return "", nil, ErrNoValues
+	}
+	if err := b.requireWhere(); err != nil {
+		return "", nil, err
+	}
+	var sets []setItem
+	for _, it := range sortedSets(amounts) {
+		if _, overridden := extra[it.column]; overridden {
+			continue
+		}
+		if !isNumber(it.value) {
+			return "", nil, fmt.Errorf("%w: amount for %q must be numeric, got %T", ErrInvalidArgs, it.column, it.value)
+		}
+		sets = append(sets, setItem{it.column, Raw(c.wrapColumn(it.column)+" "+op+" ?", it.value)})
+	}
+	sets = append(sets, sortedSets(extra)...)
+	return c.result(c.update(b, sets))
+}
+
+// IncrementSQL builds "update t set col = col + ? [, extra...] where ...".
+func (b *Builder) IncrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
+	return b.adjust("+", map[string]any{column: amount}, extra)
+}
+
+// DecrementSQL builds "update t set col = col - ? [, extra...] where ...".
+func (b *Builder) DecrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
+	return b.adjust("-", map[string]any{column: amount}, extra)
+}
+
+// IncrementEachSQL increments several columns at once; amounts maps column to amount.
+func (b *Builder) IncrementEachSQL(amounts, extra map[string]any) (string, []any, error) {
+	return b.adjust("+", amounts, extra)
+}
+
+// DecrementEachSQL decrements several columns at once.
+func (b *Builder) DecrementEachSQL(amounts, extra map[string]any) (string, []any, error) {
+	return b.adjust("-", amounts, extra)
+}
+
+// ---- delete / truncate ----
+
+func (c *compiler) delete(b *Builder) error {
+	switch {
+	case !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil):
+		c.write("delete from " + c.wrapTable(b.table))
+		if err := c.rowIDSubquery(b); err != nil {
+			return err
+		}
+	case c.d.mysqlFamily() && len(b.joins) > 0:
+		alias := c.wrapTable(b.table)
+		if i := strings.LastIndex(strings.ToLower(alias), " as "); i >= 0 {
+			alias = alias[i+4:]
+		}
+		c.write("delete " + alias + " from " + c.wrapTable(b.table))
+		for _, j := range b.joins {
+			c.write(" ")
+			if err := c.join(j); err != nil {
+				return err
+			}
+		}
+		if err := c.whereSuffix(b); err != nil {
+			return err
+		}
+		if err := c.orderLimitSuffix(b); err != nil {
+			return err
+		}
+	default:
+		c.write("delete from " + c.wrapTable(b.table))
+		if err := c.whereSuffix(b); err != nil {
+			return err
+		}
+		if c.d.mysqlFamily() {
+			if err := c.orderLimitSuffix(b); err != nil {
+				return err
+			}
+		}
+	}
+	return c.returningClause(b.returning)
+}
+
+// DeleteSQL builds "delete from t where ...". Joins use "delete alias from ... join"
+// on MySQL and a ctid/rowid subquery on Postgres/SQLite; MySQL also honors
+// order/limit. Refuses to build without a where clause or limit unless
+// AllRows() was called (use TruncateSQL to empty a table).
+func (b *Builder) DeleteSQL() (string, []any, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return "", nil, err
+	}
+	if err := b.requireWhere(); err != nil {
+		return "", nil, err
+	}
+	return c.result(c.delete(b))
+}
+
+// TruncateSQL builds the statements that empty the table and reset its identity.
+// Postgres: "truncate t restart identity" (no CASCADE, unlike Laravel's default,
+// so referencing tables are never emptied implicitly). MySQL: "truncate table t".
+// SQLite has no TRUNCATE: it deletes the sqlite_sequence row, then every row.
+func (b *Builder) TruncateSQL() ([]Stmt, error) {
+	c, err := b.writeCompiler()
+	if err != nil {
+		return nil, err
+	}
+	switch c.d {
+	case Postgres:
+		return []Stmt{{SQL: "truncate " + c.wrapTable(b.table) + " restart identity"}}, nil
+	case MySQL, MariaDB:
+		return []Stmt{{SQL: "truncate table " + c.wrapTable(b.table)}}, nil
+	}
+	schema, name := "", b.table
+	if i := strings.LastIndex(b.table, "."); i >= 0 {
+		schema, name = c.g.Quote(b.table[:i])+".", b.table[i+1:]
+	}
+	return []Stmt{
+		{SQL: "delete from " + schema + "sqlite_sequence where name = ?", Args: []any{b.prefix + name}},
+		{SQL: "delete from " + c.wrapTable(b.table)},
+	}, nil
+}
