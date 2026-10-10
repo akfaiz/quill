@@ -105,21 +105,36 @@ func (j *JoinClause) OrWhereRaw(sql string, args ...any) *JoinClause {
 // addJoin resolves the ON conditions from fn, or from (first, args) as a column
 // comparison (where=false) or a value comparison (where=true).
 func (b *Builder) addJoin(j joinClause, first string, args []any, where bool, fn func(*JoinClause)) *Builder {
-	q := b.NewQuery()
-	switch {
-	case fn != nil:
-		fn(&JoinClause{q})
-	case first != "" || len(args) > 0:
+	if fn != nil {
+		return b.addJoinFunc(j, fn)
+	}
+	// A single ON condition needs no real builder: collect it in a scratch value
+	// that stays on the stack instead of allocating a full Builder per join.
+	var q Builder
+	q.dialect, q.prefix, q.err = b.dialect, b.prefix, b.err
+	if first != "" || len(args) > 0 {
 		if where {
 			q.addClause(&q.wheres, "and", first, args)
 		} else {
 			q.columnClause("and", first, args)
 		}
 	}
-	if q.err != nil {
-		return b.fail(q.err)
+	return b.finishJoin(j, q.wheres, q.err)
+}
+
+// addJoinFunc resolves the ON conditions from a JoinClause callback, which gets
+// a real builder because it may add any number of conditions and groups.
+func (b *Builder) addJoinFunc(j joinClause, fn func(*JoinClause)) *Builder {
+	q := b.NewQuery()
+	fn(&JoinClause{q})
+	return b.finishJoin(j, q.wheres, q.err)
+}
+
+func (b *Builder) finishJoin(j joinClause, on []clause, err error) *Builder {
+	if err != nil {
+		return b.fail(err)
 	}
-	j.on = q.wheres
+	j.on = on
 	b.joins = append(b.joins, j)
 	return b
 }
