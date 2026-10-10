@@ -85,7 +85,7 @@ The `column->a->b[0]` syntax works everywhere; the SQL differs.
 | `WhereJsonContainsKey` | `COALESCE((c)::JSONB ? 'k', FALSE)` | `JSON_CONTAINS_PATH(...)` | `JSON_TYPE(...) IS NOT NULL` |
 | `WhereJsonLength` | `JSONB_ARRAY_LENGTH(...)` | `JSON_LENGTH(...)` | `JSON_ARRAY_LENGTH(...)` |
 | `WhereJsonOverlaps` | `ErrUnsupported` | `JSON_OVERLAPS(...)` | `ErrUnsupported` |
-| JSON path update | `JSONB_SET` | `JSON_SET` | `JSON_PATCH` |
+| JSON path update | `JSONB_SET` | `JSON_SET` | `JSON_SET` |
 
 Differences you can observe:
 

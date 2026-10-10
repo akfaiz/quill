@@ -420,6 +420,55 @@ func TestSQLiteJSONExecution(t *testing.T) {
 	})
 }
 
+// TestSQLiteJSONUpdateSemantics pins that a JSON path update sets values the way
+// PostgreSQL's jsonb_set and MySQL's JSON_SET do (the old JSON_PATCH form deleted a
+// key set to nil, merged map values and wrote "tags[0]" as a literal key).
+func TestSQLiteJSONUpdateSemantics(t *testing.T) {
+	metaOf := func(t *testing.T, conn *db.DB, id int) string {
+		t.Helper()
+		var meta string
+		require.NoError(t, conn.Table("users").Where("id", id).Value(ctx, "meta", &meta))
+		return meta
+	}
+	update := func(t *testing.T, conn *db.DB, id int, set map[string]any) {
+		t.Helper()
+		n, err := conn.Table("users").Where("id", id).Update(ctx, set)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), n)
+	}
+	t.Run("nil is JSON null, not a deleted key", func(t *testing.T) {
+		conn := newDB(t)
+		update(t, conn, 1, map[string]any{"meta->theme": nil})
+		assert.JSONEq(t, `{"tags":["a","b"],"theme":null,"n":3}`, metaOf(t, conn, 1))
+	})
+	t.Run("a map replaces an old object instead of merging into it", func(t *testing.T) {
+		conn := newDB(t)
+		update(t, conn, 1, map[string]any{"meta->flags": map[string]any{"y": 2}})
+		update(t, conn, 1, map[string]any{"meta->flags": map[string]any{"x": 1}})
+		assert.JSONEq(t, `{"tags":["a","b"],"theme":"dark","n":3,"flags":{"x":1}}`, metaOf(t, conn, 1))
+	})
+	t.Run("array index sets one element", func(t *testing.T) {
+		conn := newDB(t)
+		update(t, conn, 1, map[string]any{"meta->tags[0]": "z"})
+		assert.JSONEq(t, `{"tags":["z","b"],"theme":"dark","n":3}`, metaOf(t, conn, 1))
+	})
+	t.Run("several paths of one column in one statement", func(t *testing.T) {
+		conn := newDB(t)
+		update(t, conn, 1, map[string]any{"meta->a->b": 1, "meta->a->c": []string{"q"}, "meta->n": 4.5})
+		assert.JSONEq(t, `{"tags":["a","b"],"theme":"dark","n":4.5,"a":{"b":1,"c":["q"]}}`, metaOf(t, conn, 1))
+	})
+	t.Run("a NULL column becomes an object", func(t *testing.T) {
+		conn := newDB(t)
+		update(t, conn, 4, map[string]any{"meta->theme": "dark"})
+		assert.JSONEq(t, `{"theme":"dark"}`, metaOf(t, conn, 4))
+	})
+	t.Run("string, bool and number keep their JSON types", func(t *testing.T) {
+		conn := newDB(t)
+		update(t, conn, 3, map[string]any{"meta->s": "42", "meta->b": false, "meta->i": 7})
+		assert.JSONEq(t, `{"s":"42","b":false,"i":7}`, metaOf(t, conn, 3))
+	})
+}
+
 func TestSQLiteWrites(t *testing.T) {
 	t.Run("insert variants", func(t *testing.T) {
 		conn := newDB(t)

@@ -2,7 +2,6 @@ package db
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -437,9 +436,11 @@ func (c *compiler) mysqlJSONValue(value any) error {
 }
 
 // jsonUpdateGroup writes one assignment covering every "col->path" item of a
-// column: MySQL json_set(col, p1, v1, p2, v2), Postgres nested jsonb_set. SQLite is
-// handled by groupSQLiteJSON/jsonPatch instead.
+// column: MySQL and SQLite json_set(col, p1, v1, p2, v2), Postgres nested jsonb_set.
 func (c *compiler) jsonUpdateGroup(items []setItem) error {
+	if c.d == SQLite {
+		return c.sqliteJSONSet(items)
+	}
 	if c.d.mysqlFamily() {
 		field, _ := c.jsonFieldAndPath(items[0].column)
 		c.write(field + " = JSON_SET(" + field)
@@ -473,50 +474,27 @@ func (c *compiler) jsonUpdateGroup(items []setItem) error {
 	return nil
 }
 
-// jsonPatch is the SQLite value for all "col->path" updates of one column.
-type jsonPatch struct{ doc map[string]any }
-
-// groupSQLiteJSON folds "col->a->b" sets into one json_patch per column,
-// placed after the plain sets.
-func groupSQLiteJSON(sets []setItem) ([]setItem, error) {
-	var plain []setItem
-	groups := map[string]map[string]any{}
-	for _, s := range sets {
-		if !jsonpath.IsSelector(s.column) {
-			plain = append(plain, s)
-			continue
+// sqliteJSONSet writes `col = JSON_SET(IFNULL(col, JSON('{}')), path, JSON(?), ...)`. Every
+// value is bound as encoded JSON text and wrapped in JSON(), as on PostgreSQL: SQLite
+// would otherwise store a bound string as a plain string, and JSON_PATCH (the old
+// form) deleted a key set to nil and merged map values instead of replacing them.
+func (c *compiler) sqliteJSONSet(items []setItem) error {
+	col, _ := jsonpath.SplitKey(items[0].column)
+	field := c.wrapColumn(jsonpath.LastSegment(col))
+	c.write(field + " = JSON_SET(IFNULL(" + field + ", JSON('{}'))")
+	for _, it := range items {
+		if _, raw := it.value.(Expression); raw {
+			return fmt.Errorf("%w: raw expressions are not supported in SQLite JSON updates", ErrUnsupported)
 		}
-		if _, raw := s.value.(Expression); raw {
-			return nil, fmt.Errorf("%w: raw expressions are not supported in SQLite JSON updates", ErrUnsupported)
+		enc, err := jsonpath.Encode(it.value)
+		if err != nil {
+			return err
 		}
-		col, path := jsonpath.SplitKey(s.column)
-		col = jsonpath.LastSegment(col)
-		doc := groups[col]
-		if doc == nil {
-			doc = map[string]any{}
-			groups[col] = doc
-		}
-		node := doc
-		for i, seg := range path {
-			if i == len(path)-1 {
-				node[seg] = s.value
-				break
-			}
-			next, ok := node[seg].(map[string]any)
-			if !ok {
-				next = map[string]any{}
-				node[seg] = next
-			}
-			node = next
-		}
+		_, path := c.jsonFieldAndPath(it.column)
+		c.write(path + ", JSON(")
+		c.param(enc)
+		c.write(")")
 	}
-	cols := make([]string, 0, len(groups))
-	for col := range groups {
-		cols = append(cols, col)
-	}
-	sort.Strings(cols)
-	for _, col := range cols {
-		plain = append(plain, setItem{column: col, value: jsonPatch{groups[col]}})
-	}
-	return plain, nil
+	c.write(")")
+	return nil
 }
