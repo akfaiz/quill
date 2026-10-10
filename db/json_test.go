@@ -326,7 +326,7 @@ func TestJSONErrors(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := tc.build.ToSQL()
-			assert.ErrorIs(t, err, tc.want)
+			require.ErrorIs(t, err, tc.want)
 		})
 	}
 }
@@ -355,4 +355,11 @@ func TestJSONOverlapVariantsMySQL(t *testing.T) {
 	if sql != want || !reflect.DeepEqual(args, []any{"[1]", "[2]", "[3]"}) {
 		t.Errorf("got %s %v", sql, args)
 	}
+}
+
+func TestWhereJsonDoesntContainNegatesContains(t *testing.T) {
+	sqlText, args, err := jt(db.Postgres).WhereJsonDoesntContain("options->tags", "php").ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, `SELECT * FROM "t" WHERE NOT ("options"->'tags')::JSONB @> $1`, sqlText)
+	assert.Equal(t, []any{`"php"`}, args)
 }
