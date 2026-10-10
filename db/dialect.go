@@ -5,6 +5,7 @@ import "github.com/akfaiz/quill/internal/dialect"
 // Dialect selects the SQL grammar used to compile queries.
 type Dialect int
 
+// The supported dialects. The zero Dialect is invalid and returns ErrUnknownDialect.
 const (
 	Postgres Dialect = iota + 1
 	MySQL
@@ -17,6 +18,12 @@ const (
 // mysqlFamily reports the dialects that share MySQL's SQL syntax.
 func (d Dialect) mysqlFamily() bool { return d == MySQL || d == MariaDB }
 
+// String returns the lower-case dialect name ("postgres", "mysql", "sqlite", "mariadb"),
+// or "unknown" for any other value.
+//
+// Example:
+//
+//	db.MariaDB.String() // "mariadb"; db.Dialect(0).String() is "unknown"
 func (d Dialect) String() string {
 	switch d {
 	case Postgres:

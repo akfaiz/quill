@@ -9,6 +9,11 @@ type Expression struct {
 }
 
 // Raw builds an Expression.
+//
+// Example:
+//
+//	conn.Table("users").Where("created_at", ">", db.Raw("now() - interval '1 day'"))
+//	// SELECT * FROM "users" WHERE "created_at" > now() - interval '1 day'
 func Raw(sql string, args ...any) Expression {
 	return Expression{SQL: sql, Args: args}
 }

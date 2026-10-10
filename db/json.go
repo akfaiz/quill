@@ -208,21 +208,44 @@ func (b *Builder) jsonContains(boolean, column string, value any, not bool) *Bui
 
 // WhereJsonContains adds a JSON containment test on a column or "col->path".
 // MySQL json_contains, Postgres @> (jsonb), SQLite json_each membership.
+//
+// Example:
+//
+//	conn.Table("users").WhereJsonContains("options->tags", "go").ToSQL()
+//	// SELECT * FROM "users" WHERE ("options"->'tags')::JSONB @> $1   args: ["go"]
 func (b *Builder) WhereJsonContains(column string, value any) *Builder {
 	return b.jsonContains("and", column, value, false)
 }
 
 // OrWhereJsonContains is WhereJsonContains joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").Where("active", true).OrWhereJsonContains("options->tags", "go").ToSQL()
+//	// SELECT * FROM "users" WHERE "active" = $1 OR ("options"->'tags')::JSONB @> $2
+//	// args: [true "go"]
 func (b *Builder) OrWhereJsonContains(column string, value any) *Builder {
 	return b.jsonContains("or", column, value, false)
 }
 
 // WhereJsonDoesntContain negates WhereJsonContains.
+//
+// Example:
+//
+//	conn.Table("users").WhereJsonDoesntContain("options->tags", "php").ToSQL()
+//	// SELECT * FROM "users" WHERE NOT ("options"->'tags')::JSONB @> $1   args: ["php"]
 func (b *Builder) WhereJsonDoesntContain(column string, value any) *Builder {
 	return b.jsonContains("and", column, value, true)
 }
 
 // OrWhereJsonDoesntContain is WhereJsonDoesntContain joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").Where("active", true)
+//	.OrWhereJsonDoesntContain("options->tags", "php").ToSQL()
+//	// SELECT * FROM "users" WHERE "active" = $1 OR NOT ("options"->'tags')::JSONB @> $2
+//	// args: [true "php"]
 func (b *Builder) OrWhereJsonDoesntContain(column string, value any) *Builder {
 	return b.jsonContains("or", column, value, true)
 }
@@ -232,21 +255,51 @@ func (b *Builder) jsonOverlaps(boolean, column string, value any, not bool) *Bui
 }
 
 // WhereJsonOverlaps adds json_overlaps (MySQL only; other dialects error at compile time).
+//
+// Example:
+//
+//	conn.Table("users")
+//	.WhereJsonOverlaps("options->tags", []string{"go", "sql"}).ToSQL() // MySQL conn
+//	// SELECT * FROM `users` WHERE JSON_OVERLAPS(JSON_EXTRACT(`options`, '$."tags"'), ?)
+//	// args: [["go","sql"]]
 func (b *Builder) WhereJsonOverlaps(column string, value any) *Builder {
 	return b.jsonOverlaps("and", column, value, false)
 }
 
 // OrWhereJsonOverlaps is WhereJsonOverlaps joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").Where("active", true)
+//	.OrWhereJsonOverlaps("options->tags", []string{"go"}).ToSQL() // MySQL conn
+//	// SELECT * FROM `users` WHERE `active` = ?
+//	//   OR JSON_OVERLAPS(JSON_EXTRACT(`options`, '$."tags"'), ?)
+//	// args: [true ["go"]]
 func (b *Builder) OrWhereJsonOverlaps(column string, value any) *Builder {
 	return b.jsonOverlaps("or", column, value, false)
 }
 
 // WhereJsonDoesntOverlap negates WhereJsonOverlaps.
+//
+// Example:
+//
+//	conn.Table("users")
+//	.WhereJsonDoesntOverlap("options->tags", []string{"php"}).ToSQL() // MySQL conn
+//	// SELECT * FROM `users` WHERE NOT JSON_OVERLAPS(JSON_EXTRACT(`options`, '$."tags"'), ?)
+//	// args: [["php"]]
 func (b *Builder) WhereJsonDoesntOverlap(column string, value any) *Builder {
 	return b.jsonOverlaps("and", column, value, true)
 }
 
 // OrWhereJsonDoesntOverlap is WhereJsonDoesntOverlap joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").Where("active", true)
+//	.OrWhereJsonDoesntOverlap("options->tags", []string{"php"}).ToSQL() // MySQL conn
+//	// SELECT * FROM `users` WHERE `active` = ?
+//	//   OR NOT JSON_OVERLAPS(JSON_EXTRACT(`options`, '$."tags"'), ?)
+//	// args: [true ["php"]]
 func (b *Builder) OrWhereJsonDoesntOverlap(column string, value any) *Builder {
 	return b.jsonOverlaps("or", column, value, true)
 }
@@ -256,21 +309,47 @@ func (b *Builder) jsonContainsKey(boolean, column string, not bool) *Builder {
 }
 
 // WhereJsonContainsKey tests that the JSON path "col->key" exists.
+//
+// Example:
+//
+//	conn.Table("users").WhereJsonContainsKey("options->theme").ToSQL()
+//	// SELECT * FROM "users" WHERE COALESCE(("options")::JSONB ? 'theme', FALSE)   args: []
+//	// MySQL: SELECT * FROM `users`
+//	//   WHERE IFNULL(JSON_CONTAINS_PATH(`options`, 'one', '$."theme"'), 0)
 func (b *Builder) WhereJsonContainsKey(column string) *Builder {
 	return b.jsonContainsKey("and", column, false)
 }
 
 // OrWhereJsonContainsKey is WhereJsonContainsKey joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").Where("active", true).OrWhereJsonContainsKey("options->theme").ToSQL()
+//	// SELECT * FROM "users" WHERE "active" = $1 OR COALESCE(("options")::JSONB ? 'theme', FALSE)
+//	// args: [true]
 func (b *Builder) OrWhereJsonContainsKey(column string) *Builder {
 	return b.jsonContainsKey("or", column, false)
 }
 
 // WhereJsonDoesntContainKey negates WhereJsonContainsKey.
+//
+// Example:
+//
+//	conn.Table("users").WhereJsonDoesntContainKey("options->theme").ToSQL()
+//	// SELECT * FROM "users" WHERE NOT COALESCE(("options")::JSONB ? 'theme', FALSE)   args: []
 func (b *Builder) WhereJsonDoesntContainKey(column string) *Builder {
 	return b.jsonContainsKey("and", column, true)
 }
 
 // OrWhereJsonDoesntContainKey is WhereJsonDoesntContainKey joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").Where("active", true).
+//		OrWhereJsonDoesntContainKey("options->theme").ToSQL()
+//	// SELECT * FROM "users" WHERE "active" = $1
+//	//   OR NOT COALESCE(("options")::JSONB ? 'theme', FALSE)
+//	// args: [true]
 func (b *Builder) OrWhereJsonDoesntContainKey(column string) *Builder {
 	return b.jsonContainsKey("or", column, true)
 }
@@ -294,11 +373,25 @@ func (b *Builder) jsonLength(boolean, column string, args []any) *Builder {
 }
 
 // WhereJsonLength compares the length of a JSON array: (value) or (operator, value).
+//
+// Example:
+//
+//	conn.Table("users")
+//	.WhereJsonLength("options->tags", 2).WhereJsonLength("options->roles", ">", 1).ToSQL()
+//	// SELECT * FROM "users" WHERE JSONB_ARRAY_LENGTH(("options"->'tags')::JSONB) = $1
+//	//   AND JSONB_ARRAY_LENGTH(("options"->'roles')::JSONB) > $2   args: [2 1]
 func (b *Builder) WhereJsonLength(column string, args ...any) *Builder {
 	return b.jsonLength("and", column, args)
 }
 
 // OrWhereJsonLength is WhereJsonLength joined with OR.
+//
+// Example:
+//
+//	conn.Table("users").WhereJsonLength("options->tags", 0)
+//	.OrWhereJsonLength("options->roles", ">=", 3).ToSQL()
+//	// SELECT * FROM "users" WHERE JSONB_ARRAY_LENGTH(("options"->'tags')::JSONB) = $1
+//	//   OR JSONB_ARRAY_LENGTH(("options"->'roles')::JSONB) >= $2   args: [0 3]
 func (b *Builder) OrWhereJsonLength(column string, args ...any) *Builder {
 	return b.jsonLength("or", column, args)
 }

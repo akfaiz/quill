@@ -186,6 +186,8 @@ type Mapper struct {
 	fields []*fieldInfo
 }
 
+// NewMapper returns a Mapper that scans result columns cols into values of type t: a
+// struct, a map[string]any or a scalar.
 func NewMapper(t reflect.Type, cols []string) (*Mapper, error) {
 	m := &Mapper{typ: t, kind: kindOf(t), cols: cols}
 	switch m.kind {
@@ -419,6 +421,7 @@ func StructType(t reflect.Type) (reflect.Type, error) {
 	return t, nil
 }
 
+// StructValue dereferences pointers and interfaces and requires the result to be a struct.
 func StructValue(v reflect.Value) (reflect.Value, error) {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
@@ -432,6 +435,8 @@ func StructValue(v reflect.Value) (reflect.Value, error) {
 	return v, nil
 }
 
+// ToRows turns structs of type t into insert rows, one map per value. A column is kept when
+// at least one value sets it, so `omitempty` fields that are empty everywhere are dropped.
 func ToRows(t reflect.Type, vals []reflect.Value) ([]map[string]any, error) {
 	fields := Fields(t)
 	if len(fields) == 0 {

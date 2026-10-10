@@ -11,6 +11,14 @@ import (
 )
 
 // Page describes one page of a length-aware pagination.
+//
+// Example:
+//
+//	var users []User
+//	p, err := conn.Table("users").OrderBy("id").Paginate(ctx, 2, 2, &users)
+//	// with 5 matching rows: p.Total = 5, p.PerPage = 2, p.CurrentPage = 2
+//	// p.LastPage = 3, p.From = 3, p.To = 4
+//	// with no rows: p.LastPage = 1, p.From = 0, p.To = 0 and users is empty
 type Page struct {
 	Total       int64
 	PerPage     int
@@ -21,6 +29,12 @@ type Page struct {
 }
 
 // SimplePage is a pagination without a total count.
+//
+// Example:
+//
+//	var users []User
+//	p, err := conn.Table("users").OrderBy("id").SimplePaginate(ctx, 1, 2, &users)
+//	// p.PerPage = 2, p.CurrentPage = 1, p.HasMore = true when a third row exists
 type SimplePage struct {
 	PerPage     int
 	CurrentPage int
@@ -28,6 +42,13 @@ type SimplePage struct {
 }
 
 // CursorPage is a keyset pagination result.
+//
+// Example:
+//
+//	var users []User
+//	p, err := conn.Table("users").CursorPaginate(ctx, 10, "", &users)
+//	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 11
+//	// p.HasMore = false and p.NextCursor = "" when 10 or fewer rows remain
 type CursorPage struct {
 	PerPage    int
 	HasMore    bool
@@ -36,6 +57,12 @@ type CursorPage struct {
 
 // CursorOptions selects the keyset column. Column must be unique and ordered
 // (default "id"); ties would skip or repeat rows.
+//
+// Example:
+//
+//	opt := db.CursorOptions{Column: "id", Desc: true}
+//	p, err := conn.Table("orders").CursorPaginate(ctx, 5, "", &orders, opt)
+//	// SELECT * FROM "orders" ORDER BY "id" DESC LIMIT 6
 type CursorOptions struct {
 	Column string
 	Desc   bool
@@ -66,6 +93,14 @@ func truncateSlice(dest any, n int) {
 
 // Paginate counts the rows, then scans the requested 1-based page into dest
 // (a pointer to a slice). The count ignores order, limit and offset.
+//
+// Example:
+//
+//	var users []User
+//	p, err := conn.Table("users").OrderBy("id").Paginate(ctx, 2, 2, &users)
+//	// SELECT COUNT(*) AS "aggregate" FROM "users"
+//	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 2 OFFSET 2
+//	// with 5 rows: p.Total = 5, p.LastPage = 3, p.From = 3, p.To = 4
 func (b *Builder) Paginate(ctx context.Context, page, perPage int, dest any) (Page, error) {
 	page, err := checkPaging(page, perPage)
 	if err != nil {
@@ -98,6 +133,13 @@ func (b *Builder) Paginate(ctx context.Context, page, perPage int, dest any) (Pa
 
 // SimplePaginate fetches one extra row to learn whether another page exists,
 // skipping the count query.
+//
+// Example:
+//
+//	var users []User
+//	p, err := conn.Table("users").OrderBy("id").SimplePaginate(ctx, 1, 2, &users)
+//	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 3 OFFSET 0
+//	// users holds at most 2 rows; p.HasMore = true when a third came back
 func (b *Builder) SimplePaginate(ctx context.Context, page, perPage int, dest any) (SimplePage, error) {
 	page, err := checkPaging(page, perPage)
 	if err != nil {
@@ -117,6 +159,14 @@ func (b *Builder) SimplePaginate(ctx context.Context, page, perPage int, dest an
 // CursorPaginate pages forward by keyset on opt.Column. Pass the previous
 // page's NextCursor (empty for the first page). It replaces any existing ORDER BY.
 // The cursor is an opaque token; its value is only ever bound as an argument.
+//
+// Example:
+//
+//	var users []User
+//	p, err := conn.Table("users").CursorPaginate(ctx, 2, "", &users)
+//	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 3
+//	// next page: conn.Table("users").CursorPaginate(ctx, 2, p.NextCursor, &users)
+//	// SELECT * FROM "users" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 3   args: [2]
 func (b *Builder) CursorPaginate(
 	ctx context.Context,
 	perPage int,

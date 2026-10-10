@@ -19,6 +19,14 @@ type cteClause struct {
 // With adds a common table expression: "with name (cols) as (q)". The name is
 // a table reference, so the table prefix applies to it as it does to From.
 // The subquery is snapshotted: later changes to q do not affect this query.
+//
+// Example:
+//
+//	active := conn.Table("users").Where("active", true)
+//	conn.Table("active_users").With("active_users", active)
+//	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
+//	//     "active_users"
+//	// args: [true]
 func (b *Builder) With(name string, q *Builder, cols ...string) *Builder {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols})
 }
@@ -26,24 +34,57 @@ func (b *Builder) With(name string, q *Builder, cols ...string) *Builder {
 // WithRecursive adds a recursive common table expression and switches the
 // clause to "with recursive". q is the anchor with the recursive member added
 // by UnionAll (or Union); the members are emitted without parentheses.
+//
+// Example:
+//
+//	anchor := conn.Table("categories").Where("parent_id", nil)
+//	member := conn.Table("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Table("tree").WithRecursive("tree", anchor.UnionAll(member))
+//	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
+//	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
+//	//     "t"."id") SELECT * FROM "tree"
 func (b *Builder) WithRecursive(name string, q *Builder, cols ...string) *Builder {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols, recursive: true})
 }
 
 // WithRaw adds a common table expression whose body is a raw SQL fragment
 // (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2).
+//
+// Example:
+//
+//	conn.Table("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), "id")
+//	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
+//	// args: [1 2]
 func (b *Builder) WithRaw(name string, e Expression, cols ...string) *Builder {
 	return b.addCTE(cteClause{name: name, raw: &e, cols: cols})
 }
 
 // WithMaterialized adds "name as materialized (q)". PostgreSQL only; other
 // dialects return ErrUnsupported.
+//
+// Example:
+//
+//	recent := conn.Table("orders").Where("total", ">", 100)
+//	conn.Table("recent").WithMaterialized("recent", recent)
+//	// WITH "recent" AS MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
+//	//     "recent"
+//	// args: [100]
+//	// MySQL, SQLite and MariaDB return ErrUnsupported
 func (b *Builder) WithMaterialized(name string, q *Builder, cols ...string) *Builder {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols, mat: 1})
 }
 
 // WithNotMaterialized adds "name as not materialized (q)". PostgreSQL only;
 // other dialects return ErrUnsupported.
+//
+// Example:
+//
+//	recent := conn.Table("orders").Where("total", ">", 100)
+//	conn.Table("recent").WithNotMaterialized("recent", recent)
+//	// WITH "recent" AS NOT MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
+//	//     "recent"
+//	// args: [100]
+//	// MySQL, SQLite and MariaDB return ErrUnsupported
 func (b *Builder) WithNotMaterialized(name string, q *Builder, cols ...string) *Builder {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols, mat: -1})
 }

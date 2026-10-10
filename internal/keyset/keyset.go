@@ -30,6 +30,8 @@ func Encode(v any) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+// Decode reads a token made by Encode. The input is untrusted: a malformed token returns
+// errs.ErrInvalidArgs, and the value is only ever a string, bool, int64 or float64.
 func Decode(s string) (any, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {

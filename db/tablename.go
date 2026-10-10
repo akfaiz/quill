@@ -24,6 +24,14 @@ var tableNames sync.Map // reflect.Type -> string
 
 // TableName returns T's table from its TableName method. T may be a pointer type.
 // It returns ErrInvalidArgs when T has no TableName method or it returns "".
+//
+// Example:
+//
+//	type Order struct{ ID int64 }
+//	func (Order) TableName() string { return "orders" }
+//
+//	name, err := db.TableName[Order]()   // name = "orders"
+//	_, err = db.TableName[struct{}]()    // err wraps ErrInvalidArgs (no TableName method)
 func TableName[T any]() (string, error) {
 	t := reflect.TypeFor[T]()
 	for t.Kind() == reflect.Pointer {
@@ -62,6 +70,10 @@ func callTableName(tb Tabler, t reflect.Type) (name string, err error) {
 // From starts a typed query on T's table: db.From[User](conn).Where(...).Get(ctx).
 // A problem with T (no TableName method) is reported by the first terminal
 // call, like any other builder error, so the chain stays unbroken.
+//
+// Example:
+//
+//	q := db.From[Order](conn) // same as db.As[Order](conn.Table("orders"))
 func From[T any](db *DB) *Query[T] {
 	if db == nil {
 		return As[T](&Builder{err: ErrNotBound})

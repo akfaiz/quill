@@ -15,6 +15,7 @@ import (
 // LockKind selects a row-locking clause.
 type LockKind int
 
+// The row-locking clauses a Grammar can render.
 const (
 	LockNone LockKind = iota
 	LockUpdate

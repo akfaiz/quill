@@ -19,6 +19,16 @@ import (
 // passed through untouched, so pointers (nil -> NULL), sql.Null* types and Raw
 // expressions all work. A field that is omitted for being zero cannot be set to
 // its zero value through a struct: use a pointer field or a map for that.
+//
+// Example:
+//
+//	type Post struct {
+//		ID    int64  `db:"id,omitempty"`
+//		Title string `db:"title"`
+//		Notes string `db:"-"`
+//	}
+//	row, err := db.Row(Post{Title: "Hello", Notes: "internal"})
+//	// row = map[title:Hello]   (zero ID omitted, Notes never written)
 func Row(v any) (map[string]any, error) {
 	if v == nil {
 		return nil, fmt.Errorf("%w: nil row", ErrInvalidArgs)
@@ -42,6 +52,12 @@ func Row(v any) (map[string]any, error) {
 // Rows converts structs into column maps for a batch insert. Every row gets
 // the same columns: an `omitempty` column is left out only when it is zero in
 // every row, since a batch insert cannot skip a column for just some rows.
+//
+// Example:
+//
+//	rows, err := db.Rows([]Post{{Title: "One"}, {Title: "Two"}})
+//	conn.Table("posts").InsertSQL(rows...)
+//	// INSERT INTO "posts" ("title") VALUES ($1), ($2)   args: [One Two]
 func Rows[T any](vs []T) ([]map[string]any, error) {
 	if len(vs) == 0 {
 		return nil, nil

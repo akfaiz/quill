@@ -14,6 +14,15 @@ import (
 // round) and calls fn; return false to stop early. The query must have an
 // ORDER BY (ErrNoOrder otherwise). It pages by offset, so rows changed by fn
 // can be skipped or repeated: prefer ChunkByID when fn updates the filtered column.
+//
+// Example:
+//
+//	var batch []User
+//	err := conn.Table("users").OrderBy("id").Chunk(ctx, 2, &batch, func() (bool, error) {
+//		return true, nil // false stops early
+//	})
+//	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 2 OFFSET 0
+//	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 2 OFFSET 2   (until a short batch)
 func (b *Builder) Chunk(ctx context.Context, size int, dest any, fn func() (bool, error)) error {
 	if _, err := checkPaging(1, size); err != nil {
 		return err
@@ -40,6 +49,16 @@ func (b *Builder) Chunk(ctx context.Context, size int, dest any, fn func() (bool
 
 // ChunkByID is Chunk using keyset paging on a unique column (default "id"), so
 // it is safe while fn updates or deletes the rows it was given.
+//
+// Example:
+//
+//	var batch []User
+//	err := conn.Table("users").ChunkByID(ctx, 2, &batch, func() (bool, error) {
+//		return true, nil
+//	})
+//	// SELECT * FROM "users" WHERE "id" IS NOT NULL ORDER BY "id" ASC LIMIT 2
+//	// SELECT * FROM "users" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 2   args: [2]
+//	// another key column: ChunkByID(ctx, 5, &batch, fn, "order_no")
 func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (bool, error), column ...string) error {
 	if _, err := checkPaging(1, size); err != nil {
 		return err
@@ -73,6 +92,15 @@ func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (
 
 // Each streams rows one at a time into dest (a pointer to a struct, map or
 // scalar, reset before every row) and calls fn, holding a single row in memory.
+//
+// Example:
+//
+//	var u User
+//	err := conn.Table("users").OrderBy("id").Each(ctx, &u, func() error {
+//		fmt.Println(u.ID, u.Name) // u is refilled for every row
+//		return nil
+//	})
+//	// SELECT * FROM "users" ORDER BY "id" ASC
 func (b *Builder) Each(ctx context.Context, dest any, fn func() error) error {
 	rv := reflect.ValueOf(dest)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
@@ -104,6 +132,18 @@ func (b *Builder) Each(ctx context.Context, dest any, fn func() error) error {
 // Stream yields each row as T (struct, map[string]any or scalar) while holding one
 // row in memory. Stop early by breaking out of the loop; the cursor is then closed.
 // An error ends the sequence after being yielded once.
+//
+// Example:
+//
+//	q := conn.Table("users").OrderBy("id")
+//	for u, err := range db.Stream[User](ctx, q) {
+//		if err != nil {
+//			break
+//		}
+//		fmt.Println(u.ID, u.Name)
+//	}
+//	// SELECT * FROM "users" ORDER BY "id" ASC
+//	// scalar rows: db.Stream[string](ctx, conn.Table("users").Select("name"))
 func Stream[T any](ctx context.Context, b *Builder) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		var zero T

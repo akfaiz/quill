@@ -25,6 +25,12 @@ var tableAliasRe = regexp.MustCompile(`(?i)\s+as\s+`)
 
 // Returning adds a RETURNING clause to insert/update/delete/upsert
 // (Postgres, SQLite >= 3.35; MySQL returns ErrUnsupported). "*" is allowed.
+//
+// Example:
+//
+//	conn.Table("users").Returning("id", "created_at").InsertSQL(map[string]any{"name": "Ann"})
+//	// INSERT INTO "users" ("name") VALUES ($1) RETURNING "id", "created_at"   args: [Ann]
+//	// MySQL: InsertSQL returns ErrUnsupported
 func (b *Builder) Returning(columns ...string) *Builder {
 	b.returning = append(b.returning, columns...)
 	return b
@@ -32,6 +38,11 @@ func (b *Builder) Returning(columns ...string) *Builder {
 
 // AllRows confirms that an update/delete without a where clause is intended.
 // Without it, UpdateSQL/DeleteSQL/IncrementSQL refuse to build (ErrNoWhere).
+//
+// Example:
+//
+//	conn.Table("sessions").AllRows().DeleteSQL()
+//	// DELETE FROM "sessions"   args: []
 func (b *Builder) AllRows() *Builder { b.allRows = true; return b }
 
 func (b *Builder) writeCompiler() (*compiler, error) {
@@ -161,6 +172,11 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 // InsertSQL builds "INSERT INTO t (cols) VALUES (...), (...)". Columns are the
 // sorted keys of the first row; every row must have the same keys. A single
 // empty row inserts default values.
+//
+// Example:
+//
+//	conn.Table("users").InsertSQL(map[string]any{"name": "Ann", "email": "ann@example.com"})
+//	// INSERT INTO "users" ("email", "name") VALUES ($1, $2)   args: [ann@example.com Ann]
 func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -171,6 +187,13 @@ func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
 
 // InsertOrIgnoreSQL builds an insert that skips conflicting rows
 // (mysql "INSERT IGNORE", sqlite "INSERT OR IGNORE", postgres "ON CONFLICT DO NOTHING").
+//
+// Example:
+//
+//	conn.Table("users").InsertOrIgnoreSQL(map[string]any{"email": "ann@example.com"})
+//	// INSERT INTO "users" ("email") VALUES ($1) ON CONFLICT DO NOTHING
+//	// MySQL:  INSERT IGNORE INTO `users` (`email`) VALUES (?)
+//	// SQLite: INSERT OR IGNORE INTO "users" ("email") VALUES (?)
 func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -182,6 +205,12 @@ func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, erro
 // InsertGetIDSQL builds a single-row insert. On Postgres it appends
 // `RETURNING "<sequence>"` (default "id"); on MySQL/SQLite read the id from
 // the driver's LastInsertId.
+//
+// Example:
+//
+//	conn.Table("users").InsertGetIDSQL(map[string]any{"name": "Ann"})
+//	// INSERT INTO "users" ("name") VALUES ($1) RETURNING "id"   args: [Ann]
+//	// MySQL: INSERT INTO `users` (`name`) VALUES (?)   (no RETURNING)
 func (b *Builder) InsertGetIDSQL(row map[string]any, sequence ...string) (string, []any, error) {
 	if b.dialect == Postgres {
 		seq := "id"
@@ -216,6 +245,13 @@ func (c *compiler) insertUsing(b *Builder, columns []string, sub *Builder, ignor
 }
 
 // InsertUsingSQL builds "INSERT INTO t (cols) SELECT ...".
+//
+// Example:
+//
+//	sub := conn.Table("users").Select("name", "email").Where("active", true)
+//	conn.Table("archived_users").InsertUsingSQL([]string{"name", "email"}, sub)
+//	// INSERT INTO "archived_users" ("name", "email")
+//	//   SELECT "name", "email" FROM "users" WHERE "active" = $1   args: [true]
 func (b *Builder) InsertUsingSQL(columns []string, sub *Builder) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -225,6 +261,13 @@ func (b *Builder) InsertUsingSQL(columns []string, sub *Builder) (string, []any,
 }
 
 // InsertOrIgnoreUsingSQL is InsertUsingSQL that skips conflicting rows.
+//
+// Example:
+//
+//	sub := conn.Table("users").Select("name", "email")
+//	conn.Table("archived_users").InsertOrIgnoreUsingSQL([]string{"name", "email"}, sub)
+//	// INSERT INTO "archived_users" ("name", "email")
+//	//   SELECT "name", "email" FROM "users" ON CONFLICT DO NOTHING   args: []
 func (b *Builder) InsertOrIgnoreUsingSQL(columns []string, sub *Builder) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -238,6 +281,13 @@ func (b *Builder) InsertOrIgnoreUsingSQL(columns []string, sub *Builder) (string
 // UpsertSQL builds an insert that updates on conflict. update lists the columns
 // that take the inserted value (nil means every inserted column). uniqueBy is
 // required on Postgres/SQLite (conflict target) and ignored on MySQL.
+//
+// Example:
+//
+//	rows := []map[string]any{{"email": "ann@example.com", "name": "Ann"}}
+//	conn.Table("users").UpsertSQL(rows, []string{"email"}, []string{"name"})
+//	// MySQL: INSERT INTO `users` (`email`, `name`) VALUES (?, ?)
+//	//        ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)   args: [ann@example.com Ann]
 func (b *Builder) UpsertSQL(rows []map[string]any, uniqueBy, update []string) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -436,6 +486,11 @@ func (c *compiler) update(b *Builder, sets []setItem) error {
 // Values may be Raw expressions or *Builder subqueries. Joins use native
 // UPDATE ... JOIN on MySQL and a ctid/rowid subquery on Postgres/SQLite.
 // Refuses to build without a where clause or limit unless AllRows() was called.
+//
+// Example:
+//
+//	conn.Table("users").Where("id", 7).UpdateSQL(map[string]any{"name": "Ann"})
+//	// UPDATE "users" SET "name" = $1 WHERE "id" = $2   args: [Ann 7]
 func (b *Builder) UpdateSQL(values map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -453,6 +508,13 @@ func (b *Builder) UpdateSQL(values map[string]any) (string, []any, error) {
 // UpdateFromSQL builds a Postgres "UPDATE t SET ... FROM j1, j2 WHERE <join conditions> AND <wheres>",
 // where each Join's ON conditions become part of the WHERE. Other dialects return
 // ErrUnsupported (use UpdateSQL with joins on MySQL).
+//
+// Example:
+//
+//	conn.Table("posts").Join("users", "users.id", "=", "posts.user_id").
+//		Where("users.banned", true).UpdateFromSQL(map[string]any{"hidden": true})
+//	// UPDATE "posts" SET "hidden" = $1 FROM "users"
+//	//   WHERE "users"."banned" = $2 AND "users"."id" = "posts"."user_id"   args: [true true]
 func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -544,21 +606,45 @@ func (b *Builder) adjust(op string, amounts map[string]any, extra map[string]any
 }
 
 // IncrementSQL builds "UPDATE t SET col = col + ? [, extra...] WHERE ...".
+//
+// Example:
+//
+//	conn.Table("posts").Where("id", 7).IncrementSQL("views", 1, map[string]any{"seen_by": "ann"})
+//	// UPDATE "posts" SET "views" = "views" + $1, "seen_by" = $2 WHERE "id" = $3   args: [1 ann 7]
 func (b *Builder) IncrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
 	return b.adjust("+", map[string]any{column: amount}, extra)
 }
 
 // DecrementSQL builds "UPDATE t SET col = col - ? [, extra...] WHERE ...".
+//
+// Example:
+//
+//	conn.Table("products").Where("id", 3).DecrementSQL("stock", 2, nil)
+//	// UPDATE "products" SET "stock" = "stock" - $1 WHERE "id" = $2   args: [2 3]
 func (b *Builder) DecrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
 	return b.adjust("-", map[string]any{column: amount}, extra)
 }
 
 // IncrementEachSQL increments several columns at once; amounts maps column to amount.
+//
+// Example:
+//
+//	conn.Table("stats").Where("day", "2026-01-01").
+//		IncrementEachSQL(map[string]any{"views": 5, "clicks": 1}, nil)
+//	// UPDATE "stats" SET "clicks" = "clicks" + $1, "views" = "views" + $2 WHERE "day" = $3
+//	// args: [1 5 2026-01-01]
 func (b *Builder) IncrementEachSQL(amounts, extra map[string]any) (string, []any, error) {
 	return b.adjust("+", amounts, extra)
 }
 
 // DecrementEachSQL decrements several columns at once.
+//
+// Example:
+//
+//	conn.Table("stats").Where("day", "2026-01-01").
+//		DecrementEachSQL(map[string]any{"views": 5, "clicks": 1}, nil)
+//	// UPDATE "stats" SET "clicks" = "clicks" - $1, "views" = "views" - $2 WHERE "day" = $3
+//	// args: [1 5 2026-01-01]
 func (b *Builder) DecrementEachSQL(amounts, extra map[string]any) (string, []any, error) {
 	return b.adjust("-", amounts, extra)
 }
@@ -608,6 +694,11 @@ func (c *compiler) delete(b *Builder) error {
 // on MySQL and a ctid/rowid subquery on Postgres/SQLite; MySQL also honors
 // order/limit. Refuses to build without a where clause or limit unless
 // AllRows() was called (use TruncateSQL to empty a table).
+//
+// Example:
+//
+//	conn.Table("users").Where("id", 7).DeleteSQL()
+//	// DELETE FROM "users" WHERE "id" = $1   args: [7]
 func (b *Builder) DeleteSQL() (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -623,6 +714,14 @@ func (b *Builder) DeleteSQL() (string, []any, error) {
 // Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE, unlike Laravel's default,
 // so referencing tables are never emptied implicitly). MySQL: "TRUNCATE TABLE t".
 // SQLite has no TRUNCATE: it deletes the sqlite_sequence row, then every row.
+//
+// Example:
+//
+//	stmts, err := conn.Table("users").TruncateSQL()
+//	// Postgres: TRUNCATE "users" RESTART IDENTITY
+//	// MySQL:    TRUNCATE TABLE `users`
+//	// SQLite:   DELETE FROM sqlite_sequence WHERE name = ?  args: [users]
+//	//           DELETE FROM "users"
 func (b *Builder) TruncateSQL() ([]Stmt, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
