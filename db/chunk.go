@@ -83,11 +83,20 @@ func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (
 		if err != nil {
 			return err
 		}
-		if v == nil {
+		if isNilValue(v) {
 			return fmt.Errorf("%w: ChunkByID column %q is NULL", ErrInvalidArgs, col)
 		}
 		last = v
 	}
+}
+
+// isNilValue reports whether v is nil or a nil pointer (a NULL *T field).
+func isNilValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Pointer && rv.IsNil()
 }
 
 // Each streams rows one at a time into dest (a pointer to a struct, map or

@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `quill`: a fluent SQL query builder for Go (not an ORM) for PostgreSQL, MySQL, MariaDB and SQLite. The module is
 `github.com/akfaiz/quill`; the **public package is `db`** (`github.com/akfaiz/quill/db`), so callers write
-`db.Use(db.Postgres).Table("users")`. The root module is **standard library only at runtime**: keep it that way. The only third-party dependency is
-`github.com/stretchr/testify`, used by tests alone (`require`/`assert`); never import it from non-test code.
+`db.Use(db.Postgres).Table("users")`. The root module is **standard library only at runtime**: keep it that way. The only third-party dependencies are
+`github.com/stretchr/testify` and `github.com/DATA-DOG/go-sqlmock`, used by tests alone (`require`/`assert`, mocked `*sql.DB` via the `newMock` helper in `db/mock_test.go`); never import them from non-test code.
 
 ## Commands
 

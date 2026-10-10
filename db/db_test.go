@@ -2,10 +2,13 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"reflect"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
@@ -111,4 +114,178 @@ func TestUseCannotRunQueriesButNeverPanics(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDialectAndRawQueryExec(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	conn := db.New(sqlDB, db.MySQL)
+	assert.Equal(t, db.MySQL, conn.Dialect())
+
+	mock.ExpectQuery("SELECT id, name FROM people WHERE id = ?").WithArgs(1).WillReturnRows(people(1))
+	var out []person
+	require.NoError(t, conn.Query(ctx, &out, "SELECT id, name FROM people WHERE id = ?", 1))
+	assert.Equal(t, []person{{1, "p1"}}, out)
+
+	mock.ExpectQuery("SELECT 1").WillReturnError(errors.New("boom"))
+	require.Error(t, conn.Query(ctx, &out, "SELECT 1"))
+
+	mock.ExpectExec("UPDATE people SET x = ?").WithArgs(1).WillReturnResult(sqlmock.NewResult(0, 3))
+	n, err := conn.Exec(ctx, "UPDATE people SET x = ?", 1)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, n)
+
+	mock.ExpectExec("DELETE FROM people").WillReturnError(errors.New("boom"))
+	_, err = conn.Exec(ctx, "DELETE FROM people")
+	require.Error(t, err)
+}
+
+func TestHookSeesEveryStatementAndHidesArgsByDefault(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	var events []db.QueryEvent
+	hook := func(_ context.Context, ev db.QueryEvent) { events = append(events, ev) }
+
+	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
+	mock.ExpectQuery(`SELECT COUNT(*) AS "aggregate" FROM "people" WHERE "name" = $1`).WithArgs("ann").
+		WillReturnRows(count(1))
+	_, err := conn.Table("people").Where("name", "ann").Count(ctx)
+	require.NoError(t, err)
+	mock.ExpectExec(`DELETE FROM "people" WHERE "id" = $1`).WithArgs(1).WillReturnError(errors.New("boom"))
+	_, err = conn.Table("people").Where("id", 1).Delete(ctx)
+	require.Error(t, err)
+
+	require.Len(t, events, 2)
+	assert.Equal(t, 1, events[0].NumArgs)
+	assert.Nil(t, events[0].Args, "bind values are personal data: omitted unless WithLogArgs")
+	require.NoError(t, events[0].Err)
+	require.Error(t, events[1].Err)
+
+	events = nil
+	logged := db.New(sqlDB, db.Postgres, db.WithHook(hook), db.WithLogArgs())
+	mock.ExpectQuery(`SELECT * FROM "people" WHERE "name" = $1`).WithArgs("ann").WillReturnRows(people(0))
+	var out []person
+	require.NoError(t, logged.Table("people").Where("name", "ann").Get(ctx, &out))
+	require.Len(t, events, 1)
+	assert.Equal(t, []any{"ann"}, events[0].Args)
+}
+
+func TestTransactionCommitsRollsBackAndRepanics(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("commit", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		mock.ExpectBegin()
+		mock.ExpectExec("UPDATE a SET x = 1").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectCommit()
+		err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(tx *db.DB) error {
+			_, err := tx.Exec(ctx, "UPDATE a SET x = 1")
+			return err
+		})
+		require.NoError(t, err)
+	})
+	t.Run("rollback on error", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		boom := errors.New("boom")
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error { return boom })
+		require.ErrorIs(t, err, boom)
+	})
+	t.Run("rollback failure is joined", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		boom, rbBoom := errors.New("boom"), errors.New("rollback boom")
+		mock.ExpectBegin()
+		mock.ExpectRollback().WillReturnError(rbBoom)
+		err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error { return boom })
+		require.ErrorIs(t, err, boom)
+		require.ErrorIs(t, err, rbBoom)
+	})
+	t.Run("rollback on panic then re-panic", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		mock.ExpectBegin()
+		mock.ExpectRollback()
+		assert.PanicsWithValue(t, "kaboom", func() {
+			_ = db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error { panic("kaboom") })
+		})
+	})
+	t.Run("begin failure", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		mock.ExpectBegin().WillReturnError(errors.New("no tx"))
+		err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error { return nil })
+		require.Error(t, err)
+	})
+	t.Run("options reach BeginTx", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		mock.ExpectBegin()
+		mock.ExpectCommit()
+		opts := &sql.TxOptions{ReadOnly: true}
+		require.NoError(t, db.New(sqlDB, db.Postgres).TransactionOpts(ctx, opts, func(*db.DB) error { return nil }))
+	})
+	t.Run("commit failure", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		mock.ExpectBegin()
+		mock.ExpectCommit().WillReturnError(errors.New("commit boom"))
+		err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(*db.DB) error { return nil })
+		require.Error(t, err)
+	})
+}
+
+func TestNestedTransactionUsesSavepoints(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	mock.ExpectBegin()
+	mock.ExpectExec("SAVEPOINT sp_1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("RELEASE SAVEPOINT sp_1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SAVEPOINT sp_2").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ROLLBACK TO SAVEPOINT sp_2").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	boom := errors.New("boom")
+	err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(tx *db.DB) error {
+		require.NoError(t, tx.Transaction(ctx, func(*db.DB) error { return nil }))
+		require.ErrorIs(t, tx.Transaction(ctx, func(*db.DB) error { return boom }), boom)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestSavepointFailures(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	mock.ExpectBegin()
+	mock.ExpectExec("SAVEPOINT sp_1").WillReturnError(errors.New("sp boom"))
+	mock.ExpectRollback()
+	err := db.New(sqlDB, db.Postgres).Transaction(ctx, func(tx *db.DB) error {
+		return tx.Transaction(ctx, func(*db.DB) error { return nil })
+	})
+	require.Error(t, err)
+}
+
+func TestTransactionNeedsABeginner(t *testing.T) {
+	ctx := context.Background()
+	err := db.New(noTx{}, db.Postgres).Transaction(ctx, func(*db.DB) error { return nil })
+	require.ErrorIs(t, err, db.ErrNoTransaction)
+}
+
+// noTx is a Conn that cannot begin transactions.
+type noTx struct{}
+
+func (noTx) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, errors.New("unused")
+}
+
+func (noTx) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	return nil, errors.New("unused")
+}
+
+func TestNewOnAnExistingSQLTxUsesSavepoints(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	mock.ExpectBegin()
+	mock.ExpectExec("SAVEPOINT sp_1").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("RELEASE SAVEPOINT sp_1").WillReturnResult(sqlmock.NewResult(0, 0))
+	tx, err := sqlDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	require.NoError(t, db.New(tx, db.Postgres).Transaction(ctx, func(*db.DB) error { return nil }))
 }

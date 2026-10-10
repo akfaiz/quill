@@ -5,12 +5,15 @@
   </picture>
 </p>
 
-<p align="center">
-  <a href="https://github.com/akfaiz/quill/actions/workflows/ci.yml"><img src="https://github.com/akfaiz/quill/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://pkg.go.dev/github.com/akfaiz/quill/db"><img src="https://pkg.go.dev/badge/github.com/akfaiz/quill/db.svg" alt="Go Reference"></a>
-  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/akfaiz/quill" alt="Go version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/akfaiz/quill" alt="License: MIT"></a>
-</p>
+<div align="center">
+
+[![CI](https://github.com/akfaiz/quill/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/akfaiz/quill/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/akfaiz/quill/graph/badge.svg?token=bteQkNLky6)](https://codecov.io/gh/akfaiz/quill)
+[![Go Reference](https://pkg.go.dev/badge/github.com/akfaiz/quill/db.svg)](https://pkg.go.dev/github.com/akfaiz/quill/db)
+[![Go version](https://img.shields.io/github/go-mod/go-version/akfaiz/quill)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/akfaiz/quill)](LICENSE)
+
+</div>
 
 A fluent SQL query builder for Go, modelled on Laravel's query builder. It builds SQL with bind
 arguments and can optionally run it through `database/sql`. **It is not an ORM**: there are no
