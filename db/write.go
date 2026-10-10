@@ -359,30 +359,9 @@ func (c *compiler) setColumn(key string) string {
 }
 
 func (c *compiler) setList(sets []setItem) error {
-	if c.d == SQLite {
-		var err error
-		if sets, err = groupSQLiteJSON(sets); err != nil {
-			return err
-		}
-	}
 	written := false
 	done := map[string]bool{}
 	for _, s := range sets {
-		if v, isPatch := s.value.(jsonPatch); isPatch {
-			if written {
-				c.write(", ")
-			}
-			enc, err := jsonpath.Encode(v.doc)
-			if err != nil {
-				return err
-			}
-			col := c.setColumn(s.column)
-			c.write(col + " = JSON_PATCH(IFNULL(" + col + ", JSON('{}')), JSON(")
-			c.param(enc)
-			c.write("))")
-			written = true
-			continue
-		}
 		if jsonpath.IsSelector(s.column) {
 			key := c.jsonColumnKey(s.column)
 			if done[key] {
@@ -391,8 +370,7 @@ func (c *compiler) setList(sets []setItem) error {
 			done[key] = true
 			var group []setItem
 			for _, o := range sets {
-				if _, p := o.value.(jsonPatch); !p && jsonpath.IsSelector(o.column) &&
-					c.jsonColumnKey(o.column) == key {
+				if jsonpath.IsSelector(o.column) && c.jsonColumnKey(o.column) == key {
 					group = append(group, o)
 				}
 			}

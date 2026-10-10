@@ -231,8 +231,8 @@ func TestJSONUpdates(t *testing.T) {
 				args: []any{"x", "dark", 1},
 			},
 			lite: want{
-				sql:  `UPDATE "t" SET "name" = ?, "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
-				args: []any{"x", `{"theme":"dark"}`, 1},
+				sql:  `UPDATE "t" SET "name" = ?, "opts" = JSON_SET(IFNULL("opts", JSON('{}')), '$."theme"', JSON(?)) WHERE "id" = ?`,
+				args: []any{"x", `"dark"`, 1},
 			},
 		},
 		{
@@ -249,8 +249,8 @@ func TestJSONUpdates(t *testing.T) {
 				args: []any{`["a"]`, 1},
 			},
 			lite: want{
-				sql:  `UPDATE "t" SET "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
-				args: []any{`{"on":true,"tags":["a"]}`, 1},
+				sql:  `UPDATE "t" SET "opts" = JSON_SET(IFNULL("opts", JSON('{}')), '$."on"', JSON(?), '$."tags"', JSON(?)) WHERE "id" = ?`,
+				args: []any{"true", `["a"]`, 1},
 			},
 			maria: want{
 				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"on\"', TRUE, '$.\"tags\"', JSON_QUERY(?, '$')) WHERE `id` = ?",
@@ -271,8 +271,8 @@ func TestJSONUpdates(t *testing.T) {
 				args: []any{1, 2, 3, 1},
 			},
 			lite: want{
-				sql:  `UPDATE "t" SET "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
-				args: []any{`{"a":{"b":1,"c":2},"d":3}`, 1},
+				sql:  `UPDATE "t" SET "opts" = JSON_SET(IFNULL("opts", JSON('{}')), '$."a"."b"', JSON(?), '$."a"."c"', JSON(?), '$."d"', JSON(?)) WHERE "id" = ?`,
+				args: []any{"1", "2", "3", 1},
 			},
 		},
 		{
@@ -289,8 +289,30 @@ func TestJSONUpdates(t *testing.T) {
 				args: []any{"x", 1},
 			},
 			lite: want{
-				sql:  `UPDATE "t" SET "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
-				args: []any{`{"tags[0]":"x"}`, 1},
+				sql:  `UPDATE "t" SET "opts" = JSON_SET(IFNULL("opts", JSON('{}')), '$."tags"[0]', JSON(?)) WHERE "id" = ?`,
+				args: []any{`"x"`, 1},
+			},
+		},
+		{
+			name: "nil and map values are set, not merged or deleted",
+			build: func(d db.Dialect) (string, []any, error) {
+				return jt(d).Where("id", 1).UpdateSQL(m("opts->gone", nil, "opts->meta", map[string]any{"x": 1}))
+			},
+			pg: want{
+				sql:  `UPDATE "t" SET "opts" = JSONB_SET(JSONB_SET("opts"::JSONB, '{"gone"}', $1), '{"meta"}', $2) WHERE "id" = $3`,
+				args: []any{"null", `{"x":1}`, 1},
+			},
+			my: want{
+				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"gone\"', ?, '$.\"meta\"', CAST(? AS JSON)) WHERE `id` = ?",
+				args: []any{nil, `{"x":1}`, 1},
+			},
+			lite: want{
+				sql:  `UPDATE "t" SET "opts" = JSON_SET(IFNULL("opts", JSON('{}')), '$."gone"', JSON(?), '$."meta"', JSON(?)) WHERE "id" = ?`,
+				args: []any{"null", `{"x":1}`, 1},
+			},
+			maria: want{
+				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"gone\"', ?, '$.\"meta\"', JSON_QUERY(?, '$')) WHERE `id` = ?",
+				args: []any{nil, `{"x":1}`, 1},
 			},
 		},
 		{

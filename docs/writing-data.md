@@ -229,14 +229,18 @@ conn.Table("users").Where("id", 1).Update(ctx, map[string]any{
 | --- | --- |
 | PostgreSQL | `"options" = JSONB_SET("options"::JSONB, '{"theme"}', $1)` (values are JSON-encoded) |
 | MySQL | `` `options` = JSON_SET(`options`, '$."theme"', ?) `` (booleans inlined; maps and slices bound as `CAST(? AS JSON)`) |
-| SQLite | one `JSON_PATCH(IFNULL("options", JSON('{}')), JSON(?))` per column, merging every path of that column |
+| SQLite | `"options" = JSON_SET(IFNULL("options", JSON('{}')), '$."theme"', JSON(?))` (values are JSON-encoded) |
+
+Every dialect sets the value at the path: `nil` becomes JSON `null` (the key stays), and a map or slice
+replaces whatever was there instead of merging into it.
 
 Several paths of the same column become **one assignment** (nested `JSONB_SET` on PostgreSQL, a
-multi-pair `JSON_SET` on MySQL), because PostgreSQL rejects assigning a column twice.
+multi-pair `JSON_SET` on MySQL and SQLite), because PostgreSQL rejects assigning a column twice.
 
 Limits: on PostgreSQL, MySQL and MariaDB only the last key is created, so write `options->a->b` only if
-`options->a` already exists (SQLite's merge patch creates intermediate objects). SQLite does not
-support `db.Raw(...)` as a JSON value and returns `db.ErrUnsupported`.
+`options->a` already exists. SQLite 3.53.4 creates missing intermediate objects too; that is not
+verified on older SQLite versions, so do not rely on it. SQLite does not support `db.Raw(...)` as a JSON
+value and returns `db.ErrUnsupported`.
 
 ## Build-only forms
 
