@@ -1,4 +1,9 @@
-# quill
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
+    <img src="logo.svg" alt="quill logo" width="360">
+  </picture>
+</p>
 
 A fluent SQL query builder for Go, modelled on Laravel's query builder. It builds SQL with bind
 arguments and can optionally run it through `database/sql`. **It is not an ORM**: there are no
