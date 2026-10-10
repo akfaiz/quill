@@ -61,7 +61,7 @@ func TestNegatedExistsConnectives(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		`select * from "u" where not exists (select * from "p" where "x" = $1) or not exists (select * from "p" where "x" = $2) and "a" = $3 or exists (select * from "p" where "x" = $4)`,
+		`SELECT * FROM "u" WHERE NOT EXISTS (SELECT * FROM "p" WHERE "x" = $1) OR NOT EXISTS (SELECT * FROM "p" WHERE "x" = $2) AND "a" = $3 OR EXISTS (SELECT * FROM "p" WHERE "x" = $4)`,
 		sql,
 	)
 }

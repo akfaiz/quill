@@ -69,10 +69,10 @@ func TestLikeOp(t *testing.T) {
 		cs, not        bool
 		pg, my, sqlite string
 	}{
-		{false, false, "ilike", "like", "like"},
-		{false, true, "not ilike", "not like", "not like"},
-		{true, false, "like", "like binary", "glob"},
-		{true, true, "not like", "not like binary", "not glob"},
+		{false, false, "ILIKE", "LIKE", "LIKE"},
+		{false, true, "NOT ILIKE", "NOT LIKE", "NOT LIKE"},
+		{true, false, "LIKE", "LIKE BINARY", "GLOB"},
+		{true, true, "NOT LIKE", "NOT LIKE BINARY", "NOT GLOB"},
 	}
 	for _, tc := range tests {
 		perDialect(t, func(g Grammar) string { return g.LikeOp(tc.cs, tc.not) }, tc.pg, tc.my, tc.sqlite)
@@ -91,22 +91,22 @@ func TestLikeValueOnlySQLiteGlobRewritesThePattern(t *testing.T) {
 }
 
 func TestLikeCastAndNullSafeOp(t *testing.T) {
-	for _, op := range []string{"like", "ilike", "not like", "not ilike", "like binary"} {
-		perDialect(t, func(g Grammar) string { return g.LikeCast(op) }, "::text", "", "")
+	for _, op := range []string{"LIKE", "ILIKE", "NOT LIKE", "NOT ILIKE", "LIKE BINARY"} {
+		perDialect(t, func(g Grammar) string { return g.LikeCast(op) }, "::TEXT", "", "")
 	}
-	for _, op := range []string{"=", ">", "is", "regexp"} {
+	for _, op := range []string{"=", ">", "IS", "REGEXP"} {
 		perDialect(t, func(g Grammar) string { return g.LikeCast(op) }, "", "", "")
 	}
-	perDialect(t, func(g Grammar) string { return g.NullSafeOp() }, "is not distinct from", "<=>", "is")
+	perDialect(t, func(g Grammar) string { return g.NullSafeOp() }, "IS NOT DISTINCT FROM", "<=>", "IS")
 }
 
 func TestDatePart(t *testing.T) {
 	tests := []struct{ part, pg, my, lite string }{
-		{"date", `"c"::date`, "date(`c`)", `strftime('%Y-%m-%d', "c")`},
-		{"time", `"c"::time`, "time(`c`)", `strftime('%H:%M:%S', "c")`},
-		{"day", `extract(day from "c")`, "day(`c`)", `strftime('%d', "c")`},
-		{"month", `extract(month from "c")`, "month(`c`)", `strftime('%m', "c")`},
-		{"year", `extract(year from "c")`, "year(`c`)", `strftime('%Y', "c")`},
+		{"date", `"c"::DATE`, "DATE(`c`)", `STRFTIME('%Y-%m-%d', "c")`},
+		{"time", `"c"::TIME`, "TIME(`c`)", `STRFTIME('%H:%M:%S', "c")`},
+		{"day", `EXTRACT(DAY FROM "c")`, "DAY(`c`)", `STRFTIME('%d', "c")`},
+		{"month", `EXTRACT(MONTH FROM "c")`, "MONTH(`c`)", `STRFTIME('%m', "c")`},
+		{"year", `EXTRACT(YEAR FROM "c")`, "YEAR(`c`)", `STRFTIME('%Y', "c")`},
 	}
 	for _, tc := range tests {
 		for i, want := range []string{tc.pg, tc.my, tc.lite} {
@@ -119,7 +119,7 @@ func TestDatePart(t *testing.T) {
 }
 
 func TestDateValueWrap(t *testing.T) {
-	for i, want := range [][2]string{{"", ""}, {"", ""}, {"cast(", " as text)"}} {
+	for i, want := range [][2]string{{"", ""}, {"", ""}, {"CAST(", " AS TEXT)"}} {
 		pre, post := all[i].g.DateValueWrap()
 		if pre != want[0] || post != want[1] {
 			t.Errorf("%s: got (%q, %q), want %q", all[i].name, pre, post, want)
@@ -130,7 +130,7 @@ func TestDateValueWrap(t *testing.T) {
 func TestJoinAndUnionRules(t *testing.T) {
 	perDialect(t, func(g Grammar) bool { return g.SupportsStraightJoin() }, false, true, false)
 	perDialect(t, func(g Grammar) bool { return g.SupportsLateralJoin() }, true, true, false)
-	perDialect(t, func(g Grammar) string { return g.UnionOpen() }, "(", "(", "select * from (")
+	perDialect(t, func(g Grammar) string { return g.UnionOpen() }, "(", "(", "SELECT * FROM (")
 }
 
 func TestLockSQL(t *testing.T) {
@@ -140,16 +140,16 @@ func TestLockSQL(t *testing.T) {
 		pg, my, sqlite string
 	}{
 		{LockNone, "", "", "", ""},
-		{LockUpdate, "", "for update", "for update", ""},
-		{LockShared, "", "for share", "lock in share mode", ""},
-		{LockRaw, "for no key update", "for no key update", "for no key update", ""}, // SQLite ignores every lock
+		{LockUpdate, "", "FOR UPDATE", "FOR UPDATE", ""},
+		{LockShared, "", "FOR SHARE", "LOCK IN SHARE MODE", ""},
+		{LockRaw, "FOR NO KEY UPDATE", "FOR NO KEY UPDATE", "FOR NO KEY UPDATE", ""}, // SQLite ignores every lock
 		{LockRaw, "", "", "", ""},
 	}
 	for _, tc := range tests {
 		perDialect(t, func(g Grammar) string { return g.LockSQL(tc.kind, tc.raw) }, tc.pg, tc.my, tc.sqlite)
 	}
 	// the raw text is only used for LockRaw
-	if got := Postgres().LockSQL(LockUpdate, "ignored"); got != "for update" {
+	if got := Postgres().LockSQL(LockUpdate, "ignored"); got != "FOR UPDATE" {
 		t.Errorf("raw text leaked into LockUpdate: %q", got)
 	}
 }
@@ -163,11 +163,11 @@ func TestIndexHint(t *testing.T) {
 		name, kind, index string
 		pg, my, lite      result
 	}{
-		{"use", "use", "idx_a", result{}, result{"use index (idx_a)", false}, result{}},
-		{"force", "force", "idx_a", result{}, result{"force index (idx_a)", false}, result{"indexed by idx_a", false}},
-		{"ignore", "ignore", "idx_a", result{}, result{"ignore index (idx_a)", false}, result{}},
-		{"mysql takes a list", "use", "a, b_2, $c", result{}, result{"use index (a, b_2, $c)", false}, result{}},
-		{"sqlite takes one name", "force", "a, b", result{}, result{"force index (a, b)", false}, result{"", true}},
+		{"use", "use", "idx_a", result{}, result{"USE INDEX (idx_a)", false}, result{}},
+		{"force", "force", "idx_a", result{}, result{"FORCE INDEX (idx_a)", false}, result{"INDEXED BY idx_a", false}},
+		{"ignore", "ignore", "idx_a", result{}, result{"IGNORE INDEX (idx_a)", false}, result{}},
+		{"mysql takes a list", "use", "a, b_2, $c", result{}, result{"USE INDEX (a, b_2, $c)", false}, result{}},
+		{"sqlite takes one name", "force", "a, b", result{}, result{"FORCE INDEX (a, b)", false}, result{"", true}},
 		{"injection attempt", "use", "a) ; drop table t; --", result{}, result{"", true}, result{}},
 		{"empty name", "force", "", result{}, result{"", true}, result{"", true}},
 		{"space inside a name", "force", "a b", result{}, result{"", true}, result{"", true}},

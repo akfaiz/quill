@@ -11,12 +11,12 @@ func SQLite() Grammar { return sqliteGrammar{} }
 type sqliteGrammar struct{}
 
 func (sqliteGrammar) LikeOp(cs, not bool) string {
-	op := "like"
+	op := "LIKE"
 	if cs {
-		op = "glob"
+		op = "GLOB"
 	}
 	if not {
-		op = "not " + op
+		op = "NOT " + op
 	}
 	return op
 }
@@ -27,19 +27,19 @@ func (sqliteGrammar) LikeValue(p string, cs bool) string {
 	return strings.NewReplacer("*", "[*]", "?", "[?]", "%", "*", "_", "?").Replace(p)
 }
 func (sqliteGrammar) LikeCast(string) string { return "" }
-func (sqliteGrammar) NullSafeOp() string     { return "is" }
+func (sqliteGrammar) NullSafeOp() string     { return "IS" }
 
 var sqliteDateFormats = map[string]string{
 	"date": "%Y-%m-%d", "time": "%H:%M:%S", "day": "%d", "month": "%m", "year": "%Y",
 }
 
 func (sqliteGrammar) DatePart(part, col string) string {
-	return "strftime('" + sqliteDateFormats[part] + "', " + col + ")"
+	return "STRFTIME('" + sqliteDateFormats[part] + "', " + col + ")"
 }
-func (sqliteGrammar) DateValueWrap() (string, string) { return "cast(", " as text)" }
+func (sqliteGrammar) DateValueWrap() (string, string) { return "CAST(", " AS TEXT)" }
 func (sqliteGrammar) SupportsStraightJoin() bool      { return false }
 func (sqliteGrammar) SupportsLateralJoin() bool       { return false }
-func (sqliteGrammar) UnionOpen() string               { return "select * from (" }
+func (sqliteGrammar) UnionOpen() string               { return "SELECT * FROM (" }
 func (sqliteGrammar) LockSQL(LockKind, string) string { return "" }
 func (sqliteGrammar) IndexHint(kind, index string) (string, error) {
 	if kind != "force" {
@@ -48,7 +48,7 @@ func (sqliteGrammar) IndexHint(kind, index string) (string, error) {
 	if err := validateIndexNames(index, false); err != nil {
 		return "", err
 	}
-	return "indexed by " + index, nil
+	return "INDEXED BY " + index, nil
 }
 func (sqliteGrammar) Random(*int) string { return "RANDOM()" }
 

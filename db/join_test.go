@@ -23,9 +23,9 @@ func TestJoinGolden(t *testing.T) {
 					CrossJoin("sizes").
 					Where("u.active", true)
 			},
-			pg:   `select * from "users" as "u" inner join "posts" as "p" on "p"."user_id" = "u"."id" left join "profiles" on "profiles"."user_id" = "u"."id" right join "teams" on "teams"."id" <> "u"."team_id" cross join "sizes" where "u"."active" = $1`,
-			my:   "select * from `users` as `u` inner join `posts` as `p` on `p`.`user_id` = `u`.`id` left join `profiles` on `profiles`.`user_id` = `u`.`id` right join `teams` on `teams`.`id` <> `u`.`team_id` cross join `sizes` where `u`.`active` = ?",
-			lite: `select * from "users" as "u" inner join "posts" as "p" on "p"."user_id" = "u"."id" left join "profiles" on "profiles"."user_id" = "u"."id" right join "teams" on "teams"."id" <> "u"."team_id" cross join "sizes" where "u"."active" = ?`,
+			pg:   `SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" LEFT JOIN "profiles" ON "profiles"."user_id" = "u"."id" RIGHT JOIN "teams" ON "teams"."id" <> "u"."team_id" CROSS JOIN "sizes" WHERE "u"."active" = $1`,
+			my:   "SELECT * FROM `users` AS `u` INNER JOIN `posts` AS `p` ON `p`.`user_id` = `u`.`id` LEFT JOIN `profiles` ON `profiles`.`user_id` = `u`.`id` RIGHT JOIN `teams` ON `teams`.`id` <> `u`.`team_id` CROSS JOIN `sizes` WHERE `u`.`active` = ?",
+			lite: `SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" LEFT JOIN "profiles" ON "profiles"."user_id" = "u"."id" RIGHT JOIN "teams" ON "teams"."id" <> "u"."team_id" CROSS JOIN "sizes" WHERE "u"."active" = ?`,
 			args: []any{true},
 		},
 		{
@@ -44,9 +44,9 @@ func TestJoinGolden(t *testing.T) {
 					}).
 					Where("b", 2)
 			},
-			pg:   `select * from "users" inner join "contacts" on "users"."id" = "contacts"."user_id" or "users"."alt_id" = "contacts"."user_id" and "contacts"."kind" = $1 and "contacts"."deleted_at" is null and ("contacts"."score" > $2 or "contacts"."tag" in ($3, $4)) where "a" = $5 and "b" = $6`,
-			my:   "select * from `users` inner join `contacts` on `users`.`id` = `contacts`.`user_id` or `users`.`alt_id` = `contacts`.`user_id` and `contacts`.`kind` = ? and `contacts`.`deleted_at` is null and (`contacts`.`score` > ? or `contacts`.`tag` in (?, ?)) where `a` = ? and `b` = ?",
-			lite: `select * from "users" inner join "contacts" on "users"."id" = "contacts"."user_id" or "users"."alt_id" = "contacts"."user_id" and "contacts"."kind" = ? and "contacts"."deleted_at" is null and ("contacts"."score" > ? or "contacts"."tag" in (?, ?)) where "a" = ? and "b" = ?`,
+			pg:   `SELECT * FROM "users" INNER JOIN "contacts" ON "users"."id" = "contacts"."user_id" OR "users"."alt_id" = "contacts"."user_id" AND "contacts"."kind" = $1 AND "contacts"."deleted_at" IS NULL AND ("contacts"."score" > $2 OR "contacts"."tag" IN ($3, $4)) WHERE "a" = $5 AND "b" = $6`,
+			my:   "SELECT * FROM `users` INNER JOIN `contacts` ON `users`.`id` = `contacts`.`user_id` OR `users`.`alt_id` = `contacts`.`user_id` AND `contacts`.`kind` = ? AND `contacts`.`deleted_at` IS NULL AND (`contacts`.`score` > ? OR `contacts`.`tag` IN (?, ?)) WHERE `a` = ? AND `b` = ?",
+			lite: `SELECT * FROM "users" INNER JOIN "contacts" ON "users"."id" = "contacts"."user_id" OR "users"."alt_id" = "contacts"."user_id" AND "contacts"."kind" = ? AND "contacts"."deleted_at" IS NULL AND ("contacts"."score" > ? OR "contacts"."tag" IN (?, ?)) WHERE "a" = ? AND "b" = ?`,
 			args: []any{"primary", 5, "x", "y", 1, 2},
 		},
 		{
@@ -54,9 +54,9 @@ func TestJoinGolden(t *testing.T) {
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("u").JoinWhere("p", "p.status", "live").LeftJoinWhere("q", "q.n", ">", 3)
 			},
-			pg:   `select * from "u" inner join "p" on "p"."status" = $1 left join "q" on "q"."n" > $2`,
-			my:   "select * from `u` inner join `p` on `p`.`status` = ? left join `q` on `q`.`n` > ?",
-			lite: `select * from "u" inner join "p" on "p"."status" = ? left join "q" on "q"."n" > ?`,
+			pg:   `SELECT * FROM "u" INNER JOIN "p" ON "p"."status" = $1 LEFT JOIN "q" ON "q"."n" > $2`,
+			my:   "SELECT * FROM `u` INNER JOIN `p` ON `p`.`status` = ? LEFT JOIN `q` ON `q`.`n` > ?",
+			lite: `SELECT * FROM "u" INNER JOIN "p" ON "p"."status" = ? LEFT JOIN "q" ON "q"."n" > ?`,
 			args: []any{"live", 3},
 		},
 		{
@@ -73,9 +73,9 @@ func TestJoinGolden(t *testing.T) {
 					LeftJoinSubFunc(db.Use(d).Table("x").Where("k", 7), "xs", func(j *db.JoinClause) { j.On("xs.id", "users.id") }).
 					Where("users.n", 1)
 			},
-			pg:   `select * from "users" inner join (select "user_id", max(created_at) as last from "posts" where "pub" = $1 group by "user_id") as "latest" on "latest"."user_id" = "users"."id" left join (select * from "x" where "k" = $2) as "xs" on "xs"."id" = "users"."id" where "users"."n" = $3`,
-			my:   "select * from `users` inner join (select `user_id`, max(created_at) as last from `posts` where `pub` = ? group by `user_id`) as `latest` on `latest`.`user_id` = `users`.`id` left join (select * from `x` where `k` = ?) as `xs` on `xs`.`id` = `users`.`id` where `users`.`n` = ?",
-			lite: `select * from "users" inner join (select "user_id", max(created_at) as last from "posts" where "pub" = ? group by "user_id") as "latest" on "latest"."user_id" = "users"."id" left join (select * from "x" where "k" = ?) as "xs" on "xs"."id" = "users"."id" where "users"."n" = ?`,
+			pg:   `SELECT * FROM "users" INNER JOIN (SELECT "user_id", max(created_at) as last FROM "posts" WHERE "pub" = $1 GROUP BY "user_id") AS "latest" ON "latest"."user_id" = "users"."id" LEFT JOIN (SELECT * FROM "x" WHERE "k" = $2) AS "xs" ON "xs"."id" = "users"."id" WHERE "users"."n" = $3`,
+			my:   "SELECT * FROM `users` INNER JOIN (SELECT `user_id`, max(created_at) as last FROM `posts` WHERE `pub` = ? GROUP BY `user_id`) AS `latest` ON `latest`.`user_id` = `users`.`id` LEFT JOIN (SELECT * FROM `x` WHERE `k` = ?) AS `xs` ON `xs`.`id` = `users`.`id` WHERE `users`.`n` = ?",
+			lite: `SELECT * FROM "users" INNER JOIN (SELECT "user_id", max(created_at) as last FROM "posts" WHERE "pub" = ? GROUP BY "user_id") AS "latest" ON "latest"."user_id" = "users"."id" LEFT JOIN (SELECT * FROM "x" WHERE "k" = ?) AS "xs" ON "xs"."id" = "users"."id" WHERE "users"."n" = ?`,
 			args: []any{true, 7, 1},
 		},
 		{
@@ -83,9 +83,9 @@ func TestJoinGolden(t *testing.T) {
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("users").Prefix("p_").Join("posts as po", "po.uid", "users.id")
 			},
-			pg:   `select * from "p_users" inner join "p_posts" as "p_po" on "p_po"."uid" = "p_users"."id"`,
-			my:   "select * from `p_users` inner join `p_posts` as `p_po` on `p_po`.`uid` = `p_users`.`id`",
-			lite: `select * from "p_users" inner join "p_posts" as "p_po" on "p_po"."uid" = "p_users"."id"`,
+			pg:   `SELECT * FROM "p_users" INNER JOIN "p_posts" AS "p_po" ON "p_po"."uid" = "p_users"."id"`,
+			my:   "SELECT * FROM `p_users` INNER JOIN `p_posts` AS `p_po` ON `p_po`.`uid` = `p_users`.`id`",
+			lite: `SELECT * FROM "p_users" INNER JOIN "p_posts" AS "p_po" ON "p_po"."uid" = "p_users"."id"`,
 		},
 	}
 	runGolden(t, tests)
@@ -102,19 +102,19 @@ func TestJoinDialectSpecific(t *testing.T) {
 
 	got, args, err := lateral(db.Postgres).ToSQL()
 	require.NoError(t, err)
-	want := `select * from "users" inner join lateral (select * from "posts" where "user_id" = $1 limit 3) as "recent" on true left join lateral (select * from "c") as "cc" on true`
+	want := `SELECT * FROM "users" INNER JOIN LATERAL (SELECT * FROM "posts" WHERE "user_id" = $1 LIMIT 3) AS "recent" ON TRUE LEFT JOIN LATERAL (SELECT * FROM "c") AS "cc" ON TRUE`
 	if got != want || len(args) != 1 {
 		t.Errorf("pg lateral\n got: %s %v\nwant: %s", got, args, want)
 	}
 
 	got, _, err = lateral(db.MySQL).ToSQL()
 	require.NoError(t, err)
-	want = "select * from `users` inner join lateral (select * from `posts` where `user_id` = ? limit 3) as `recent` on true left join lateral (select * from `c`) as `cc` on true"
+	want = "SELECT * FROM `users` INNER JOIN LATERAL (SELECT * FROM `posts` WHERE `user_id` = ? LIMIT 3) AS `recent` ON TRUE LEFT JOIN LATERAL (SELECT * FROM `c`) AS `cc` ON TRUE"
 	assert.Equal(t, want, got)
 
 	got, _, err = straight(db.MySQL).ToSQL()
 	require.NoError(t, err)
-	if want = "select * from `a` straight_join `b` on `b`.`id` = `a`.`id`"; got != want {
+	if want = "SELECT * FROM `a` STRAIGHT_JOIN `b` ON `b`.`id` = `a`.`id`"; got != want {
 		t.Errorf("mysql straight\n got: %s\nwant: %s", got, want)
 	}
 
@@ -125,7 +125,7 @@ func TestJoinDialectSpecific(t *testing.T) {
 	}
 	// MariaDB: straight_join works as on MySQL, lateral joins do not exist
 	got, _, err = straight(db.MariaDB).ToSQL()
-	if err != nil || got != "select * from `a` straight_join `b` on `b`.`id` = `a`.`id`" {
+	if err != nil || got != "SELECT * FROM `a` STRAIGHT_JOIN `b` ON `b`.`id` = `a`.`id`" {
 		t.Errorf("mariadb straight: %s (%v)", got, err)
 	}
 	if _, _, err := lateral(db.MariaDB).ToSQL(); !errors.Is(err, db.ErrUnsupported) {
@@ -170,10 +170,10 @@ func TestJoinSubIsSnapshotAndCloneIndependent(t *testing.T) {
 	sub.Where("b", 2)
 	bs, _, _ := base.ToSQL()
 	cs, _, _ := c.ToSQL()
-	if want := `select * from "t" inner join (select * from "s" where "a" = $1) as "x" on "x"."id" = "t"."id"`; bs != want {
+	if want := `SELECT * FROM "t" INNER JOIN (SELECT * FROM "s" WHERE "a" = $1) AS "x" ON "x"."id" = "t"."id"`; bs != want {
 		t.Errorf("base:\n got: %s\nwant: %s", bs, want)
 	}
-	if want := `select * from "t" inner join (select * from "s" where "a" = $1) as "x" on "x"."id" = "t"."id" left join "z" on "z"."id" = "t"."id"`; cs != want {
+	if want := `SELECT * FROM "t" INNER JOIN (SELECT * FROM "s" WHERE "a" = $1) AS "x" ON "x"."id" = "t"."id" LEFT JOIN "z" ON "z"."id" = "t"."id"`; cs != want {
 		t.Errorf("clone:\n got: %s\nwant: %s", cs, want)
 	}
 }
@@ -200,13 +200,13 @@ func TestJoinVariantsPostgres(t *testing.T) {
 					WhereNotNull("j.n").OrWhereNull("j.m").OrWhereNotNull("j.o").
 					WhereRaw("j.r = ?", 6).OrWhereRaw("j.q = ?", 7)
 			}),
-			`select * from "t" inner join "j" on "j"."a" = "t"."a" or ("j"."b" = "t"."b" or "j"."c" = "t"."c") and "j"."k" in ($1) and "j"."k" not in ($2) or "j"."z" > $3 or "j"."y" in ($4) or "j"."y" not in ($5) and "j"."n" is not null or "j"."m" is null or "j"."o" is not null and j.r = $6 or j.q = $7`,
+			`SELECT * FROM "t" INNER JOIN "j" ON "j"."a" = "t"."a" OR ("j"."b" = "t"."b" OR "j"."c" = "t"."c") AND "j"."k" IN ($1) AND "j"."k" NOT IN ($2) OR "j"."z" > $3 OR "j"."y" IN ($4) OR "j"."y" NOT IN ($5) AND "j"."n" IS NOT NULL OR "j"."m" IS NULL OR "j"."o" IS NOT NULL AND j.r = $6 OR j.q = $7`,
 			[]any{1, 2, 3, 4, 5, 6, 7},
 		},
 		{
 			"right join func and where",
 			tb().RightJoinFunc("r", func(j *db.JoinClause) { j.On("r.a", "t.a") }).RightJoinWhere("w", "w.x", 9),
-			`select * from "t" right join "r" on "r"."a" = "t"."a" right join "w" on "w"."x" = $1`,
+			`SELECT * FROM "t" RIGHT JOIN "r" ON "r"."a" = "t"."a" RIGHT JOIN "w" ON "w"."x" = $1`,
 			[]any{9},
 		},
 		{
@@ -217,7 +217,7 @@ func TestJoinVariantsPostgres(t *testing.T) {
 				CrossJoinSub(sub(), "c").
 				JoinSubFunc(sub(), "f", func(j *db.JoinClause) { j.On("f.a", "t.a") }).
 				RightJoinSubFunc(sub(), "g", func(j *db.JoinClause) { j.On("g.a", "t.a") }),
-			`select * from "t" left join (select * from "s" where "k" = $1) as "l" on "l"."a" = "t"."a" right join (select * from "s" where "k" = $2) as "r" on "r"."a" = "t"."a" cross join (select * from "s" where "k" = $3) as "c" inner join (select * from "s" where "k" = $4) as "f" on "f"."a" = "t"."a" right join (select * from "s" where "k" = $5) as "g" on "g"."a" = "t"."a"`,
+			`SELECT * FROM "t" LEFT JOIN (SELECT * FROM "s" WHERE "k" = $1) AS "l" ON "l"."a" = "t"."a" RIGHT JOIN (SELECT * FROM "s" WHERE "k" = $2) AS "r" ON "r"."a" = "t"."a" CROSS JOIN (SELECT * FROM "s" WHERE "k" = $3) AS "c" INNER JOIN (SELECT * FROM "s" WHERE "k" = $4) AS "f" ON "f"."a" = "t"."a" RIGHT JOIN (SELECT * FROM "s" WHERE "k" = $5) AS "g" ON "g"."a" = "t"."a"`,
 			[]any{1, 1, 1, 1, 1},
 		},
 	}

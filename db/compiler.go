@@ -109,7 +109,7 @@ func (c *compiler) writeColumn(s string) { c.columnTo(&c.sb, s) }
 func (c *compiler) columnTo(sb *strings.Builder, s string) {
 	if name, alias, ok := matchAlias(s); ok {
 		c.columnTo(sb, name)
-		sb.WriteString(" as ")
+		sb.WriteString(" AS ")
 		c.quoteTo(sb, alias)
 		return
 	}
@@ -149,7 +149,7 @@ func (c *compiler) writeTable(s string) { c.tableTo(&c.sb, s) }
 func (c *compiler) tableTo(sb *strings.Builder, s string) {
 	if name, alias, ok := matchAlias(s); ok {
 		c.tableTo(sb, name)
-		sb.WriteString(" as ")
+		sb.WriteString(" AS ")
 		c.quoteTo(sb, c.prefix+alias)
 		return
 	}

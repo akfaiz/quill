@@ -12,9 +12,9 @@ noted. `ToSQL()` returns `(sql string, args []any, err error)`.
 ## Select
 
 ```go
-q := conn.Table("users").Select("id", "name as n", "u.email")   // select "id", "name" as "n", "u"."email" ...
+q := conn.Table("users").Select("id", "name as n", "u.email")   // SELECT "id", "name" AS "n", "u"."email" ...
 q.AddSelect("age")                                              // append
-q.Distinct()                                                    // select distinct
+q.Distinct()                                                    // SELECT DISTINCT
 q.SelectRaw("count(*) filter (where active) as active_count")   // raw expression
 q.SelectSub(conn.Table("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id"), "post_count")
 ```
@@ -25,10 +25,10 @@ With no columns, `*` is selected. `Select` replaces the list; `AddSelect`, `Sele
 ## From
 
 ```go
-conn.Table("users")                    // from "users"
-conn.Table("users as u")               // from "users" as "u"
-conn.Table("app.users")                // from "app"."users"
-conn.NewQuery().FromSub(sub, "t")      // from (select ...) as "t"
+conn.Table("users")                    // FROM "users"
+conn.Table("users as u")               // FROM "users" AS "u"
+conn.Table("app.users")                // FROM "app"."users"
+conn.NewQuery().FromSub(sub, "t")      // FROM (SELECT ...) AS "t"
 conn.NewQuery().FromRaw("generate_series(?, ?) g", 1, 3)
 ```
 
@@ -42,8 +42,8 @@ conn.NewQuery().FromRaw("generate_series(?, ?) g", 1, 3)
 ```go
 Where("votes", 100)              // "votes" = $1
 Where("votes", ">", 100)         // "votes" > $1
-Where("deleted_at", nil)         // "deleted_at" is null
-Where("role", "!=", nil)         // "role" is not null
+Where("deleted_at", nil)         // "deleted_at" IS NULL
+Where("role", "!=", nil)         // "role" IS NOT NULL
 OrWhere("name", "john")          // ... or "name" = $n
 WhereNot("active", true)         // ... and not "active" = $n
 WhereRaw("lower(name) = ?", "ann")
@@ -66,9 +66,9 @@ conn.Table("users").
     WhereGroup(func(q *db.Builder) {
         q.Where("role", "admin").OrWhereNull("deleted_at")
     })
-// where "active" = $1 and ("role" = $2 or "deleted_at" is null)
+// WHERE "active" = $1 AND ("role" = $2 OR "deleted_at" IS NULL)
 
-WhereMap(map[string]any{"b": 2, "a": 1})   // where ("a" = $1 and "b" = $2)  (keys sorted)
+WhereMap(map[string]any{"b": 2, "a": 1})   // WHERE ("a" = $1 AND "b" = $2)  (keys sorted)
 ```
 
 `OrWhereGroup` joins with `or`. An empty group is skipped.
@@ -77,13 +77,13 @@ WhereMap(map[string]any{"b": 2, "a": 1})   // where ("a" = $1 and "b" = $2)  (ke
 
 ```go
 WhereIn("id", []int{1, 2, 3})            // "id" in ($1, $2, $3)
-WhereIn("id", conn.Table("bans").Select("user_id"))   // "id" in (select "user_id" from "bans")
+WhereIn("id", conn.Table("bans").Select("user_id"))   // "id" IN (SELECT "user_id" FROM "bans")
 WhereNotIn("status", []string{"a", "b"})
-WhereIntegerInRaw("id", []int{1, 2})     // "id" in (1, 2)   integers inlined, no bind args
+WhereIntegerInRaw("id", []int{1, 2})     // "id" IN (1, 2)   integers inlined, no bind args
 WhereNull("deleted_at")                  // WhereNotNull, OrWhereNull, OrWhereNotNull
-WhereBetween("age", 18, 65)              // "age" between $1 and $2   (WhereNotBetween)
+WhereBetween("age", 18, 65)              // "age" BETWEEN $1 AND $2   (WhereNotBetween)
 WhereBetweenColumns("age", "min_age", "max_age")
-WhereValueBetween(10, "low", "high")     // $1 between "low" and "high"
+WhereValueBetween(10, "low", "high")     // $1 BETWEEN "low" AND "high"
 WhereLike("name", "a%")                  // case-insensitive
 WhereLike("name", "A%", true)            // case-sensitive
 WhereNotLike("name", "%x")
@@ -95,19 +95,19 @@ An empty slice for `WhereIn` compiles to `0 = 1` (matches nothing) and for `Wher
 `WhereIntegerInRaw` is for very large id lists that would exceed a driver's parameter limit; it
 rejects anything that is not an integer.
 
-`WhereLike` renders per dialect: `ilike`/`like` (PostgreSQL), `like`/`like binary` (MySQL),
-`like`/`glob` (SQLite, with the pattern converted). See [Dialects](dialects.md).
+`WhereLike` renders per dialect: `ILIKE`/`LIKE` (PostgreSQL), `LIKE`/`LIKE BINARY` (MySQL),
+`LIKE`/`GLOB` (SQLite, with the pattern converted). See [Dialects](dialects.md).
 
 ### Several columns, rows, existence
 
 ```go
-WhereAll([]string{"first", "last"}, "like", "a%")   // ("first" like $1 and "last" like $2)
-WhereAny([]string{"name", "email"}, "like", "b%")   // ("name" like $1 or "email" like $2)
-WhereNone([]string{"name", "email"}, "like", "z%")  // not ("name" like $1 or "email" like $2)
+WhereAll([]string{"first", "last"}, "like", "a%")   // ("first" LIKE $1 AND "last" LIKE $2)
+WhereAny([]string{"name", "email"}, "like", "b%")   // ("name" LIKE $1 OR "email" LIKE $2)
+WhereNone([]string{"name", "email"}, "like", "z%")  // NOT ("name" LIKE $1 OR "email" LIKE $2)
 WhereRowValues([]string{"id", "age"}, "=", []any{1, 30})   // ("id", "age") = ($1, $2)
 
 posts := conn.NewQuery().From("posts").WhereColumn("posts.user_id", "users.id")
-conn.Table("users").WhereExists(posts)       // exists (select * from "posts" where ...)
+conn.Table("users").WhereExists(posts)       // EXISTS (SELECT * FROM "posts" WHERE ...)
 conn.Table("users").WhereNotExists(posts)
 ```
 
@@ -122,8 +122,8 @@ WhereYear("created_at", ">", 2023)
 ```
 
 A `time.Time` is formatted for the part (`2006-01-02`, `15:04:05`, `02`, `01`, `2006`).
-PostgreSQL uses `::date`, `::time` and `extract(...)`; MySQL uses `date()`, `day()` and friends;
-SQLite uses `strftime(...)`.
+PostgreSQL uses `::DATE`, `::TIME` and `EXTRACT(...)`; MySQL uses `DATE()`, `DAY()` and friends;
+SQLite uses `STRFTIME(...)`.
 
 ## JSON
 
@@ -151,7 +151,7 @@ of its SQL literal.
 
 ```go
 conn.Table("users as u").
-    Join("posts as p", "p.user_id", "u.id").          // inner join ... on "p"."user_id" = "u"."id"
+    Join("posts as p", "p.user_id", "u.id").          // INNER JOIN ... ON "p"."user_id" = "u"."id"
     LeftJoin("profiles", "profiles.user_id", "=", "u.id").
     RightJoin("teams", "teams.id", "<>", "u.team_id").
     CrossJoin("sizes")
@@ -191,7 +191,7 @@ conn.Table("users").CrossJoinSub(latest, "l")
 conn.Table("users").JoinSubFunc(latest, "l", func(j *db.JoinClause) { j.On("l.user_id", "users.id") })
 
 top := conn.NewQuery().From("posts").WhereColumn("posts.user_id", "users.id").OrderByDesc("views").Limit(1)
-conn.Table("users").JoinLateral(top, "p")        // inner join lateral (...) as "p" on true
+conn.Table("users").JoinLateral(top, "p")        // INNER JOIN LATERAL (...) AS "p" ON TRUE
 conn.Table("users").LeftJoinLateral(top, "p")    // PostgreSQL and MySQL 8.0.14+; not MariaDB or SQLite
 ```
 
@@ -223,7 +223,7 @@ OrderBy("name")                  // asc
 OrderBy("name", "desc")          // direction must be "asc" or "desc"
 OrderByDesc("created_at")
 OrderByRaw("random()")
-Latest()                         // order by "created_at" desc   (Latest("col"))
+Latest()                         // ORDER BY "created_at" DESC   (Latest("col"))
 Oldest("updated_at")
 InRandomOrder()                  // RANDOM() / RAND(); InRandomOrder(42) seeds MySQL
 Reorder()                        // drop all ordering
@@ -231,14 +231,14 @@ ReorderBy("id", "desc")          // drop, then order
 ```
 
 `ForPageAfterID(perPage, lastID, column...)` and `ForPageBeforeID(...)` build keyset paging:
-`where "id" > $1 order by "id" asc limit n` (a `nil` last id selects `is not null`).
+`WHERE "id" > $1 ORDER BY "id" ASC LIMIT n` (a `nil` last id selects `IS NOT NULL`).
 
 ## Limit and offset
 
 ```go
 Limit(10)            // Take(10)
 Offset(20)           // Skip(20)
-ForPage(3, 15)       // offset 30 limit 15
+ForPage(3, 15)       // OFFSET 30 LIMIT 15
 ```
 
 A negative limit is ignored and a negative offset becomes 0. An offset with no limit works on
@@ -251,12 +251,12 @@ a := conn.Table("a").Select("id").Where("x", 1)
 b := conn.Table("b").Select("id")
 
 a.Union(b).UnionAll(conn.Table("c").Select("id")).OrderBy("id").Limit(5)
-// (select "id" from "a" where "x" = $1) union (select "id" from "b") union all (select "id" from "c") order by "id" asc limit 5
+// (SELECT "id" FROM "a" WHERE "x" = $1) UNION (SELECT "id" FROM "b") UNION ALL (SELECT "id" FROM "c") ORDER BY "id" ASC LIMIT 5
 ```
 
 After the first union, `OrderBy`, `Limit` and `Offset` apply to the combined result. Ordering and
 limits set before the union stay on the first query. SQLite wraps each member as
-`select * from (...)`.
+`SELECT * FROM (...)`.
 
 ## Subqueries
 
@@ -282,14 +282,14 @@ subqueries:
 active := conn.Table("users").Where("active", true)
 
 conn.Table("au").With("au", active).Where("age", ">", 30)
-// with "au" as (select * from "users" where "active" = $1) select * from "au" where "age" > $2
+// WITH "au" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM "au" WHERE "age" > $2
 
 conn.Table("a").With("a", conn.Table("users").Select("id", "name"), "uid", "uname")
-// with "a" ("uid", "uname") as (select "id", "name" from "users") select * from "a"
+// WITH "a" ("uid", "uname") AS (SELECT "id", "name" FROM "users") SELECT * FROM "a"
 ```
 
 `WithRecursive` takes the anchor query with the recursive member added by `UnionAll` (or `Union`).
-The clause becomes `with recursive`, and the members are written without parentheses, because
+The clause becomes `WITH RECURSIVE`, and the members are written without parentheses, because
 SQLite rejects a recursive reference inside a subquery:
 
 ```go
@@ -297,9 +297,9 @@ anchor := conn.Table("categories").Where("id", 1)
 step := conn.Table("categories as c").Select("c.*").Join("tree", "tree.id", "c.parent_id")
 
 conn.Table("tree").WithRecursive("tree", anchor.UnionAll(step))
-// with recursive "tree" as (select * from "categories" where "id" = $1 union all
-//   select "c".* from "categories" as "c" inner join "tree" on "tree"."id" = "c"."parent_id")
-//   select * from "tree"
+// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "id" = $1 UNION ALL
+//   SELECT "c".* FROM "categories" AS "c" INNER JOIN "tree" ON "tree"."id" = "c"."parent_id")
+//   SELECT * FROM "tree"
 ```
 
 - `WithRaw(name, db.Raw(sql, args...), cols...)` uses caller-trusted SQL as the body.
@@ -309,15 +309,15 @@ conn.Table("tree").WithRecursive("tree", anchor.UnionAll(step))
 - The query passed in is copied when added. Duplicate or qualified names return `ErrInvalidArgs`.
 - WITH belongs to a select. A select carrying CTEs works as a subquery, a union member, in
   `Count`/`Exists`/`Paginate`, and as the source of `InsertUsing`
-  (`insert into t (cols) with ... select ...`). Calling `With` on the builder that runs
+  (`INSERT INTO t (cols) WITH ... SELECT ...`). Calling `With` on the builder that runs
   `Insert`, `Update`, `Delete`, `Upsert` or `Truncate` returns `ErrUnsupported`; filter the write
   with `WhereIn("id", cteQuery)` instead.
 
 ## Locks and index hints
 
 ```go
-LockForUpdate()          // for update               (PostgreSQL, MySQL)
-SharedLock()             // for share / lock in share mode
+LockForUpdate()          // FOR UPDATE               (PostgreSQL, MySQL)
+SharedLock()             // FOR SHARE / LOCK IN SHARE MODE
 Lock("for no key update")   // caller-trusted raw clause
 UseIndex("idx_a, idx_b"); ForceIndex("idx_a"); IgnoreIndex("idx_a")   // MySQL; ForceIndex on SQLite
 ```
@@ -357,7 +357,7 @@ q := conn.Table("users").Where("id", 7)
 sql, args, err := q.ToSQL()     // statement with placeholders, plus the ordered arguments
 raw, err      := q.ToRawSQL()   // arguments interpolated: DEBUG ONLY, never execute or log it
 sql, args      = q.MustSQL()    // panics instead of returning the error
-sql, args, err  = q.ExistsSQL() // select exists(...) as "exists"
+sql, args, err  = q.ExistsSQL() // SELECT EXISTS(...) AS "exists"
 sql, args, err  = q.AggregateSQL("sum", "total")
 ```
 

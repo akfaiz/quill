@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/akfaiz/quill/internal/dialect"
 	"github.com/akfaiz/quill/internal/jsonpath"
 	"github.com/akfaiz/quill/internal/rawsql"
-	"github.com/akfaiz/quill/internal/dialect"
 )
 
 type clauseKind uint8
@@ -87,13 +87,13 @@ func parseConn(s string) connKind {
 func (k connKind) String() string {
 	switch k {
 	case connOr:
-		return "or"
+		return "OR"
 	case connAndNot:
-		return "and not"
+		return "AND NOT"
 	case connOrNot:
-		return "or not"
+		return "OR NOT"
 	}
-	return "and"
+	return "AND"
 }
 
 func (k connKind) negated() bool { return k == connAndNot || k == connOrNot }
@@ -373,11 +373,11 @@ func (b *Builder) OrHavingRaw(sql string, args ...any) *Builder {
 
 // OrderBy adds ORDER BY column; direction is "asc" (default) or "desc".
 func (b *Builder) OrderBy(column string, direction ...string) *Builder {
-	dir := "asc"
+	dir := "ASC"
 	if len(direction) > 0 {
-		dir = strings.ToLower(direction[0])
+		dir = strings.ToUpper(direction[0])
 	}
-	if dir != "asc" && dir != "desc" {
+	if dir != "ASC" && dir != "DESC" {
 		return b.fail(ErrInvalidDirection)
 	}
 	b.addOrder(orderItem{column: column, dir: dir})
@@ -456,14 +456,15 @@ func (b *Builder) Unless(cond bool, fn func(*Builder)) *Builder { return b.When(
 // Tap runs fn for side effects and returns the builder.
 func (b *Builder) Tap(fn func(*Builder)) *Builder { fn(b); return b }
 
-var operators = map[string]struct{}{
-	"=": {}, "<": {}, ">": {}, "<=": {}, ">=": {}, "<>": {}, "!=": {}, "<=>": {},
-	"like": {}, "not like": {}, "ilike": {}, "not ilike": {}, "like binary": {},
-	"&": {}, "|": {}, "^": {}, "<<": {}, ">>": {}, "&~": {},
-	"is": {}, "is not": {},
-	"rlike": {}, "not rlike": {}, "regexp": {}, "not regexp": {},
-	"~": {}, "~*": {}, "!~": {}, "!~*": {}, "similar to": {}, "not similar to": {},
-	"~~*": {}, "!~~*": {},
+// operators maps each allowed operator, lowercased, to the SQL written for it.
+var operators = map[string]string{
+	"=": "=", "<": "<", ">": ">", "<=": "<=", ">=": ">=", "<>": "<>", "!=": "!=", "<=>": "<=>",
+	"like": "LIKE", "not like": "NOT LIKE", "ilike": "ILIKE", "not ilike": "NOT ILIKE", "like binary": "LIKE BINARY",
+	"&": "&", "|": "|", "^": "^", "<<": "<<", ">>": ">>", "&~": "&~",
+	"is": "IS", "is not": "IS NOT",
+	"rlike": "RLIKE", "not rlike": "NOT RLIKE", "regexp": "REGEXP", "not regexp": "NOT REGEXP",
+	"~": "~", "~*": "~*", "!~": "!~", "!~*": "!~*", "similar to": "SIMILAR TO", "not similar to": "NOT SIMILAR TO",
+	"~~*": "~~*", "!~~*": "!~~*",
 }
 
 // parseOpValue resolves the (value) / (operator, value) argument forms.
@@ -477,7 +478,8 @@ func parseOpValue(column string, args []any) (op string, val any, err error) {
 			return "", nil, fmt.Errorf("%w: operator must be a string", ErrInvalidOperator)
 		}
 		op = strings.ToLower(strings.TrimSpace(s))
-		if _, ok := operators[op]; !ok {
+		canon, ok := operators[op]
+		if !ok {
 			return "", nil, fmt.Errorf("%w: %q", ErrInvalidOperator, s)
 		}
 		val = args[1]
@@ -488,7 +490,7 @@ func parseOpValue(column string, args []any) (op string, val any, err error) {
 				return "", nil, fmt.Errorf("%w: operator %q needs a non-nil value", ErrInvalidArgs, op)
 			}
 		}
-		return op, val, nil
+		return canon, val, nil
 	}
 	return "", nil, fmt.Errorf("%w: %q takes (value) or (operator, value)", ErrInvalidArgs, column)
 }
@@ -502,7 +504,7 @@ func (b *Builder) addClause(dst *[]clause, boolean, column string, args []any) *
 		return b.push(
 			dst,
 			boolean,
-			clause{kind: clauseNull, column: column, not: op == "!=" || op == "<>" || op == "is not"},
+			clause{kind: clauseNull, column: column, not: op == "!=" || op == "<>" || op == "IS NOT"},
 		)
 	}
 	if _, isBool := val.(bool); isBool && jsonpath.IsSelector(column) {

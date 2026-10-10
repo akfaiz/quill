@@ -26,18 +26,18 @@ func TestSelectGolden(t *testing.T) {
 		{
 			name:  "select all",
 			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("users") },
-			pg:    `select * from "users"`,
-			my:    "select * from `users`",
-			lite:  `select * from "users"`,
+			pg:    `SELECT * FROM "users"`,
+			my:    "SELECT * FROM `users`",
+			lite:  `SELECT * FROM "users"`,
 		},
 		{
 			name: "columns alias distinct qualified",
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("users as u").Distinct().Select("u.id", "u.name as n", "u.*")
 			},
-			pg:   `select distinct "u"."id", "u"."name" as "n", "u".* from "users" as "u"`,
-			my:   "select distinct `u`.`id`, `u`.`name` as `n`, `u`.* from `users` as `u`",
-			lite: `select distinct "u"."id", "u"."name" as "n", "u".* from "users" as "u"`,
+			pg:   `SELECT DISTINCT "u"."id", "u"."name" AS "n", "u".* FROM "users" AS "u"`,
+			my:   "SELECT DISTINCT `u`.`id`, `u`.`name` AS `n`, `u`.* FROM `users` AS `u`",
+			lite: `SELECT DISTINCT "u"."id", "u"."name" AS "n", "u".* FROM "users" AS "u"`,
 		},
 		{
 			name: "where and or null",
@@ -48,22 +48,22 @@ func TestSelectGolden(t *testing.T) {
 					Where("deleted_at", nil).
 					Where("role", "!=", nil)
 			},
-			pg:   `select * from "users" where "votes" > $1 or "name" = $2 and "deleted_at" is null and "role" is not null`,
-			my:   "select * from `users` where `votes` > ? or `name` = ? and `deleted_at` is null and `role` is not null",
-			lite: `select * from "users" where "votes" > ? or "name" = ? and "deleted_at" is null and "role" is not null`,
+			pg:   `SELECT * FROM "users" WHERE "votes" > $1 OR "name" = $2 AND "deleted_at" IS NULL AND "role" IS NOT NULL`,
+			my:   "SELECT * FROM `users` WHERE `votes` > ? OR `name` = ? AND `deleted_at` IS NULL AND `role` IS NOT NULL",
+			lite: `SELECT * FROM "users" WHERE "votes" > ? OR "name" = ? AND "deleted_at" IS NULL AND "role" IS NOT NULL`,
 			args: []any{100, "john"},
 		},
 		{
 			name: "raw keeps placeholders in order",
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("t").
-					SelectRaw("count(*) filter (where x > ?) as c", 5).
+					SelectRaw("count(*) filter (WHERE x > ?) AS c", 5).
 					WhereRaw("a = ? and b = '?' and c ?? 'k'", 1).
 					Where("z", 9)
 			},
-			pg:   `select count(*) filter (where x > $1) as c from "t" where a = $2 and b = '?' and c ? 'k' and "z" = $3`,
-			my:   "select count(*) filter (where x > ?) as c from `t` where a = ? and b = '?' and c ? 'k' and `z` = ?",
-			lite: `select count(*) filter (where x > ?) as c from "t" where a = ? and b = '?' and c ? 'k' and "z" = ?`,
+			pg:   `SELECT count(*) filter (WHERE x > $1) AS c FROM "t" WHERE a = $2 and b = '?' and c ? 'k' AND "z" = $3`,
+			my:   "SELECT count(*) filter (WHERE x > ?) AS c FROM `t` WHERE a = ? and b = '?' and c ? 'k' AND `z` = ?",
+			lite: `SELECT count(*) filter (WHERE x > ?) AS c FROM "t" WHERE a = ? and b = '?' and c ? 'k' AND "z" = ?`,
 			args: []any{5, 1, 9},
 		},
 		{
@@ -76,33 +76,33 @@ func TestSelectGolden(t *testing.T) {
 					OrderBy("user_id").OrderByDesc("s").OrderByRaw("random()").
 					Limit(10).Offset(20)
 			},
-			pg:   `select "user_id", sum(total) as s from "orders" group by "user_id" having "s" > $1 or count(*) > $2 order by "user_id" asc, "s" desc, random() limit 10 offset 20`,
-			my:   "select `user_id`, sum(total) as s from `orders` group by `user_id` having `s` > ? or count(*) > ? order by `user_id` asc, `s` desc, random() limit 10 offset 20",
-			lite: `select "user_id", sum(total) as s from "orders" group by "user_id" having "s" > ? or count(*) > ? order by "user_id" asc, "s" desc, random() limit 10 offset 20`,
+			pg:   `SELECT "user_id", sum(total) as s FROM "orders" GROUP BY "user_id" HAVING "s" > $1 OR count(*) > $2 ORDER BY "user_id" ASC, "s" DESC, random() LIMIT 10 OFFSET 20`,
+			my:   "SELECT `user_id`, sum(total) as s FROM `orders` GROUP BY `user_id` HAVING `s` > ? OR count(*) > ? ORDER BY `user_id` ASC, `s` DESC, random() LIMIT 10 OFFSET 20",
+			lite: `SELECT "user_id", sum(total) as s FROM "orders" GROUP BY "user_id" HAVING "s" > ? OR count(*) > ? ORDER BY "user_id" ASC, "s" DESC, random() LIMIT 10 OFFSET 20`,
 			args: []any{10, 3},
 		},
 		{
 			name:  "for page",
 			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("t").ForPage(3, 15) },
-			pg:    `select * from "t" limit 15 offset 30`,
-			my:    "select * from `t` limit 15 offset 30",
-			lite:  `select * from "t" limit 15 offset 30`,
+			pg:    `SELECT * FROM "t" LIMIT 15 OFFSET 30`,
+			my:    "SELECT * FROM `t` LIMIT 15 OFFSET 30",
+			lite:  `SELECT * FROM "t" LIMIT 15 OFFSET 30`,
 		},
 		{
 			name:  "offset without limit",
 			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("t").Skip(5) },
-			pg:    `select * from "t" offset 5`,
-			my:    "select * from `t` limit 18446744073709551615 offset 5",
-			lite:  `select * from "t" limit -1 offset 5`,
+			pg:    `SELECT * FROM "t" OFFSET 5`,
+			my:    "SELECT * FROM `t` LIMIT 18446744073709551615 OFFSET 5",
+			lite:  `SELECT * FROM "t" LIMIT -1 OFFSET 5`,
 		},
 		{
 			name: "prefix and schema",
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("app.users as u").Prefix("p_").Where("u.id", 1)
 			},
-			pg:   `select * from "app"."p_users" as "p_u" where "p_u"."id" = $1`,
-			my:   "select * from `app`.`p_users` as `p_u` where `p_u`.`id` = ?",
-			lite: `select * from "app"."p_users" as "p_u" where "p_u"."id" = ?`,
+			pg:   `SELECT * FROM "app"."p_users" AS "p_u" WHERE "p_u"."id" = $1`,
+			my:   "SELECT * FROM `app`.`p_users` AS `p_u` WHERE `p_u`.`id` = ?",
+			lite: `SELECT * FROM "app"."p_users" AS "p_u" WHERE "p_u"."id" = ?`,
 			args: []any{1},
 		},
 		{
@@ -110,9 +110,9 @@ func TestSelectGolden(t *testing.T) {
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("t").Select(`a"b` + "`c")
 			},
-			pg:   `select "a""b` + "`c" + `" from "t"`,
-			my:   "select `a\"b``c` from `t`",
-			lite: `select "a""b` + "`c" + `" from "t"`,
+			pg:   `SELECT "a""b` + "`c" + `" FROM "t"`,
+			my:   "SELECT `a\"b``c` FROM `t`",
+			lite: `SELECT "a""b` + "`c" + `" FROM "t"`,
 		},
 		{
 			name: "when unless tap",
@@ -122,9 +122,9 @@ func TestSelectGolden(t *testing.T) {
 					When(false, func(q *db.Builder) { q.Where("b", 2) }).
 					Unless(false, func(q *db.Builder) { q.Where("c", 3) })
 			},
-			pg:   `select * from "t" where "a" = $1 and "c" = $2`,
-			my:   "select * from `t` where `a` = ? and `c` = ?",
-			lite: `select * from "t" where "a" = ? and "c" = ?`,
+			pg:   `SELECT * FROM "t" WHERE "a" = $1 AND "c" = $2`,
+			my:   "SELECT * FROM `t` WHERE `a` = ? AND `c` = ?",
+			lite: `SELECT * FROM "t" WHERE "a" = ? AND "c" = ?`,
 			args: []any{1, 3},
 		},
 		{
@@ -132,9 +132,9 @@ func TestSelectGolden(t *testing.T) {
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("t").Where("a", "=", db.Raw("now() - interval ?", "1 day"))
 			},
-			pg:   `select * from "t" where "a" = now() - interval $1`,
-			my:   "select * from `t` where `a` = now() - interval ?",
-			lite: `select * from "t" where "a" = now() - interval ?`,
+			pg:   `SELECT * FROM "t" WHERE "a" = now() - interval $1`,
+			my:   "SELECT * FROM `t` WHERE `a` = now() - interval ?",
+			lite: `SELECT * FROM "t" WHERE "a" = now() - interval ?`,
 			args: []any{"1 day"},
 		},
 	}
@@ -198,10 +198,10 @@ func TestCloneIndependent(t *testing.T) {
 	c := base.Clone().Where("b", 2).Limit(1)
 	bs, _, _ := base.ToSQL()
 	cs, _, _ := c.ToSQL()
-	if bs != `select * from "t" where "a" = $1` {
+	if bs != `SELECT * FROM "t" WHERE "a" = $1` {
 		t.Errorf("base mutated: %s", bs)
 	}
-	if cs != `select * from "t" where "a" = $1 and "b" = $2 limit 1` {
+	if cs != `SELECT * FROM "t" WHERE "a" = $1 AND "b" = $2 LIMIT 1` {
 		t.Errorf("clone: %s", cs)
 	}
 }
@@ -210,11 +210,11 @@ func TestToRawSQL(t *testing.T) {
 	q := db.Use(db.Postgres).Table("t").Where("name", "o'brien").Where("n", ">", 3).Where("ok", true)
 	got, err := q.ToRawSQL()
 	require.NoError(t, err)
-	want := `select * from "t" where "name" = 'o''brien' and "n" > 3 and "ok" = true`
+	want := `SELECT * FROM "t" WHERE "name" = 'o''brien' AND "n" > 3 AND "ok" = true`
 	assert.Equal(t, want, got)
 
 	m, _ := db.Use(db.MySQL).Table("t").Where("a", 1).Where("b", "x").ToRawSQL()
-	if m != "select * from `t` where `a` = 1 and `b` = 'x'" {
+	if m != "SELECT * FROM `t` WHERE `a` = 1 AND `b` = 'x'" {
 		t.Errorf("mysql raw: %s", m)
 	}
 }
@@ -224,10 +224,10 @@ func TestCloneKeepsUnionLimitAndLock(t *testing.T) {
 	c := base.Clone().Limit(9)
 	bs, _, _ := base.ToSQL()
 	cs, _, _ := c.ToSQL()
-	if want := `(select * from "a" for update) union (select * from "b") order by "id" asc limit 2`; bs != want {
+	if want := `(SELECT * FROM "a" FOR UPDATE) UNION (SELECT * FROM "b") ORDER BY "id" ASC LIMIT 2`; bs != want {
 		t.Errorf("base:\n got: %s\nwant: %s", bs, want)
 	}
-	if want := `(select * from "a" for update) union (select * from "b") order by "id" asc limit 9`; cs != want {
+	if want := `(SELECT * FROM "a" FOR UPDATE) UNION (SELECT * FROM "b") ORDER BY "id" ASC LIMIT 9`; cs != want {
 		t.Errorf("clone:\n got: %s\nwant: %s", cs, want)
 	}
 }
@@ -246,21 +246,21 @@ func TestBuilderWrappers(t *testing.T) {
 		{
 			"or where raw",
 			tb().Where("a", 1).OrWhereRaw("b = ?", 2),
-			`select * from "t" where "a" = $1 or b = $2`,
+			`SELECT * FROM "t" WHERE "a" = $1 OR b = $2`,
 			[]any{1, 2},
 		},
 		{
 			"group by raw, or having, having raw",
 			tb().GroupByRaw("date(x)").Having("n", ">", 1).OrHaving("m", 2).HavingRaw("count(*) > ?", 3),
-			`select * from "t" group by date(x) having "n" > $1 or "m" = $2 and count(*) > $3`,
+			`SELECT * FROM "t" GROUP BY date(x) HAVING "n" > $1 OR "m" = $2 AND count(*) > $3`,
 			[]any{1, 2, 3},
 		},
-		{"take, and a page number below 1", tb().Take(3).ForPage(0, 5), `select * from "t" limit 5 offset 0`, nil},
-		{"tap", tb().Tap(func(q *db.Builder) { q.Where("a", 1) }), `select * from "t" where "a" = $1`, []any{1}},
+		{"take, and a page number below 1", tb().Take(3).ForPage(0, 5), `SELECT * FROM "t" LIMIT 5 OFFSET 0`, nil},
+		{"tap", tb().Tap(func(q *db.Builder) { q.Where("a", 1) }), `SELECT * FROM "t" WHERE "a" = $1`, []any{1}},
 		{
 			"negative limit ignored, negative offset clamped",
 			tb().Limit(-1).Offset(-5),
-			`select * from "t" offset 0`,
+			`SELECT * FROM "t" OFFSET 0`,
 			nil,
 		},
 	}
@@ -289,14 +289,14 @@ func TestErrAccessorAndRawSQLLiterals(t *testing.T) {
 		Where("a", nil).Where("b", []byte("x'y")).Where("c", at).Where("d", 1.5).Where("e", false).
 		ToRawSQL()
 	require.NoError(t, err)
-	want := `select * from "t" where "a" is null and "b" = 'x''y' and "c" = '2024-01-02 03:04:05' and "d" = 1.5 and "e" = false`
+	want := `SELECT * FROM "t" WHERE "a" IS NULL AND "b" = 'x''y' AND "c" = '2024-01-02 03:04:05' AND "d" = 1.5 AND "e" = false`
 	assert.Equal(t, want, got)
 }
 
 func TestToRawSQLKeepsPostgresJSONQuestionMark(t *testing.T) {
 	got, err := db.Use(db.Postgres).Table("t").WhereJsonContainsKey("o->k").Where("a", 1).ToRawSQL()
 	require.NoError(t, err)
-	want := `select * from "t" where coalesce(("o")::jsonb ? 'k', false) and "a" = 1`
+	want := `SELECT * FROM "t" WHERE COALESCE(("o")::JSONB ? 'k', FALSE) AND "a" = 1`
 	assert.Equal(t, want, got)
 }
 
@@ -311,7 +311,7 @@ func TestMustSQLAndMustRawSQL(t *testing.T) {
 		t.Errorf("MustSQL differs from ToSQL: %s %v vs %s %v (%v)", sql, args, wantSQL, wantArgs, err)
 	}
 	raw := q().MustRawSQL()
-	if want := `select * from "users" where "name" = 'o''brien' and "age" > 30`; raw != want {
+	if want := `SELECT * FROM "users" WHERE "name" = 'o''brien' AND "age" > 30`; raw != want {
 		t.Errorf("MustRawSQL = %s, want %s", raw, want)
 	}
 

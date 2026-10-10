@@ -15,13 +15,13 @@ n, err := conn.Table("users").Insert(ctx,
     map[string]any{"name": "Eve", "email": "eve@example.com"},
     map[string]any{"name": "Fay", "email": "fay@example.com"},
 )
-// insert into "users" ("email", "name") values ($1, $2), ($3, $4)
+// INSERT INTO "users" ("email", "name") VALUES ($1, $2), ($3, $4)
 ```
 
 - Columns are the **sorted** keys of the first row, so the SQL is deterministic. Every row must
   have exactly the same keys, otherwise you get `db.ErrInvalidArgs`.
 - No rows is a successful no-op (`0, nil`). One empty map inserts default values
-  (`insert into "t" default values`; `() values ()` on MySQL).
+  (`INSERT INTO "t" DEFAULT VALUES`; `() VALUES ()` on MySQL).
 - A value may be `db.Raw("now()")` (inlined) or a `*db.Builder` (a scalar subquery).
 
 ### Insert and get the id
@@ -31,7 +31,7 @@ id, err := conn.Table("users").InsertGetID(ctx, map[string]any{"name": "Gus"})
 id, err  = conn.Table("users").InsertGetID(ctx, row, "user_id") // PostgreSQL: a different id column
 ```
 
-PostgreSQL appends `returning "id"` (or your column); MySQL and SQLite read the driver's last
+PostgreSQL appends `RETURNING "id"` (or your column); MySQL and SQLite read the driver's last
 insert id. The id must be an integer.
 
 ### Insert and ignore conflicts
@@ -42,9 +42,9 @@ n, err := conn.Table("users").InsertOrIgnore(ctx, map[string]any{"email": "ann@e
 
 | | SQL |
 | --- | --- |
-| PostgreSQL | `insert ... on conflict do nothing` |
-| MySQL | `insert ignore into ...` |
-| SQLite | `insert or ignore into ...` |
+| PostgreSQL | `INSERT ... ON CONFLICT DO NOTHING` |
+| MySQL | `INSERT IGNORE INTO ...` |
+| SQLite | `INSERT OR IGNORE INTO ...` |
 
 The count is the rows actually inserted, so a skipped conflict reports `0`.
 
@@ -53,7 +53,7 @@ The count is the rows actually inserted, so a skipped conflict reports `0`.
 ```go
 n, err := conn.Table("archive").InsertUsing(ctx, []string{"id", "name"},
     conn.Table("users").Select("id", "name").Where("active", false))
-// insert into "archive" ("id", "name") select "id", "name" from "users" where "active" = $1
+// INSERT INTO "archive" ("id", "name") SELECT "id", "name" FROM "users" WHERE "active" = $1
 ```
 
 An empty column list, or `[]string{"*"}`, omits the column list. `InsertOrIgnoreUsing` skips
@@ -75,8 +75,8 @@ n, err := conn.Table("users").Upsert(ctx, rows, []string{"email"}, []string{"nam
 | `uniqueBy` | The conflict target. Required on PostgreSQL and SQLite, ignored on MySQL |
 | `update` | The columns that take the inserted value on conflict. `nil` means every inserted column; an empty non-nil slice is an error |
 
-PostgreSQL and SQLite render `on conflict ("email") do update set "name" = "excluded"."name"`;
-MySQL renders ``on duplicate key update `name` = values(`name`)``. **MySQL reports 2 affected rows
+PostgreSQL and SQLite render `ON CONFLICT ("email") DO UPDATE SET "name" = "excluded"."name"`;
+MySQL renders ``ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)``. **MySQL reports 2 affected rows
 for each row it updated**, not 1.
 
 ## Update
@@ -86,7 +86,7 @@ n, err := conn.Table("users").Where("id", 7).Update(ctx, map[string]any{
     "name": "Anna",
     "age":  31,
 })
-// update "users" set "age" = $1, "name" = $2 where "id" = $3
+// UPDATE "users" SET "age" = $1, "name" = $2 WHERE "id" = $3
 ```
 
 - Columns are sorted. Values may be `db.Raw(...)` or a subquery.
@@ -104,8 +104,8 @@ conn.Table("users as u").
 conn.Table("jobs").Where("state", "queued").OrderBy("id").Limit(10).Update(ctx, map[string]any{"state": "taken"})
 ```
 
-MySQL runs these natively (`update ... join ... set`, and `order by ... limit` on a single table).
-PostgreSQL and SQLite rewrite them to `where "ctid" in (select ...)` and `where "rowid" in (select ...)`,
+MySQL runs these natively (`UPDATE ... JOIN ... SET`, and `ORDER BY ... LIMIT` on a single table).
+PostgreSQL and SQLite rewrite them to `WHERE "ctid" IN (SELECT ...)` and `WHERE "rowid" IN (SELECT ...)`,
 so the join conditions and the limit still apply. On those two, qualified `SET` columns such as
 `"u.vip"` lose their qualifier.
 
@@ -116,7 +116,7 @@ conn.Table("users").
     Join("accounts", "accounts.user_id", "users.id").
     Where("accounts.active", true).
     UpdateFrom(ctx, map[string]any{"plan": db.Raw(`"accounts"."plan"`)})
-// update "users" set "plan" = "accounts"."plan" from "accounts" where "accounts"."active" = $1 and "accounts"."user_id" = "users"."id"
+// UPDATE "users" SET "plan" = "accounts"."plan" FROM "accounts" WHERE "accounts"."active" = $1 AND "accounts"."user_id" = "users"."id"
 ```
 
 The join conditions become part of the `WHERE`. Other dialects return `db.ErrUnsupported`.
@@ -140,7 +140,7 @@ writers matter.
 n, err := conn.Table("posts").Where("id", 3).Increment(ctx, "views", 1, nil)
 n, err  = conn.Table("posts").Where("id", 3).Decrement(ctx, "stock", 2, map[string]any{"updated_by": 9})
 n, err  = conn.Table("posts").Where("id", 3).IncrementEach(ctx, map[string]any{"views": 1, "likes": 5}, nil)
-// update "posts" set "views" = "views" + $1 where "id" = $2
+// UPDATE "posts" SET "views" = "views" + $1 WHERE "id" = $2
 ```
 
 The amount is bound, not inlined, and must be a number (anything else is `db.ErrInvalidArgs`).
@@ -153,8 +153,8 @@ incremented column of the same name. `DecrementEach` is the counterpart.
 n, err := conn.Table("sessions").Where("expires_at", "<", now).Delete(ctx)
 ```
 
-Joins and limits work like `Update`: native on MySQL (`delete alias from ... join ...`, plus
-`order by ... limit`), and a `ctid`/`rowid` subquery on PostgreSQL and SQLite.
+Joins and limits work like `Update`: native on MySQL (`DELETE alias FROM ... JOIN ...`, plus
+`ORDER BY ... LIMIT`), and a `ctid`/`rowid` subquery on PostgreSQL and SQLite.
 
 ```go
 conn.Table("posts as p").Join("users as u", "u.id", "p.user_id").Where("u.banned", true).Delete(ctx)
@@ -168,9 +168,9 @@ err := conn.Table("events").Truncate(ctx)
 
 | | Statement |
 | --- | --- |
-| PostgreSQL | `truncate "events" restart identity` (no `CASCADE`: tables that reference it are never emptied implicitly) |
-| MySQL | ``truncate table `events` `` |
-| SQLite | `delete from sqlite_sequence where name = ?`, then `delete from "events"` |
+| PostgreSQL | `TRUNCATE "events" RESTART IDENTITY` (no `CASCADE`: tables that reference it are never emptied implicitly) |
+| MySQL | ``TRUNCATE TABLE `events` `` |
+| SQLite | `DELETE FROM sqlite_sequence WHERE name = ?`, then `DELETE FROM "events"` |
 
 `Truncate` is the explicit way to empty a table; an unbounded `Delete` is refused.
 
@@ -224,12 +224,12 @@ conn.Table("users").Where("id", 1).Update(ctx, map[string]any{
 
 | | SQL |
 | --- | --- |
-| PostgreSQL | `"options" = jsonb_set("options"::jsonb, '{"theme"}', $1)` (values are JSON-encoded) |
-| MySQL | `` `options` = json_set(`options`, '$."theme"', ?) `` (booleans inlined; maps and slices bound as `cast(? as json)`) |
-| SQLite | one `json_patch(ifnull("options", json('{}')), json(?))` per column, merging every path of that column |
+| PostgreSQL | `"options" = JSONB_SET("options"::JSONB, '{"theme"}', $1)` (values are JSON-encoded) |
+| MySQL | `` `options` = JSON_SET(`options`, '$."theme"', ?) `` (booleans inlined; maps and slices bound as `CAST(? AS JSON)`) |
+| SQLite | one `JSON_PATCH(IFNULL("options", JSON('{}')), JSON(?))` per column, merging every path of that column |
 
-Several paths of the same column become **one assignment** (nested `jsonb_set` on PostgreSQL, a
-multi-pair `json_set` on MySQL), because PostgreSQL rejects assigning a column twice.
+Several paths of the same column become **one assignment** (nested `JSONB_SET` on PostgreSQL, a
+multi-pair `JSON_SET` on MySQL), because PostgreSQL rejects assigning a column twice.
 
 Limits: on PostgreSQL, MySQL and MariaDB only the last key is created, so write `options->a->b` only if
 `options->a` already exists (SQLite's merge patch creates intermediate objects). SQLite does not

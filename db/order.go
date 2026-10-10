@@ -47,8 +47,8 @@ func (b *Builder) removeOrdersFor(column string) {
 	b.orders = kept
 }
 
-// ForPageBeforeID pages backwards by keyset: "id < lastID order by id desc limit n".
-// A nil lastID selects "id is not null". column defaults to "id".
+// ForPageBeforeID pages backwards by keyset: "id < lastID ORDER BY id DESC LIMIT n".
+// A nil lastID selects "id IS NOT NULL". column defaults to "id".
 func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Builder {
 	col := idColumn(column)
 	b.removeOrdersFor(col)
@@ -60,7 +60,7 @@ func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Bu
 	return b.OrderByDesc(col).Limit(perPage)
 }
 
-// ForPageAfterID pages forwards by keyset: "id > lastID order by id asc limit n".
+// ForPageAfterID pages forwards by keyset: "id > lastID ORDER BY id ASC LIMIT n".
 func (b *Builder) ForPageAfterID(perPage int, lastID any, column ...string) *Builder {
 	col := idColumn(column)
 	b.removeOrdersFor(col)

@@ -74,7 +74,7 @@ what is bound to the `$n` placeholders.
 
 ```sql
 -- quill   args: [100]
-select "id", "name" from "users" where "votes" > $1 order by "id" desc limit 10
+SELECT "id", "name" FROM "users" WHERE "votes" > $1 ORDER BY "id" DESC LIMIT 10
 
 -- squirrel   args: [100]
 SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT 10
@@ -90,7 +90,7 @@ SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT $2
 
 ```sql
 -- quill   args: [18 1 2 3 4 5 1]
-select "u"."id", "u"."name", "p"."title" from "users" as "u" inner join "posts" as "p" on "p"."user_id" = "u"."id" left join "profiles" on "profiles"."user_id" = "u"."id" where "u"."age" >= $1 and "u"."id" in ($2, $3, $4, $5, $6) and "u"."deleted_at" is null group by "u"."id", "u"."name", "p"."title" having "count(*)" > $7 order by "u"."name" asc limit 50 offset 100
+SELECT "u"."id", "u"."name", "p"."title" FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" LEFT JOIN "profiles" ON "profiles"."user_id" = "u"."id" WHERE "u"."age" >= $1 AND "u"."id" IN ($2, $3, $4, $5, $6) AND "u"."deleted_at" IS NULL GROUP BY "u"."id", "u"."name", "p"."title" HAVING "count(*)" > $7 ORDER BY "u"."name" ASC LIMIT 50 OFFSET 100
 
 -- squirrel   args: [18 1 2 3 4 5 1]
 SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2,$3,$4,$5,$6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT 50 OFFSET 100
@@ -106,7 +106,7 @@ SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id
 
 ```sql
 -- quill   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
-select * from "orders" where "a" = $1 and "b" > $2 and "c" < $3 and "d" != $4 and "e" >= $5 and "f" <= $6 and "g" in ($7, $8, $9, $10, $11) and "h" is null and "i" is not null and "j" between $12 and $13 and "k"::text ilike $14 and "l" = $15
+SELECT * FROM "orders" WHERE "a" = $1 AND "b" > $2 AND "c" < $3 AND "d" != $4 AND "e" >= $5 AND "f" <= $6 AND "g" IN ($7, $8, $9, $10, $11) AND "h" IS NULL AND "i" IS NOT NULL AND "j" BETWEEN $12 AND $13 AND "k"::TEXT ILIKE $14 AND "l" = $15
 
 -- squirrel   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
 SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7,$8,$9,$10,$11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
@@ -122,7 +122,7 @@ SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 
 
 ```sql
 -- quill   args: [30 a@x ann 25 b@x bob 41 c@x cy]
-insert into "users" ("age", "email", "name") values ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
+INSERT INTO "users" ("age", "email", "name") VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
 
 -- squirrel   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
 INSERT INTO users (name,age,email) VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9)
@@ -138,7 +138,7 @@ INSERT INTO users (name, age, email) VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8,
 
 ```sql
 -- quill   args: [31 ann 1]
-update "users" set "age" = $1, "name" = $2 where "id" = $3
+UPDATE "users" SET "age" = $1, "name" = $2 WHERE "id" = $3
 
 -- squirrel   args: [ann 31 1]
 UPDATE users SET name = $1, age = $2 WHERE id = $3
@@ -154,7 +154,7 @@ UPDATE users SET name = $1, age = $2 WHERE id = $3
 
 ```sql
 -- quill   args: [1]
-delete from "users" where "id" = $1
+DELETE FROM "users" WHERE "id" = $1
 
 -- squirrel   args: [1]
 DELETE FROM users WHERE id = $1
@@ -173,7 +173,7 @@ DELETE FROM users WHERE id = $1
   allocation pressure and very hot paths, not for typical request latency.
 - **Squirrel and sqlbuilder do less work.** Neither quotes identifiers, so their output
   (`SELECT id FROM users`) is not hardened the way quill's and goqu's are
-  (`select "id" from "users"`). Quoting is real work, which makes a tie with sqlbuilder
+  (`SELECT "id" FROM "users"`). Quoting is real work, which makes a tie with sqlbuilder
   more favourable to quill than the raw number suggests. Squirrel is the slowest here
   even without it.
 - **Query style differs.** sqlbuilder takes conditions as pre-rendered strings

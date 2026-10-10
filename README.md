@@ -68,7 +68,7 @@ sql, args, err := db.Use(db.Postgres).Table("users").
     OrderByDesc("created_at").
     Limit(10).
     ToSQL()
-// select "id", "name" from "users" where "votes" > $1 order by "created_at" desc limit 10
+// SELECT "id", "name" FROM "users" WHERE "votes" > $1 ORDER BY "created_at" DESC LIMIT 10
 // args: [100]
 ```
 

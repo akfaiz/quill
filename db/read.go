@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/akfaiz/quill/internal/rowmap"
 )
@@ -95,17 +96,17 @@ func (b *Builder) PluckMap(ctx context.Context, column, key string, dest any) er
 	})
 }
 
-// ExistsSQL builds "select exists(<query>) as "exists"".
+// ExistsSQL builds "SELECT EXISTS(<query>) AS "exists"".
 func (b *Builder) ExistsSQL() (string, []any, error) {
 	c, err := b.newCompiler()
 	if err != nil {
 		return "", nil, err
 	}
-	c.write("select exists")
+	c.write("SELECT EXISTS")
 	if err := c.subquery(b); err != nil {
 		return "", nil, err
 	}
-	c.write(" as " + c.g.Quote("exists"))
+	c.write(" AS " + c.g.Quote("exists"))
 	return c.result(nil)
 }
 
@@ -130,9 +131,9 @@ func (b *Builder) DoesntExist(ctx context.Context) (bool, error) {
 	return !ok, err
 }
 
-// AggregateSQL builds "select fn(column) as aggregate from ...". Queries with
+// AggregateSQL builds "SELECT fn(column) AS aggregate FROM ...". Queries with
 // group by, having, union, distinct, limit or offset are wrapped as
-// "select fn(column) as aggregate from (<query>) as aggregate_table" so the
+// "SELECT fn(column) AS aggregate FROM (<query>) AS aggregate_table" so the
 // aggregate covers the final row set. Ordering is dropped when it cannot matter.
 func (b *Builder) AggregateSQL(fn, column string) (string, []any, error) {
 	c, err := b.newCompiler()
@@ -155,17 +156,17 @@ func (b *Builder) AggregateSQL(fn, column string) (string, []any, error) {
 		}
 		col = c.wrapColumn(column)
 	}
-	expr := fn + "(" + col + ") as " + c.g.Quote("aggregate")
+	expr := strings.ToUpper(fn) + "(" + col + ") AS " + c.g.Quote("aggregate")
 	if !wrap {
 		e := Raw(expr)
 		inner.columns = []selectItem{{raw: &e}}
 		return inner.ToSQL()
 	}
-	c.write("select " + expr + " from ")
+	c.write("SELECT " + expr + " FROM ")
 	if err := c.subquery(inner); err != nil {
 		return "", nil, err
 	}
-	c.write(" as " + c.g.Quote("aggregate_table"))
+	c.write(" AS " + c.g.Quote("aggregate_table"))
 	return c.result(nil)
 }
 

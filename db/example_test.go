@@ -26,7 +26,7 @@ func ExampleUse() {
 		ToSQL()
 	show(sql, args, err)
 	// Output:
-	// select "u"."id", "u"."name" from "users" as "u" inner join "posts" as "p" on "p"."user_id" = "u"."id" where "u"."votes" > $1 or "u"."name" = $2 order by "u"."created_at" desc limit 10
+	// SELECT "u"."id", "u"."name" FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" WHERE "u"."votes" > $1 OR "u"."name" = $2 ORDER BY "u"."created_at" DESC LIMIT 10
 	// [100 john]
 }
 
@@ -39,7 +39,7 @@ func ExampleBuilder_WhereGroup() {
 		ToSQL()
 	show(sql, args, err)
 	// Output:
-	// select * from `users` where `active` = ? and (`deleted_at` is null or `role` in (?, ?))
+	// SELECT * FROM `users` WHERE `active` = ? AND (`deleted_at` IS NULL OR `role` IN (?, ?))
 	// [true admin staff]
 }
 
@@ -48,7 +48,7 @@ func ExampleBuilder_WhereIn_subquery() {
 	sql, args, err := db.Use(db.Postgres).Table("users").WhereIn("id", banned).ToSQL()
 	show(sql, args, err)
 	// Output:
-	// select * from "users" where "id" in (select "user_id" from "bans" where "reason" = $1)
+	// SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "bans" WHERE "reason" = $1)
 	// [spam]
 }
 
@@ -60,7 +60,7 @@ func ExampleBuilder_Union() {
 		ToSQL()
 	show(sql, nil, err)
 	// Output:
-	// (select "id" from "a") union all (select "id" from "b") order by "id" asc limit 5
+	// (SELECT "id" FROM "a") UNION ALL (SELECT "id" FROM "b") ORDER BY "id" ASC LIMIT 5
 	// []
 }
 
@@ -70,7 +70,7 @@ func ExampleBuilder_UpsertSQL() {
 		UpsertSQL(rows, []string{"email"}, []string{"name"})
 	show(sql, args, err)
 	// Output:
-	// insert into "users" ("email", "name") values ($1, $2) on conflict ("email") do update set "name" = "excluded"."name"
+	// INSERT INTO "users" ("email", "name") VALUES ($1, $2) ON CONFLICT ("email") DO UPDATE SET "name" = "excluded"."name"
 	// [a@example.com A]
 }
 
@@ -80,7 +80,7 @@ func ExampleBuilder_UpdateSQL() {
 		UpdateSQL(map[string]any{"name": "Ann", "options->theme": "dark"})
 	show(sql, args, err)
 	// Output:
-	// update "users" set "name" = $1, "options" = jsonb_set("options"::jsonb, '{"theme"}', $2) where "id" = $3
+	// UPDATE "users" SET "name" = $1, "options" = JSONB_SET("options"::JSONB, '{"theme"}', $2) WHERE "id" = $3
 	// [Ann "dark" 7]
 }
 
@@ -91,7 +91,7 @@ func ExampleBuilder_UpdateSQL_guard() {
 	fmt.Println(sql)
 	// Output:
 	// quill: update/delete without a where clause; call AllRows() to confirm
-	// update "users" set "active" = $1
+	// UPDATE "users" SET "active" = $1
 }
 
 func ExampleBuilder_WhereJsonContains() {
@@ -100,9 +100,9 @@ func ExampleBuilder_WhereJsonContains() {
 		fmt.Println(sql)
 	}
 	// Output:
-	// select * from "users" where ("options"->'tags')::jsonb @> $1
-	// select * from `users` where json_contains(`options`, ?, '$."tags"')
-	// select * from "users" where exists (select 1 from json_each("options", '$."tags"') where "json_each"."value" is ?)
+	// SELECT * FROM "users" WHERE ("options"->'tags')::JSONB @> $1
+	// SELECT * FROM `users` WHERE JSON_CONTAINS(`options`, ?, '$."tags"')
+	// SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM JSON_EACH("options", '$."tags"') WHERE "json_each"."value" IS ?)
 }
 
 func ExampleBuilder_ToRawSQL() {
@@ -110,18 +110,18 @@ func ExampleBuilder_ToRawSQL() {
 	sql, _ := db.Use(db.Postgres).Table("users").Where("name", "o'brien").Where("age", ">", 30).ToRawSQL()
 	fmt.Println(sql)
 	// Output:
-	// select * from "users" where "name" = 'o''brien' and "age" > 30
+	// SELECT * FROM "users" WHERE "name" = 'o''brien' AND "age" > 30
 }
 
 func ExampleRaw() {
 	sql, args, err := db.Use(db.Postgres).Table("orders").
-		SelectRaw("date_trunc('day', created_at) as day").
-		SelectRaw("sum(total) filter (where status = ?) as paid", "paid").
+		SelectRaw("date_trunc('day', created_at) AS day").
+		SelectRaw("sum(total) filter (WHERE status = ?) AS paid", "paid").
 		GroupByRaw("1").
 		ToSQL()
 	show(sql, args, err)
 	// Output:
-	// select date_trunc('day', created_at) as day, sum(total) filter (where status = $1) as paid from "orders" group by 1
+	// SELECT date_trunc('day', created_at) AS day, sum(total) filter (WHERE status = $1) AS paid FROM "orders" GROUP BY 1
 	// [paid]
 }
 
@@ -130,11 +130,11 @@ func ExampleBuilder_MustSQL() {
 	sql, args := db.Use(db.Postgres).Table("users").Where("id", 7).MustSQL()
 	fmt.Println(sql, args)
 	// Output:
-	// select * from "users" where "id" = $1 [7]
+	// SELECT * FROM "users" WHERE "id" = $1 [7]
 }
 
 func ExampleBuilder_MustRawSQL() {
 	fmt.Println(db.Use(db.Postgres).Table("users").Where("name", "ann").MustRawSQL())
 	// Output:
-	// select * from "users" where "name" = 'ann'
+	// SELECT * FROM "users" WHERE "name" = 'ann'
 }

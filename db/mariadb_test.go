@@ -21,7 +21,7 @@ func TestMariaDBDiffersFromMySQLInTwoPlaces(t *testing.T) {
 		// json_value returns NULL for arrays and objects on MariaDB; json_extract keeps the JSON text
 		mysql, _, _ := db.Use(db.MySQL).Table("t").Select("opts->theme").Where("opts->rank", ">", 1).ToSQL()
 		maria, _, _ := db.Use(db.MariaDB).Table("t").Select("opts->theme").Where("opts->rank", ">", 1).ToSQL()
-		want := "select json_unquote(json_extract(`opts`, '$.\"theme\"')) from `t` where json_unquote(json_extract(`opts`, '$.\"rank\"')) > ?"
+		want := "SELECT JSON_UNQUOTE(JSON_EXTRACT(`opts`, '$.\"theme\"')) FROM `t` WHERE JSON_UNQUOTE(JSON_EXTRACT(`opts`, '$.\"rank\"')) > ?"
 		if mysql != want || maria != want {
 			t.Errorf("mysql:   %s\nmariadb: %s\nwant:    %s", mysql, maria, want)
 		}
@@ -31,10 +31,10 @@ func TestMariaDBDiffersFromMySQLInTwoPlaces(t *testing.T) {
 		set := map[string]any{"opts->tags": []string{"a"}, "opts->meta": map[string]any{"k": 1}}
 		mysql, _, _ := db.Use(db.MySQL).Table("t").Where("id", 1).UpdateSQL(set)
 		maria, _, _ := db.Use(db.MariaDB).Table("t").Where("id", 1).UpdateSQL(set)
-		if want := "update `t` set `opts` = json_set(`opts`, '$.\"meta\"', cast(? as json), '$.\"tags\"', cast(? as json)) where `id` = ?"; mysql != want {
+		if want := "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"meta\"', CAST(? AS JSON), '$.\"tags\"', CAST(? AS JSON)) WHERE `id` = ?"; mysql != want {
 			t.Errorf("mysql: %s", mysql)
 		}
-		if want := "update `t` set `opts` = json_set(`opts`, '$.\"meta\"', json_query(?, '$'), '$.\"tags\"', json_query(?, '$')) where `id` = ?"; maria != want {
+		if want := "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"meta\"', JSON_QUERY(?, '$'), '$.\"tags\"', JSON_QUERY(?, '$')) WHERE `id` = ?"; maria != want {
 			t.Errorf("mariadb: %s", maria)
 		}
 		// scalar values are unaffected
@@ -90,8 +90,8 @@ func TestMariaDBMatchesMySQLEverywhereElse(t *testing.T) {
 				WhereJsonLength("o->c", ">", 1).
 				ToSQL()
 		},
-		"insert":         func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertSQL(rows...) },
-		"insert ignore":  func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertOrIgnoreSQL(rows...) },
+		"INSERT":         func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertSQL(rows...) },
+		"INSERT IGNORE":  func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertOrIgnoreSQL(rows...) },
 		"insert default": func(d db.Dialect) (string, []any, error) { return db.Use(d).Table("t").InsertSQL(map[string]any{}) },
 		"upsert": func(d db.Dialect) (string, []any, error) {
 			return db.Use(d).Table("t").UpsertSQL(rows, nil, []string{"name"})

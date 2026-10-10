@@ -29,7 +29,7 @@ func FuzzIdentifierQuoting(f *testing.F) {
 		}{{db.Postgres, `"`}, {db.SQLite, `"`}, {db.MySQL, "`"}} {
 			sql, _, err := db.Use(tc.d).Table("t").Select(col).ToSQL()
 			require.NoError(t, err)
-			want := "select " + tc.q + strings.ReplaceAll(col, tc.q, tc.q+tc.q) + tc.q + " from " + tc.q + "t" + tc.q
+			want := "SELECT " + tc.q + strings.ReplaceAll(col, tc.q, tc.q+tc.q) + tc.q + " FROM " + tc.q + "t" + tc.q
 			assert.Equal(t, want, sql)
 		}
 	})

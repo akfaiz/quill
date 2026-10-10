@@ -1,6 +1,9 @@
 package db
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type joinClause struct {
 	typ     string // inner, left, right, cross, straight_join
@@ -78,13 +81,13 @@ func (j *JoinClause) WhereNotIn(column string, values any) *JoinClause {
 	return j
 }
 
-// WhereNull adds "col is null".
+// WhereNull adds "col IS NULL".
 func (j *JoinClause) WhereNull(column string) *JoinClause {
 	j.q.WhereNull(column)
 	return j
 }
 
-// WhereNotNull adds "col is not null".
+// WhereNotNull adds "col IS NOT NULL".
 func (j *JoinClause) WhereNotNull(column string) *JoinClause {
 	j.q.WhereNotNull(column)
 	return j
@@ -148,7 +151,7 @@ func subJoin(typ string, sub *Builder, as string) joinClause {
 	return joinClause{typ: typ, sub: sub, alias: as}
 }
 
-// Join adds "inner join table on first = second" (or "first op second").
+// Join adds "INNER JOIN table ON first = second" (or "first op second").
 func (b *Builder) Join(table, first string, args ...any) *Builder {
 	return b.addJoin(tbl("inner", table), first, args, false, nil)
 }
@@ -163,7 +166,7 @@ func (b *Builder) RightJoin(table, first string, args ...any) *Builder {
 	return b.addJoin(tbl("right", table), first, args, false, nil)
 }
 
-// CrossJoin adds "cross join table".
+// CrossJoin adds "CROSS JOIN table".
 func (b *Builder) CrossJoin(table string) *Builder {
 	return b.addJoin(tbl("cross", table), "", nil, false, nil)
 }
@@ -188,7 +191,7 @@ func (b *Builder) RightJoinFunc(table string, fn func(*JoinClause)) *Builder {
 	return b.addJoin(tbl("right", table), "", nil, false, fn)
 }
 
-// JoinWhere joins on a bound value: "inner join t on col = ?".
+// JoinWhere joins on a bound value: "INNER JOIN t ON col = ?".
 func (b *Builder) JoinWhere(table, column string, args ...any) *Builder {
 	return b.addJoin(tbl("inner", table), column, args, true, nil)
 }
@@ -203,7 +206,7 @@ func (b *Builder) RightJoinWhere(table, column string, args ...any) *Builder {
 	return b.addJoin(tbl("right", table), column, args, true, nil)
 }
 
-// JoinSub joins a subquery: "inner join (select ...) as alias on ...".
+// JoinSub joins a subquery: "INNER JOIN (SELECT ...) AS alias ON ...".
 func (b *Builder) JoinSub(sub *Builder, as, first string, args ...any) *Builder {
 	return b.addJoin(subJoin("inner", sub, as), first, args, false, nil)
 }
@@ -238,7 +241,7 @@ func (b *Builder) RightJoinSubFunc(sub *Builder, as string, fn func(*JoinClause)
 	return b.addJoin(subJoin("right", sub, as), "", nil, false, fn)
 }
 
-// JoinLateral adds "inner join lateral (subquery) as alias on true" (Postgres, MySQL >= 8.0.14).
+// JoinLateral adds "INNER JOIN LATERAL (subquery) AS alias ON TRUE" (Postgres, MySQL >= 8.0.14).
 func (b *Builder) JoinLateral(sub *Builder, as string) *Builder {
 	j := subJoin("inner", sub, as)
 	j.lateral = true
@@ -252,6 +255,21 @@ func (b *Builder) LeftJoinLateral(sub *Builder, as string) *Builder {
 	return b.addJoin(j, "", nil, false, nil)
 }
 
+// joinKeyword is the SQL for a join type such as "inner" or "left".
+func joinKeyword(typ string) string {
+	switch typ {
+	case "inner":
+		return "INNER JOIN "
+	case "left":
+		return "LEFT JOIN "
+	case "right":
+		return "RIGHT JOIN "
+	case "cross":
+		return "CROSS JOIN "
+	}
+	return strings.ToUpper(typ) + " JOIN "
+}
+
 func (c *compiler) join(j joinClause) error {
 	if j.typ == "straight_join" && !c.g.SupportsStraightJoin() {
 		return fmt.Errorf("%w: straight_join", ErrUnsupported)
@@ -260,12 +278,12 @@ func (c *compiler) join(j joinClause) error {
 		return fmt.Errorf("%w: lateral join", ErrUnsupported)
 	}
 	if j.typ == "straight_join" {
-		c.write("straight_join ")
+		c.write("STRAIGHT_JOIN ")
 	} else {
-		c.write(j.typ + " join ")
+		c.write(joinKeyword(j.typ))
 	}
 	if j.lateral {
-		c.write("lateral ")
+		c.write("LATERAL ")
 	}
 	if j.sub != nil {
 		if j.alias == "" {
@@ -274,13 +292,13 @@ func (c *compiler) join(j joinClause) error {
 		if err := c.subquery(j.sub); err != nil {
 			return err
 		}
-		c.write(" as ")
+		c.write(" AS ")
 		c.writeTable(j.alias)
 	} else {
 		c.writeTable(j.table)
 	}
 	if j.lateral {
-		c.write(" on true")
+		c.write(" ON TRUE")
 		return nil
 	}
 	if len(j.on) == 0 {
@@ -289,7 +307,7 @@ func (c *compiler) join(j joinClause) error {
 		}
 		return ErrJoinNeedsOn
 	}
-	c.write(" on ")
+	c.write(" ON ")
 	return c.clauses(j.on)
 }
 

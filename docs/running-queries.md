@@ -18,7 +18,7 @@ err := conn.Table("users").Where("active", true).OrderBy("id").Get(ctx, &users) 
 
 var u User
 err = conn.Table("users").Where("email", e).First(ctx, &u)   // first row; db.ErrNotFound when none
-err = conn.Table("users").Find(ctx, 7, &u)                   // where "id" = 7, then First
+err = conn.Table("users").Find(ctx, 7, &u)                   // WHERE "id" = 7, then First
 err = conn.Table("users").Where("email", e).Sole(ctx, &u)    // exactly one: ErrNotFound or ErrMultipleRecords
 ```
 
@@ -101,7 +101,7 @@ Ordering is dropped from the aggregate. Queries with `GROUP BY`, `HAVING`, `UNIO
 `LIMIT` or `OFFSET` are wrapped so the aggregate covers the final row set:
 
 ```sql
-select count(*) as "aggregate" from (select "user_id" from "posts" group by "user_id") as "aggregate_table"
+SELECT count(*) AS "aggregate" FROM (SELECT "user_id" FROM "posts" GROUP BY "user_id") AS "aggregate_table"
 ```
 
 Strict servers (PostgreSQL, MySQL with `ONLY_FULL_GROUP_BY`) need the grouped column selected:
@@ -142,7 +142,7 @@ p, err  = conn.Table("users").CursorPaginate(ctx, 15, p.NextCursor, &users)   //
 conn.Table("events").CursorPaginate(ctx, 50, token, &events, db.CursorOptions{Column: "created_at", Desc: true})
 ```
 
-- Pages by `where key > last order by key limit n`, so it stays fast on deep pages and is stable
+- Pages by `WHERE key > last ORDER BY key LIMIT n`, so it stays fast on deep pages and is stable
   while rows are inserted.
 - The key column (default `"id"`) must be **unique and sortable**; ties would skip or repeat rows.
   It replaces any existing `ORDER BY`.

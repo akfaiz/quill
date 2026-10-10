@@ -95,12 +95,12 @@ func (c *compiler) insertVerb(ignore bool) string {
 	if ignore {
 		switch c.d {
 		case MySQL, MariaDB:
-			return "insert ignore into "
+			return "INSERT IGNORE INTO "
 		case SQLite:
-			return "insert or ignore into "
+			return "INSERT OR IGNORE INTO "
 		}
 	}
-	return "insert into "
+	return "INSERT INTO "
 }
 
 func (c *compiler) wrapColumns(cols []string) string {
@@ -118,7 +118,7 @@ func (c *compiler) returningClause(cols []string) error {
 	if c.d.mysqlFamily() {
 		return fmt.Errorf("%w: RETURNING on mysql", ErrUnsupported)
 	}
-	c.write(" returning " + c.wrapColumns(cols))
+	c.write(" RETURNING " + c.wrapColumns(cols))
 	return nil
 }
 
@@ -130,12 +130,12 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 	c.write(c.insertVerb(ignore) + c.wrapTable(b.table))
 	if len(cols) == 0 {
 		if c.d.mysqlFamily() {
-			c.write(" () values ()")
+			c.write(" () VALUES ()")
 		} else {
-			c.write(" default values")
+			c.write(" DEFAULT VALUES")
 		}
 	} else {
-		c.write(" (" + c.wrapColumns(cols) + ") values ")
+		c.write(" (" + c.wrapColumns(cols) + ") VALUES ")
 		for i, r := range rows {
 			if i > 0 {
 				c.write(", ")
@@ -153,12 +153,12 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 		}
 	}
 	if ignore && c.d == Postgres {
-		c.write(" on conflict do nothing")
+		c.write(" ON CONFLICT DO NOTHING")
 	}
 	return c.returningClause(b.returning)
 }
 
-// InsertSQL builds "insert into t (cols) values (...), (...)". Columns are the
+// InsertSQL builds "INSERT INTO t (cols) VALUES (...), (...)". Columns are the
 // sorted keys of the first row; every row must have the same keys. A single
 // empty row inserts default values.
 func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
@@ -170,7 +170,7 @@ func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
 }
 
 // InsertOrIgnoreSQL builds an insert that skips conflicting rows
-// (mysql "insert ignore", sqlite "insert or ignore", postgres "on conflict do nothing").
+// (mysql "INSERT IGNORE", sqlite "INSERT OR IGNORE", postgres "ON CONFLICT DO NOTHING").
 func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -180,7 +180,7 @@ func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, erro
 }
 
 // InsertGetIDSQL builds a single-row insert. On Postgres it appends
-// `returning "<sequence>"` (default "id"); on MySQL/SQLite read the id from
+// `RETURNING "<sequence>"` (default "id"); on MySQL/SQLite read the id from
 // the driver's LastInsertId.
 func (b *Builder) InsertGetIDSQL(row map[string]any, sequence ...string) (string, []any, error) {
 	if b.dialect == Postgres {
@@ -210,12 +210,12 @@ func (c *compiler) insertUsing(b *Builder, columns []string, sub *Builder, ignor
 		return err
 	}
 	if ignore && c.d == Postgres {
-		c.write(" on conflict do nothing")
+		c.write(" ON CONFLICT DO NOTHING")
 	}
 	return c.returningClause(b.returning)
 }
 
-// InsertUsingSQL builds "insert into t (cols) select ...".
+// InsertUsingSQL builds "INSERT INTO t (cols) SELECT ...".
 func (b *Builder) InsertUsingSQL(columns []string, sub *Builder) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
@@ -264,12 +264,12 @@ func (b *Builder) UpsertSQL(rows []map[string]any, uniqueBy, update []string) (s
 	}
 	sets := make([]string, len(update))
 	if c.d.mysqlFamily() {
-		c.write(" on duplicate key update ")
+		c.write(" ON DUPLICATE KEY UPDATE ")
 		for i, u := range update {
-			sets[i] = c.wrapColumn(u) + " = values(" + c.wrapColumn(u) + ")"
+			sets[i] = c.wrapColumn(u) + " = VALUES(" + c.wrapColumn(u) + ")"
 		}
 	} else {
-		c.write(" on conflict (" + c.wrapColumns(uniqueBy) + ") do update set ")
+		c.write(" ON CONFLICT (" + c.wrapColumns(uniqueBy) + ") DO UPDATE SET ")
 		for i, u := range update {
 			sets[i] = c.wrapColumn(u) + " = " + c.g.Quote("excluded") + "." + c.wrapColumn(u)
 		}
@@ -326,7 +326,7 @@ func (c *compiler) setList(sets []setItem) error {
 				return err
 			}
 			col := c.setColumn(s.column)
-			c.write(col + " = json_patch(ifnull(" + col + ", json('{}')), json(")
+			c.write(col + " = JSON_PATCH(IFNULL(" + col + ", JSON('{}')), JSON(")
 			c.param(enc)
 			c.write("))")
 			written = true
@@ -370,7 +370,7 @@ func (c *compiler) whereSuffix(b *Builder) error {
 	if len(b.wheres) == 0 {
 		return nil
 	}
-	c.write(" where ")
+	c.write(" WHERE ")
 	return c.clauses(b.wheres)
 }
 
@@ -386,7 +386,7 @@ func (c *compiler) rowIDColumn() string {
 	return "rowid"
 }
 
-// rowIDSubquery writes `where "ctid" in (select alias.ctid from ... )` for
+// rowIDSubquery writes `WHERE "ctid" IN (SELECT alias.ctid FROM ... )` for
 // Postgres/SQLite updates and deletes that carry joins or a limit.
 func (c *compiler) rowIDSubquery(b *Builder) error {
 	alias := b.table
@@ -396,12 +396,12 @@ func (c *compiler) rowIDSubquery(b *Builder) error {
 	sub := b.Clone()
 	sub.columns = []selectItem{{column: alias + "." + c.rowIDColumn()}}
 	sub.returning = nil
-	c.write(" where " + c.g.Quote(c.rowIDColumn()) + " in ")
+	c.write(" WHERE " + c.g.Quote(c.rowIDColumn()) + " IN ")
 	return c.subquery(sub)
 }
 
 func (c *compiler) update(b *Builder, sets []setItem) error {
-	c.write("update " + c.wrapTable(b.table))
+	c.write("UPDATE " + c.wrapTable(b.table))
 	viaRowID := !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil)
 	if c.d.mysqlFamily() {
 		for _, j := range b.joins {
@@ -411,7 +411,7 @@ func (c *compiler) update(b *Builder, sets []setItem) error {
 			}
 		}
 	}
-	c.write(" set ")
+	c.write(" SET ")
 	if err := c.setList(sets); err != nil {
 		return err
 	}
@@ -432,7 +432,7 @@ func (c *compiler) update(b *Builder, sets []setItem) error {
 	return c.returningClause(b.returning)
 }
 
-// UpdateSQL builds "update t set a = ?, ... where ...". Columns are sorted.
+// UpdateSQL builds "UPDATE t SET a = ?, ... WHERE ...". Columns are sorted.
 // Values may be Raw expressions or *Builder subqueries. Joins use native
 // UPDATE ... JOIN on MySQL and a ctid/rowid subquery on Postgres/SQLite.
 // Refuses to build without a where clause or limit unless AllRows() was called.
@@ -450,7 +450,7 @@ func (b *Builder) UpdateSQL(values map[string]any) (string, []any, error) {
 	return c.result(c.update(b, sortedSets(values)))
 }
 
-// UpdateFromSQL builds a Postgres "update t set ... from j1, j2 where <join conditions> and <wheres>",
+// UpdateFromSQL builds a Postgres "UPDATE t SET ... FROM j1, j2 WHERE <join conditions> AND <wheres>",
 // where each Join's ON conditions become part of the WHERE. Other dialects return
 // ErrUnsupported (use UpdateSQL with joins on MySQL).
 func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
@@ -467,7 +467,7 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 	if len(b.wheres) == 0 && len(b.joins) == 0 && !b.allRows {
 		return "", nil, ErrNoWhere
 	}
-	c.write("update " + c.wrapTable(b.table) + " set ")
+	c.write("UPDATE " + c.wrapTable(b.table) + " SET ")
 	if err := c.setList(sortedSets(values)); err != nil {
 		return "", nil, err
 	}
@@ -481,11 +481,11 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 			tables[i] = c.wrapTable(j.table)
 			onClauses = append(onClauses, j.on...)
 		}
-		c.write(" from " + strings.Join(tables, ", "))
+		c.write(" FROM " + strings.Join(tables, ", "))
 	}
 	switch {
 	case len(b.wheres) > 0:
-		c.write(" where ")
+		c.write(" WHERE ")
 		if err := c.clauses(b.wheres); err != nil {
 			return "", nil, err
 		}
@@ -498,7 +498,7 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 			}
 		}
 	case len(onClauses) > 0:
-		c.write(" where ")
+		c.write(" WHERE ")
 		if err := c.clauses(onClauses); err != nil {
 			return "", nil, err
 		}
@@ -543,12 +543,12 @@ func (b *Builder) adjust(op string, amounts map[string]any, extra map[string]any
 	return c.result(c.update(b, sets))
 }
 
-// IncrementSQL builds "update t set col = col + ? [, extra...] where ...".
+// IncrementSQL builds "UPDATE t SET col = col + ? [, extra...] WHERE ...".
 func (b *Builder) IncrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
 	return b.adjust("+", map[string]any{column: amount}, extra)
 }
 
-// DecrementSQL builds "update t set col = col - ? [, extra...] where ...".
+// DecrementSQL builds "UPDATE t SET col = col - ? [, extra...] WHERE ...".
 func (b *Builder) DecrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
 	return b.adjust("-", map[string]any{column: amount}, extra)
 }
@@ -568,7 +568,7 @@ func (b *Builder) DecrementEachSQL(amounts, extra map[string]any) (string, []any
 func (c *compiler) delete(b *Builder) error {
 	switch {
 	case !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil):
-		c.write("delete from " + c.wrapTable(b.table))
+		c.write("DELETE FROM " + c.wrapTable(b.table))
 		if err := c.rowIDSubquery(b); err != nil {
 			return err
 		}
@@ -577,7 +577,7 @@ func (c *compiler) delete(b *Builder) error {
 		if i := strings.LastIndex(strings.ToLower(alias), " as "); i >= 0 {
 			alias = alias[i+4:]
 		}
-		c.write("delete " + alias + " from " + c.wrapTable(b.table))
+		c.write("DELETE " + alias + " FROM " + c.wrapTable(b.table))
 		for _, j := range b.joins {
 			c.write(" ")
 			if err := c.join(j); err != nil {
@@ -591,7 +591,7 @@ func (c *compiler) delete(b *Builder) error {
 			return err
 		}
 	default:
-		c.write("delete from " + c.wrapTable(b.table))
+		c.write("DELETE FROM " + c.wrapTable(b.table))
 		if err := c.whereSuffix(b); err != nil {
 			return err
 		}
@@ -604,7 +604,7 @@ func (c *compiler) delete(b *Builder) error {
 	return c.returningClause(b.returning)
 }
 
-// DeleteSQL builds "delete from t where ...". Joins use "delete alias from ... join"
+// DeleteSQL builds "DELETE FROM t WHERE ...". Joins use "DELETE alias FROM ... JOIN"
 // on MySQL and a ctid/rowid subquery on Postgres/SQLite; MySQL also honors
 // order/limit. Refuses to build without a where clause or limit unless
 // AllRows() was called (use TruncateSQL to empty a table).
@@ -620,8 +620,8 @@ func (b *Builder) DeleteSQL() (string, []any, error) {
 }
 
 // TruncateSQL builds the statements that empty the table and reset its identity.
-// Postgres: "truncate t restart identity" (no CASCADE, unlike Laravel's default,
-// so referencing tables are never emptied implicitly). MySQL: "truncate table t".
+// Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE, unlike Laravel's default,
+// so referencing tables are never emptied implicitly). MySQL: "TRUNCATE TABLE t".
 // SQLite has no TRUNCATE: it deletes the sqlite_sequence row, then every row.
 func (b *Builder) TruncateSQL() ([]Stmt, error) {
 	c, err := b.writeCompiler()
@@ -630,16 +630,16 @@ func (b *Builder) TruncateSQL() ([]Stmt, error) {
 	}
 	switch c.d {
 	case Postgres:
-		return []Stmt{{SQL: "truncate " + c.wrapTable(b.table) + " restart identity"}}, nil
+		return []Stmt{{SQL: "TRUNCATE " + c.wrapTable(b.table) + " RESTART IDENTITY"}}, nil
 	case MySQL, MariaDB:
-		return []Stmt{{SQL: "truncate table " + c.wrapTable(b.table)}}, nil
+		return []Stmt{{SQL: "TRUNCATE TABLE " + c.wrapTable(b.table)}}, nil
 	}
 	schema, name := "", b.table
 	if i := strings.LastIndex(b.table, "."); i >= 0 {
 		schema, name = c.g.Quote(b.table[:i])+".", b.table[i+1:]
 	}
 	return []Stmt{
-		{SQL: "delete from " + schema + "sqlite_sequence where name = ?", Args: []any{b.prefix + name}},
-		{SQL: "delete from " + c.wrapTable(b.table)},
+		{SQL: "DELETE FROM " + schema + "sqlite_sequence WHERE name = ?", Args: []any{b.prefix + name}},
+		{SQL: "DELETE FROM " + c.wrapTable(b.table)},
 	}, nil
 }

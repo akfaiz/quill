@@ -12,29 +12,29 @@ func Postgres() Grammar { return pgGrammar{} }
 type pgGrammar struct{}
 
 func (pgGrammar) LikeOp(cs, not bool) string {
-	op := "ilike"
+	op := "ILIKE"
 	if cs {
-		op = "like"
+		op = "LIKE"
 	}
 	if not {
-		op = "not " + op
+		op = "NOT " + op
 	}
 	return op
 }
 func (pgGrammar) LikeValue(p string, _ bool) string { return p }
 func (pgGrammar) LikeCast(op string) string {
-	if strings.Contains(op, "like") {
-		return "::text"
+	if strings.Contains(op, "LIKE") {
+		return "::TEXT"
 	}
 	return ""
 }
-func (pgGrammar) NullSafeOp() string { return "is not distinct from" }
+func (pgGrammar) NullSafeOp() string { return "IS NOT DISTINCT FROM" }
 func (pgGrammar) DatePart(part, col string) string {
 	switch part {
 	case "date", "time":
-		return col + "::" + part
+		return col + "::" + strings.ToUpper(part)
 	}
-	return "extract(" + part + " from " + col + ")"
+	return "EXTRACT(" + strings.ToUpper(part) + " FROM " + col + ")"
 }
 func (pgGrammar) DateValueWrap() (string, string) { return "", "" }
 func (pgGrammar) SupportsStraightJoin() bool      { return false }
@@ -43,9 +43,9 @@ func (pgGrammar) UnionOpen() string               { return "(" }
 func (pgGrammar) LockSQL(k LockKind, raw string) string {
 	switch k {
 	case LockUpdate:
-		return "for update"
+		return "FOR UPDATE"
 	case LockShared:
-		return "for share"
+		return "FOR SHARE"
 	case LockRaw:
 		return raw
 	}

@@ -125,14 +125,14 @@ func TestFromUsesTheTypesTable(t *testing.T) {
 	conn := db.Use(db.Postgres) // building SQL never touches the connection
 	sql, args, err := db.From[valueTable](conn).Where("id", 7).Builder().ToSQL()
 	require.NoError(t, err)
-	if want := `select * from "value_rows" where "id" = $1`; sql != want || !reflect.DeepEqual(args, []any{7}) {
+	if want := `SELECT * FROM "value_rows" WHERE "id" = $1`; sql != want || !reflect.DeepEqual(args, []any{7}) {
 		t.Errorf("got %s %v", sql, args)
 	}
 
 	// the database prefix applies, like any table from conn.Table
 	prefixed := db.Use(db.MySQL, db.WithPrefix("app_"))
 	sql, _, _ = db.From[pointerTable](prefixed).Builder().ToSQL()
-	if want := "select * from `app_pointer_rows`"; sql != want {
+	if want := "SELECT * FROM `app_pointer_rows`"; sql != want {
 		t.Errorf("got %s want %s", sql, want)
 	}
 }

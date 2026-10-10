@@ -1,6 +1,9 @@
 package dialect
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // MySQL returns the MySQL grammar.
 func MySQL() Grammar { return mysqlGrammar{} }
@@ -9,19 +12,19 @@ func MySQL() Grammar { return mysqlGrammar{} }
 type mysqlGrammar struct{}
 
 func (mysqlGrammar) LikeOp(cs, not bool) string {
-	op := "like"
+	op := "LIKE"
 	if cs {
-		op = "like binary"
+		op = "LIKE BINARY"
 	}
 	if not {
-		op = "not " + op
+		op = "NOT " + op
 	}
 	return op
 }
 func (mysqlGrammar) LikeValue(p string, _ bool) string { return p }
 func (mysqlGrammar) LikeCast(string) string            { return "" }
 func (mysqlGrammar) NullSafeOp() string                { return "<=>" }
-func (mysqlGrammar) DatePart(part, col string) string  { return part + "(" + col + ")" }
+func (mysqlGrammar) DatePart(part, col string) string  { return strings.ToUpper(part) + "(" + col + ")" }
 func (mysqlGrammar) DateValueWrap() (string, string)   { return "", "" }
 func (mysqlGrammar) SupportsStraightJoin() bool        { return true }
 
@@ -31,9 +34,9 @@ func (mysqlGrammar) UnionOpen() string         { return "(" }
 func (mysqlGrammar) LockSQL(k LockKind, raw string) string {
 	switch k {
 	case LockUpdate:
-		return "for update"
+		return "FOR UPDATE"
 	case LockShared:
-		return "lock in share mode"
+		return "LOCK IN SHARE MODE"
 	case LockRaw:
 		return raw
 	}
@@ -43,7 +46,7 @@ func (mysqlGrammar) IndexHint(kind, index string) (string, error) {
 	if err := validateIndexNames(index, true); err != nil {
 		return "", err
 	}
-	return kind + " index (" + index + ")", nil
+	return strings.ToUpper(kind) + " INDEX (" + index + ")", nil
 }
 func (mysqlGrammar) Random(seed *int) string {
 	if seed == nil {

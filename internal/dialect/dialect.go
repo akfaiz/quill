@@ -48,7 +48,7 @@ type Grammar interface {
 	DateValueWrap() (pre, post string)
 	SupportsStraightJoin() bool
 	SupportsLateralJoin() bool
-	// UnionOpen opens a wrapped union member: "(" or "select * from (".
+	// UnionOpen opens a wrapped union member: "(" or "SELECT * FROM (".
 	UnionOpen() string
 	// LockSQL returns the locking clause, or "" when none applies.
 	LockSQL(kind LockKind, raw string) string

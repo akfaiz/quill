@@ -3,8 +3,8 @@ package db_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/akfaiz/quill/db"
 )
@@ -15,9 +15,9 @@ func TestCTEGolden(t *testing.T) {
 		{
 			name:  "single",
 			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("au").With("au", active(d)).Where("id", ">", 5) },
-			pg:    `with "au" as (select * from "users" where "active" = $1) select * from "au" where "id" > $2`,
-			my:    "with `au` as (select * from `users` where `active` = ?) select * from `au` where `id` > ?",
-			lite:  `with "au" as (select * from "users" where "active" = ?) select * from "au" where "id" > ?`,
+			pg:    `WITH "au" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM "au" WHERE "id" > $2`,
+			my:    "WITH `au` AS (SELECT * FROM `users` WHERE `active` = ?) SELECT * FROM `au` WHERE `id` > ?",
+			lite:  `WITH "au" AS (SELECT * FROM "users" WHERE "active" = ?) SELECT * FROM "au" WHERE "id" > ?`,
 			args:  []any{true, 5},
 		},
 		{
@@ -28,21 +28,21 @@ func TestCTEGolden(t *testing.T) {
 					With("b", db.Use(d).Table("posts").Where("uid", 1)).
 					Join("b", "b.uid", "a.uid")
 			},
-			pg:   `with "a" ("uid", "uname") as (select "id", "name" from "users"), "b" as (select * from "posts" where "uid" = $1) select * from "a" inner join "b" on "b"."uid" = "a"."uid"`,
-			my:   "with `a` (`uid`, `uname`) as (select `id`, `name` from `users`), `b` as (select * from `posts` where `uid` = ?) select * from `a` inner join `b` on `b`.`uid` = `a`.`uid`",
-			lite: `with "a" ("uid", "uname") as (select "id", "name" from "users"), "b" as (select * from "posts" where "uid" = ?) select * from "a" inner join "b" on "b"."uid" = "a"."uid"`,
+			pg:   `WITH "a" ("uid", "uname") AS (SELECT "id", "name" FROM "users"), "b" AS (SELECT * FROM "posts" WHERE "uid" = $1) SELECT * FROM "a" INNER JOIN "b" ON "b"."uid" = "a"."uid"`,
+			my:   "WITH `a` (`uid`, `uname`) AS (SELECT `id`, `name` FROM `users`), `b` AS (SELECT * FROM `posts` WHERE `uid` = ?) SELECT * FROM `a` INNER JOIN `b` ON `b`.`uid` = `a`.`uid`",
+			lite: `WITH "a" ("uid", "uname") AS (SELECT "id", "name" FROM "users"), "b" AS (SELECT * FROM "posts" WHERE "uid" = ?) SELECT * FROM "a" INNER JOIN "b" ON "b"."uid" = "a"."uid"`,
 			args: []any{1},
 		},
 		{
 			name: "recursive members are not wrapped",
 			build: func(d db.Dialect) *db.Builder {
-				anchor := db.Use(d).NewQuery().SelectRaw("1 as n").FromRaw("(select 1) s")
+				anchor := db.Use(d).NewQuery().SelectRaw("1 as n").FromRaw("(SELECT 1) s")
 				step := db.Use(d).Table("seq").SelectRaw("n + 1").Where("n", "<", 5)
 				return db.Use(d).Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n")
 			},
-			pg:   `with recursive "seq" ("n") as (select 1 as n from (select 1) s union all select n + 1 from "seq" where "n" < $1) select * from "seq"`,
-			my:   "with recursive `seq` (`n`) as (select 1 as n from (select 1) s union all select n + 1 from `seq` where `n` < ?) select * from `seq`",
-			lite: `with recursive "seq" ("n") as (select 1 as n from (select 1) s union all select n + 1 from "seq" where "n" < ?) select * from "seq"`,
+			pg:   `WITH RECURSIVE "seq" ("n") AS (SELECT 1 as n FROM (SELECT 1) s UNION ALL SELECT n + 1 FROM "seq" WHERE "n" < $1) SELECT * FROM "seq"`,
+			my:   "WITH RECURSIVE `seq` (`n`) AS (SELECT 1 as n FROM (SELECT 1) s UNION ALL SELECT n + 1 FROM `seq` WHERE `n` < ?) SELECT * FROM `seq`",
+			lite: `WITH RECURSIVE "seq" ("n") AS (SELECT 1 as n FROM (SELECT 1) s UNION ALL SELECT n + 1 FROM "seq" WHERE "n" < ?) SELECT * FROM "seq"`,
 			args: []any{5},
 		},
 		{
@@ -50,18 +50,18 @@ func TestCTEGolden(t *testing.T) {
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("r").With("a", db.Use(d).Table("x")).WithRecursive("r", db.Use(d).Table("a"))
 			},
-			pg:   `with recursive "a" as (select * from "x"), "r" as (select * from "a") select * from "r"`,
-			my:   "with recursive `a` as (select * from `x`), `r` as (select * from `a`) select * from `r`",
-			lite: `with recursive "a" as (select * from "x"), "r" as (select * from "a") select * from "r"`,
+			pg:   `WITH RECURSIVE "a" AS (SELECT * FROM "x"), "r" AS (SELECT * FROM "a") SELECT * FROM "r"`,
+			my:   "WITH RECURSIVE `a` AS (SELECT * FROM `x`), `r` AS (SELECT * FROM `a`) SELECT * FROM `r`",
+			lite: `WITH RECURSIVE "a" AS (SELECT * FROM "x"), "r" AS (SELECT * FROM "a") SELECT * FROM "r"`,
 		},
 		{
 			name: "with prefixes an outer union",
 			build: func(d db.Dialect) *db.Builder {
 				return db.Use(d).Table("au").With("au", active(d)).Union(db.Use(d).Table("au").Where("id", 1))
 			},
-			pg:   `with "au" as (select * from "users" where "active" = $1) (select * from "au") union (select * from "au" where "id" = $2)`,
-			my:   "with `au` as (select * from `users` where `active` = ?) (select * from `au`) union (select * from `au` where `id` = ?)",
-			lite: `with "au" as (select * from "users" where "active" = ?) select * from (select * from "au") union select * from (select * from "au" where "id" = ?)`,
+			pg:   `WITH "au" AS (SELECT * FROM "users" WHERE "active" = $1) (SELECT * FROM "au") UNION (SELECT * FROM "au" WHERE "id" = $2)`,
+			my:   "WITH `au` AS (SELECT * FROM `users` WHERE `active` = ?) (SELECT * FROM `au`) UNION (SELECT * FROM `au` WHERE `id` = ?)",
+			lite: `WITH "au" AS (SELECT * FROM "users" WHERE "active" = ?) SELECT * FROM (SELECT * FROM "au") UNION SELECT * FROM (SELECT * FROM "au" WHERE "id" = ?)`,
 			args: []any{true, 1},
 		},
 		{
@@ -70,19 +70,19 @@ func TestCTEGolden(t *testing.T) {
 				sub := db.Use(d).Table("au").Select("id").With("au", active(d))
 				return db.Use(d).Table("posts").Where("draft", false).WhereIn("uid", sub).Where("id", ">", 9)
 			},
-			pg:   `select * from "posts" where "draft" = $1 and "uid" in (with "au" as (select * from "users" where "active" = $2) select "id" from "au") and "id" > $3`,
-			my:   "select * from `posts` where `draft` = ? and `uid` in (with `au` as (select * from `users` where `active` = ?) select `id` from `au`) and `id` > ?",
-			lite: `select * from "posts" where "draft" = ? and "uid" in (with "au" as (select * from "users" where "active" = ?) select "id" from "au") and "id" > ?`,
+			pg:   `SELECT * FROM "posts" WHERE "draft" = $1 AND "uid" IN (WITH "au" AS (SELECT * FROM "users" WHERE "active" = $2) SELECT "id" FROM "au") AND "id" > $3`,
+			my:   "SELECT * FROM `posts` WHERE `draft` = ? AND `uid` IN (WITH `au` AS (SELECT * FROM `users` WHERE `active` = ?) SELECT `id` FROM `au`) AND `id` > ?",
+			lite: `SELECT * FROM "posts" WHERE "draft" = ? AND "uid" IN (WITH "au" AS (SELECT * FROM "users" WHERE "active" = ?) SELECT "id" FROM "au") AND "id" > ?`,
 			args: []any{false, true, 9},
 		},
 		{
 			name: "raw body",
 			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("v").WithRaw("v", db.Raw("select ? union all select ?", 1, 2), "n")
+				return db.Use(d).Table("v").WithRaw("v", db.Raw("SELECT ? UNION ALL SELECT ?", 1, 2), "n")
 			},
-			pg:   `with "v" ("n") as (select $1 union all select $2) select * from "v"`,
-			my:   "with `v` (`n`) as (select ? union all select ?) select * from `v`",
-			lite: `with "v" ("n") as (select ? union all select ?) select * from "v"`,
+			pg:   `WITH "v" ("n") AS (SELECT $1 UNION ALL SELECT $2) SELECT * FROM "v"`,
+			my:   "WITH `v` (`n`) AS (SELECT ? UNION ALL SELECT ?) SELECT * FROM `v`",
+			lite: `WITH "v" ("n") AS (SELECT ? UNION ALL SELECT ?) SELECT * FROM "v"`,
 			args: []any{1, 2},
 		},
 		{
@@ -92,9 +92,9 @@ func TestCTEGolden(t *testing.T) {
 					Table("au").
 					With("au", db.Use(d, db.WithPrefix("app_")).Table("users"))
 			},
-			pg:   `with "app_au" as (select * from "app_users") select * from "app_au"`,
-			my:   "with `app_au` as (select * from `app_users`) select * from `app_au`",
-			lite: `with "app_au" as (select * from "app_users") select * from "app_au"`,
+			pg:   `WITH "app_au" AS (SELECT * FROM "app_users") SELECT * FROM "app_au"`,
+			my:   "WITH `app_au` AS (SELECT * FROM `app_users`) SELECT * FROM `app_au`",
+			lite: `WITH "app_au" AS (SELECT * FROM "app_users") SELECT * FROM "app_au"`,
 		},
 	}
 	runGolden(t, tests)
@@ -107,7 +107,7 @@ func TestCTEMaterialized(t *testing.T) {
 		{
 			name:  "materialized",
 			build: selectOf(func(d db.Dialect) *db.Builder { return q(d).WithMaterialized("x", db.Use(d).Table("t")) }),
-			pg:    want{sql: `with "x" as materialized (select * from "t") select * from "x"`},
+			pg:    want{sql: `WITH "x" AS MATERIALIZED (SELECT * FROM "t") SELECT * FROM "x"`},
 			my:    unsup, lite: unsup,
 		},
 		{
@@ -115,7 +115,7 @@ func TestCTEMaterialized(t *testing.T) {
 			build: selectOf(
 				func(d db.Dialect) *db.Builder { return q(d).WithNotMaterialized("x", db.Use(d).Table("t")) },
 			),
-			pg:   want{sql: `with "x" as not materialized (select * from "t") select * from "x"`},
+			pg:   want{sql: `WITH "x" AS NOT MATERIALIZED (SELECT * FROM "t") SELECT * FROM "x"`},
 			my:   unsup,
 			lite: unsup,
 		},
@@ -130,9 +130,9 @@ func TestCTEWrites(t *testing.T) {
 				sub := db.Use(d).Table("au").Select("name").With("au", db.Use(d).Table("users").Where("active", true))
 				return db.Use(d).Table("archive").InsertUsingSQL([]string{"name"}, sub)
 			},
-			pg:   `insert into "archive" ("name") with "au" as (select * from "users" where "active" = $1) select "name" from "au"`,
-			my:   "insert into `archive` (`name`) with `au` as (select * from `users` where `active` = ?) select `name` from `au`",
-			lite: `insert into "archive" ("name") with "au" as (select * from "users" where "active" = ?) select "name" from "au"`,
+			pg:   `INSERT INTO "archive" ("name") WITH "au" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT "name" FROM "au"`,
+			my:   "INSERT INTO `archive` (`name`) WITH `au` AS (SELECT * FROM `users` WHERE `active` = ?) SELECT `name` FROM `au`",
+			lite: `INSERT INTO "archive" ("name") WITH "au" AS (SELECT * FROM "users" WHERE "active" = ?) SELECT "name" FROM "au"`,
 			args: []any{true},
 		},
 		{
@@ -176,7 +176,7 @@ func TestCTEErrors(t *testing.T) {
 		{"aliased name", x().With("x as y", x()), db.ErrInvalidArgs},
 		{"nil query", x().With("c", nil), db.ErrInvalidArgs},
 		{"empty column", x().With("c", x(), "a", ""), db.ErrInvalidArgs},
-		{"duplicate name", x().With("c", x()).WithRaw("c", db.Raw("select 1")), db.ErrInvalidArgs},
+		{"duplicate name", x().With("c", x()).WithRaw("c", db.Raw("SELECT 1")), db.ErrInvalidArgs},
 		{"error inside cte", x().With("c", db.NewBuilder(d)), db.ErrNoTable},
 		{"error inside recursive member", x().WithRecursive("c", x().UnionAll(db.NewBuilder(d))), db.ErrNoTable},
 	}
@@ -196,12 +196,12 @@ func TestCTESnapshotAndClone(t *testing.T) {
 
 	got, _, err := base.ToSQL()
 	require.NoError(t, err)
-	if want := `with "c" as (select * from "users") select * from "c"`; got != want {
+	if want := `WITH "c" AS (SELECT * FROM "users") SELECT * FROM "c"`; got != want {
 		t.Errorf("base\n got: %s\nwant: %s", got, want)
 	}
 	got, _, err = clone.ToSQL()
 	require.NoError(t, err)
-	if want := `with "c" as (select * from "users"), "d" as (select * from "posts") select * from "c"`; got != want {
+	if want := `WITH "c" AS (SELECT * FROM "users"), "d" AS (SELECT * FROM "posts") SELECT * FROM "c"`; got != want {
 		t.Errorf("clone\n got: %s\nwant: %s", got, want)
 	}
 }

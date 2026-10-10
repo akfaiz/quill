@@ -91,10 +91,10 @@ func (c *compiler) with(b *Builder) error {
 	if len(b.ctes) == 0 {
 		return nil
 	}
-	c.write("with ")
+	c.write("WITH ")
 	for _, cte := range b.ctes {
 		if cte.recursive {
-			c.write("recursive ")
+			c.write("RECURSIVE ")
 			break
 		}
 	}
@@ -110,15 +110,15 @@ func (c *compiler) with(b *Builder) error {
 			}
 			c.write(" (" + strings.Join(quoted, ", ") + ")")
 		}
-		c.write(" as ")
+		c.write(" AS ")
 		if cte.mat != 0 {
 			if c.d != Postgres {
 				return fmt.Errorf("%w: materialized CTE on %s", ErrUnsupported, c.d)
 			}
 			if cte.mat < 0 {
-				c.write("not ")
+				c.write("NOT ")
 			}
-			c.write("materialized ")
+			c.write("MATERIALIZED ")
 		}
 		c.write("(")
 		if err := c.cteBody(cte); err != nil {
@@ -155,9 +155,9 @@ func (c *compiler) cteBody(cte cteClause) error {
 			return u.q.err
 		}
 		if u.all {
-			c.write(" union all ")
+			c.write(" UNION ALL ")
 		} else {
-			c.write(" union ")
+			c.write(" UNION ")
 		}
 		if err := c.selectQuery(u.q); err != nil {
 			return err

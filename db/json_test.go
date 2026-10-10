@@ -69,12 +69,12 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 			build: selectOf(func(d db.Dialect) *db.Builder {
 				return jt(d).Select("options->theme", "opts->a->b as v", "u.meta->x[0]->y")
 			}),
-			pg: want{sql: `select "options"->>'theme', "opts"->'a'->>'b' as "v", "u"."meta"->'x'->0->>'y' from "t"`},
+			pg: want{sql: `SELECT "options"->>'theme', "opts"->'a'->>'b' AS "v", "u"."meta"->'x'->0->>'y' FROM "t"`},
 			my: want{
-				sql: "select json_unquote(json_extract(`options`, '$.\"theme\"')), json_unquote(json_extract(`opts`, '$.\"a\".\"b\"')) as `v`, json_unquote(json_extract(`u`.`meta`, '$.\"x\"[0].\"y\"')) from `t`",
+				sql: "SELECT JSON_UNQUOTE(JSON_EXTRACT(`options`, '$.\"theme\"')), JSON_UNQUOTE(JSON_EXTRACT(`opts`, '$.\"a\".\"b\"')) AS `v`, JSON_UNQUOTE(JSON_EXTRACT(`u`.`meta`, '$.\"x\"[0].\"y\"')) FROM `t`",
 			},
 			lite: want{
-				sql: `select json_extract("options", '$."theme"'), json_extract("opts", '$."a"."b"') as "v", json_extract("u"."meta", '$."x"[0]."y"') from "t"`,
+				sql: `SELECT JSON_EXTRACT("options", '$."theme"'), JSON_EXTRACT("opts", '$."a"."b"') AS "v", JSON_EXTRACT("u"."meta", '$."x"[0]."y"') FROM "t"`,
 			},
 		},
 		{
@@ -83,15 +83,15 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 				return jt(d).Where("opts->theme", "dark").OrderBy("opts->rank")
 			}),
 			pg: want{
-				sql:  `select * from "t" where "opts"->>'theme' = $1 order by "opts"->>'rank' asc`,
+				sql:  `SELECT * FROM "t" WHERE "opts"->>'theme' = $1 ORDER BY "opts"->>'rank' ASC`,
 				args: []any{"dark"},
 			},
 			my: want{
-				sql:  "select * from `t` where json_unquote(json_extract(`opts`, '$.\"theme\"')) = ? order by json_unquote(json_extract(`opts`, '$.\"rank\"')) asc",
+				sql:  "SELECT * FROM `t` WHERE JSON_UNQUOTE(JSON_EXTRACT(`opts`, '$.\"theme\"')) = ? ORDER BY JSON_UNQUOTE(JSON_EXTRACT(`opts`, '$.\"rank\"')) ASC",
 				args: []any{"dark"},
 			},
 			lite: want{
-				sql:  `select * from "t" where json_extract("opts", '$."theme"') = ? order by json_extract("opts", '$."rank"') asc`,
+				sql:  `SELECT * FROM "t" WHERE JSON_EXTRACT("opts", '$."theme"') = ? ORDER BY JSON_EXTRACT("opts", '$."rank"') ASC`,
 				args: []any{"dark"},
 			},
 		},
@@ -101,13 +101,13 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 				return jt(d).Where("opts->on", true).OrWhere("opts->off", "!=", false)
 			}),
 			pg: want{
-				sql: `select * from "t" where ("opts"->'on')::jsonb = 'true'::jsonb or ("opts"->'off')::jsonb != 'false'::jsonb`,
+				sql: `SELECT * FROM "t" WHERE ("opts"->'on')::JSONB = 'true'::JSONB OR ("opts"->'off')::JSONB != 'false'::JSONB`,
 			},
 			my: want{
-				sql: "select * from `t` where json_extract(`opts`, '$.\"on\"') = true or json_extract(`opts`, '$.\"off\"') != false",
+				sql: "SELECT * FROM `t` WHERE JSON_EXTRACT(`opts`, '$.\"on\"') = TRUE OR JSON_EXTRACT(`opts`, '$.\"off\"') != FALSE",
 			},
 			lite: want{
-				sql: `select * from "t" where json_extract("opts", '$."on"') = true or json_extract("opts", '$."off"') != false`,
+				sql: `SELECT * FROM "t" WHERE JSON_EXTRACT("opts", '$."on"') = TRUE OR JSON_EXTRACT("opts", '$."off"') != FALSE`,
 			},
 		},
 		{
@@ -119,15 +119,15 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 					OrWhereJsonDoesntContain("opts->tags", []string{"a", "b"})
 			}),
 			pg: want{
-				sql:  `select * from "t" where ("opts"->'tags')::jsonb @> $1 or not ("opts"->'tags')::jsonb @> $2`,
+				sql:  `SELECT * FROM "t" WHERE ("opts"->'tags')::JSONB @> $1 OR NOT ("opts"->'tags')::JSONB @> $2`,
 				args: []any{`"go"`, `["a","b"]`},
 			},
 			my: want{
-				sql:  "select * from `t` where json_contains(`opts`, ?, '$.\"tags\"') or not json_contains(`opts`, ?, '$.\"tags\"')",
+				sql:  "SELECT * FROM `t` WHERE JSON_CONTAINS(`opts`, ?, '$.\"tags\"') OR NOT JSON_CONTAINS(`opts`, ?, '$.\"tags\"')",
 				args: []any{`"go"`, `["a","b"]`},
 			},
 			lite: want{
-				sql:  `select * from "t" where exists (select 1 from json_each("opts", '$."tags"') where "json_each"."value" is ?) or not exists (select 1 from json_each("opts", '$."tags"') where "json_each"."value" is ?)`,
+				sql:  `SELECT * FROM "t" WHERE EXISTS (SELECT 1 FROM JSON_EACH("opts", '$."tags"') WHERE "json_each"."value" IS ?) OR NOT EXISTS (SELECT 1 FROM JSON_EACH("opts", '$."tags"') WHERE "json_each"."value" IS ?)`,
 				args: []any{"go", []string{"a", "b"}},
 			},
 		},
@@ -136,10 +136,10 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 			build: selectOf(func(d db.Dialect) *db.Builder {
 				return jt(d).WhereJsonContains("opts", map[string]any{"q": "a<b&c"})
 			}),
-			pg: want{sql: `select * from "t" where ("opts")::jsonb @> $1`, args: []any{`{"q":"a<b&c"}`}},
-			my: want{sql: "select * from `t` where json_contains(`opts`, ?)", args: []any{`{"q":"a<b&c"}`}},
+			pg: want{sql: `SELECT * FROM "t" WHERE ("opts")::JSONB @> $1`, args: []any{`{"q":"a<b&c"}`}},
+			my: want{sql: "SELECT * FROM `t` WHERE JSON_CONTAINS(`opts`, ?)", args: []any{`{"q":"a<b&c"}`}},
 			lite: want{
-				sql:  `select * from "t" where exists (select 1 from json_each("opts") where "json_each"."value" is ?)`,
+				sql:  `SELECT * FROM "t" WHERE EXISTS (SELECT 1 FROM JSON_EACH("opts") WHERE "json_each"."value" IS ?)`,
 				args: []any{map[string]any{"q": "a<b&c"}},
 			},
 		},
@@ -149,13 +149,13 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 				return jt(d).WhereJsonContainsKey("opts->k").OrWhereJsonDoesntContainKey("opts->a->b")
 			}),
 			pg: want{
-				sql: `select * from "t" where coalesce(("opts")::jsonb ? 'k', false) or not coalesce(("opts"->'a')::jsonb ? 'b', false)`,
+				sql: `SELECT * FROM "t" WHERE COALESCE(("opts")::JSONB ? 'k', FALSE) OR NOT COALESCE(("opts"->'a')::JSONB ? 'b', FALSE)`,
 			},
 			my: want{
-				sql: "select * from `t` where ifnull(json_contains_path(`opts`, 'one', '$.\"k\"'), 0) or not ifnull(json_contains_path(`opts`, 'one', '$.\"a\".\"b\"'), 0)",
+				sql: "SELECT * FROM `t` WHERE IFNULL(JSON_CONTAINS_PATH(`opts`, 'one', '$.\"k\"'), 0) OR NOT IFNULL(JSON_CONTAINS_PATH(`opts`, 'one', '$.\"a\".\"b\"'), 0)",
 			},
 			lite: want{
-				sql: `select * from "t" where json_type("opts", '$."k"') is not null or not json_type("opts", '$."a"."b"') is not null`,
+				sql: `SELECT * FROM "t" WHERE JSON_TYPE("opts", '$."k"') IS NOT NULL OR NOT JSON_TYPE("opts", '$."a"."b"') IS NOT NULL`,
 			},
 		},
 		{
@@ -164,13 +164,13 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 				return jt(d).WhereJsonContainsKey("opts->tags->2").WhereJsonContainsKey("opts->tags[-2]")
 			}),
 			pg: want{
-				sql: `select * from "t" where case when jsonb_typeof(("opts"->'tags')::jsonb) = 'array' then jsonb_array_length(("opts"->'tags')::jsonb) >= 3 else false end and case when jsonb_typeof(("opts"->'tags')::jsonb) = 'array' then jsonb_array_length(("opts"->'tags')::jsonb) >= 2 else false end`,
+				sql: `SELECT * FROM "t" WHERE CASE WHEN JSONB_TYPEOF(("opts"->'tags')::JSONB) = 'array' THEN JSONB_ARRAY_LENGTH(("opts"->'tags')::JSONB) >= 3 ELSE FALSE END AND CASE WHEN JSONB_TYPEOF(("opts"->'tags')::JSONB) = 'array' THEN JSONB_ARRAY_LENGTH(("opts"->'tags')::JSONB) >= 2 ELSE FALSE END`,
 			},
 			my: want{
-				sql: "select * from `t` where ifnull(json_contains_path(`opts`, 'one', '$.\"tags\".\"2\"'), 0) and ifnull(json_contains_path(`opts`, 'one', '$.\"tags\"[-2]'), 0)",
+				sql: "SELECT * FROM `t` WHERE IFNULL(JSON_CONTAINS_PATH(`opts`, 'one', '$.\"tags\".\"2\"'), 0) AND IFNULL(JSON_CONTAINS_PATH(`opts`, 'one', '$.\"tags\"[-2]'), 0)",
 			},
 			lite: want{
-				sql: `select * from "t" where json_type("opts", '$."tags"."2"') is not null and json_type("opts", '$."tags"[-2]') is not null`,
+				sql: `SELECT * FROM "t" WHERE JSON_TYPE("opts", '$."tags"."2"') IS NOT NULL AND JSON_TYPE("opts", '$."tags"[-2]') IS NOT NULL`,
 			},
 		},
 		{
@@ -179,15 +179,15 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 				return jt(d).WhereJsonLength("opts->tags", ">", 2).OrWhereJsonLength("opts->tags", "3")
 			}),
 			pg: want{
-				sql:  `select * from "t" where jsonb_array_length(("opts"->'tags')::jsonb) > $1 or jsonb_array_length(("opts"->'tags')::jsonb) = $2`,
+				sql:  `SELECT * FROM "t" WHERE JSONB_ARRAY_LENGTH(("opts"->'tags')::JSONB) > $1 OR JSONB_ARRAY_LENGTH(("opts"->'tags')::JSONB) = $2`,
 				args: []any{int64(2), int64(3)},
 			},
 			my: want{
-				sql:  "select * from `t` where json_length(`opts`, '$.\"tags\"') > ? or json_length(`opts`, '$.\"tags\"') = ?",
+				sql:  "SELECT * FROM `t` WHERE JSON_LENGTH(`opts`, '$.\"tags\"') > ? OR JSON_LENGTH(`opts`, '$.\"tags\"') = ?",
 				args: []any{int64(2), int64(3)},
 			},
 			lite: want{
-				sql:  `select * from "t" where json_array_length("opts", '$."tags"') > ? or json_array_length("opts", '$."tags"') = ?`,
+				sql:  `SELECT * FROM "t" WHERE JSON_ARRAY_LENGTH("opts", '$."tags"') > ? OR JSON_ARRAY_LENGTH("opts", '$."tags"') = ?`,
 				args: []any{int64(2), int64(3)},
 			},
 		},
@@ -198,7 +198,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 			}),
 			pg: want{err: db.ErrUnsupported},
 			my: want{
-				sql:  "select * from `t` where json_overlaps(`opts`, ?) or not json_overlaps(json_extract(`opts`, '$.\"ids\"'), ?)",
+				sql:  "SELECT * FROM `t` WHERE JSON_OVERLAPS(`opts`, ?) OR NOT JSON_OVERLAPS(JSON_EXTRACT(`opts`, '$.\"ids\"'), ?)",
 				args: []any{"[1,2]", "[3]"},
 			},
 			lite: want{err: db.ErrUnsupported},
@@ -208,9 +208,9 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 			build: selectOf(func(d db.Dialect) *db.Builder {
 				return jt(d).Select(`opts->a\'b`)
 			}),
-			pg:   want{sql: `select "opts"->>'a\''b' from "t"`},
-			my:   want{sql: "select json_unquote(json_extract(`opts`, '$.\"a''b\"')) from `t`"},
-			lite: want{sql: `select json_extract("opts", '$."a''b"') from "t"`},
+			pg:   want{sql: `SELECT "opts"->>'a\''b' FROM "t"`},
+			my:   want{sql: "SELECT JSON_UNQUOTE(JSON_EXTRACT(`opts`, '$.\"a''b\"')) FROM `t`"},
+			lite: want{sql: `SELECT JSON_EXTRACT("opts", '$."a''b"') FROM "t"`},
 		},
 	})
 }
@@ -223,15 +223,15 @@ func TestJSONUpdates(t *testing.T) {
 				return jt(d).Where("id", 1).UpdateSQL(m("opts->theme", "dark", "name", "x"))
 			},
 			pg: want{
-				sql:  `update "t" set "name" = $1, "opts" = jsonb_set("opts"::jsonb, '{"theme"}', $2) where "id" = $3`,
+				sql:  `UPDATE "t" SET "name" = $1, "opts" = JSONB_SET("opts"::JSONB, '{"theme"}', $2) WHERE "id" = $3`,
 				args: []any{"x", `"dark"`, 1},
 			},
 			my: want{
-				sql:  "update `t` set `name` = ?, `opts` = json_set(`opts`, '$.\"theme\"', ?) where `id` = ?",
+				sql:  "UPDATE `t` SET `name` = ?, `opts` = JSON_SET(`opts`, '$.\"theme\"', ?) WHERE `id` = ?",
 				args: []any{"x", "dark", 1},
 			},
 			lite: want{
-				sql:  `update "t" set "name" = ?, "opts" = json_patch(ifnull("opts", json('{}')), json(?)) where "id" = ?`,
+				sql:  `UPDATE "t" SET "name" = ?, "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
 				args: []any{"x", `{"theme":"dark"}`, 1},
 			},
 		},
@@ -241,19 +241,19 @@ func TestJSONUpdates(t *testing.T) {
 				return jt(d).Where("id", 1).UpdateSQL(m("opts->on", true, "opts->tags", []string{"a"}))
 			},
 			pg: want{
-				sql:  `update "t" set "opts" = jsonb_set(jsonb_set("opts"::jsonb, '{"on"}', $1), '{"tags"}', $2) where "id" = $3`,
+				sql:  `UPDATE "t" SET "opts" = JSONB_SET(JSONB_SET("opts"::JSONB, '{"on"}', $1), '{"tags"}', $2) WHERE "id" = $3`,
 				args: []any{"true", `["a"]`, 1},
 			},
 			my: want{
-				sql:  "update `t` set `opts` = json_set(`opts`, '$.\"on\"', true, '$.\"tags\"', cast(? as json)) where `id` = ?",
+				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"on\"', TRUE, '$.\"tags\"', CAST(? AS JSON)) WHERE `id` = ?",
 				args: []any{`["a"]`, 1},
 			},
 			lite: want{
-				sql:  `update "t" set "opts" = json_patch(ifnull("opts", json('{}')), json(?)) where "id" = ?`,
+				sql:  `UPDATE "t" SET "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
 				args: []any{`{"on":true,"tags":["a"]}`, 1},
 			},
 			maria: want{
-				sql:  "update `t` set `opts` = json_set(`opts`, '$.\"on\"', true, '$.\"tags\"', json_query(?, '$')) where `id` = ?",
+				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"on\"', TRUE, '$.\"tags\"', JSON_QUERY(?, '$')) WHERE `id` = ?",
 				args: []any{`["a"]`, 1},
 			},
 		},
@@ -263,15 +263,15 @@ func TestJSONUpdates(t *testing.T) {
 				return jt(d).Where("id", 1).UpdateSQL(m("opts->a->b", 1, "opts->a->c", 2, "opts->d", 3))
 			},
 			pg: want{
-				sql:  `update "t" set "opts" = jsonb_set(jsonb_set(jsonb_set("opts"::jsonb, '{"a","b"}', $1), '{"a","c"}', $2), '{"d"}', $3) where "id" = $4`,
+				sql:  `UPDATE "t" SET "opts" = JSONB_SET(JSONB_SET(JSONB_SET("opts"::JSONB, '{"a","b"}', $1), '{"a","c"}', $2), '{"d"}', $3) WHERE "id" = $4`,
 				args: []any{"1", "2", "3", 1},
 			},
 			my: want{
-				sql:  "update `t` set `opts` = json_set(`opts`, '$.\"a\".\"b\"', ?, '$.\"a\".\"c\"', ?, '$.\"d\"', ?) where `id` = ?",
+				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"a\".\"b\"', ?, '$.\"a\".\"c\"', ?, '$.\"d\"', ?) WHERE `id` = ?",
 				args: []any{1, 2, 3, 1},
 			},
 			lite: want{
-				sql:  `update "t" set "opts" = json_patch(ifnull("opts", json('{}')), json(?)) where "id" = ?`,
+				sql:  `UPDATE "t" SET "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
 				args: []any{`{"a":{"b":1,"c":2},"d":3}`, 1},
 			},
 		},
@@ -281,15 +281,15 @@ func TestJSONUpdates(t *testing.T) {
 				return jt(d).Where("id", 1).UpdateSQL(m("t.opts->tags[0]", "x"))
 			},
 			pg: want{
-				sql:  `update "t" set "opts" = jsonb_set("opts"::jsonb, '{"tags",0}', $1) where "id" = $2`,
+				sql:  `UPDATE "t" SET "opts" = JSONB_SET("opts"::JSONB, '{"tags",0}', $1) WHERE "id" = $2`,
 				args: []any{`"x"`, 1},
 			},
 			my: want{
-				sql:  "update `t` set `t`.`opts` = json_set(`t`.`opts`, '$.\"tags\"[0]', ?) where `id` = ?",
+				sql:  "UPDATE `t` SET `t`.`opts` = JSON_SET(`t`.`opts`, '$.\"tags\"[0]', ?) WHERE `id` = ?",
 				args: []any{"x", 1},
 			},
 			lite: want{
-				sql:  `update "t" set "opts" = json_patch(ifnull("opts", json('{}')), json(?)) where "id" = ?`,
+				sql:  `UPDATE "t" SET "opts" = JSON_PATCH(IFNULL("opts", JSON('{}')), JSON(?)) WHERE "id" = ?`,
 				args: []any{`{"tags[0]":"x"}`, 1},
 			},
 		},
@@ -299,11 +299,11 @@ func TestJSONUpdates(t *testing.T) {
 				return jt(d).Where("id", 1).UpdateSQL(m("opts->n", db.Raw("1 + 1")))
 			},
 			pg: want{
-				sql:  `update "t" set "opts" = jsonb_set("opts"::jsonb, '{"n"}', 1 + 1) where "id" = $1`,
+				sql:  `UPDATE "t" SET "opts" = JSONB_SET("opts"::JSONB, '{"n"}', 1 + 1) WHERE "id" = $1`,
 				args: []any{1},
 			},
 			my: want{
-				sql:  "update `t` set `opts` = json_set(`opts`, '$.\"n\"', 1 + 1) where `id` = ?",
+				sql:  "UPDATE `t` SET `opts` = JSON_SET(`opts`, '$.\"n\"', 1 + 1) WHERE `id` = ?",
 				args: []any{1},
 			},
 			lite: want{err: db.ErrUnsupported},
@@ -338,7 +338,7 @@ func TestJSONNegatedAndOrVariantsPostgres(t *testing.T) {
 		OrWhereJsonContainsKey("o->c").
 		ToSQL()
 	require.NoError(t, err)
-	want := `select * from "t" where ("o"->'a')::jsonb @> $1 and not coalesce(("o")::jsonb ? 'b', false) or coalesce(("o")::jsonb ? 'c', false)`
+	want := `SELECT * FROM "t" WHERE ("o"->'a')::JSONB @> $1 AND NOT COALESCE(("o")::JSONB ? 'b', FALSE) OR COALESCE(("o")::JSONB ? 'c', FALSE)`
 	if sql != want || !reflect.DeepEqual(args, []any{"1"}) {
 		t.Errorf("got %s %v", sql, args)
 	}
@@ -351,7 +351,7 @@ func TestJSONOverlapVariantsMySQL(t *testing.T) {
 		OrWhereJsonDoesntOverlap("o->y", []int{3}).
 		ToSQL()
 	require.NoError(t, err)
-	want := "select * from `t` where json_overlaps(`o`, ?) and not json_overlaps(json_extract(`o`, '$.\"x\"'), ?) or not json_overlaps(json_extract(`o`, '$.\"y\"'), ?)"
+	want := "SELECT * FROM `t` WHERE JSON_OVERLAPS(`o`, ?) AND NOT JSON_OVERLAPS(JSON_EXTRACT(`o`, '$.\"x\"'), ?) OR NOT JSON_OVERLAPS(JSON_EXTRACT(`o`, '$.\"y\"'), ?)"
 	if sql != want || !reflect.DeepEqual(args, []any{"[1]", "[2]", "[3]"}) {
 		t.Errorf("got %s %v", sql, args)
 	}

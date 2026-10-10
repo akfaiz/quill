@@ -249,8 +249,8 @@ func TestTypedChainMatchesBuilder(t *testing.T) {
 		},
 		{
 			"WithRaw",
-			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithRaw("c", db.Raw("select ?", 1), "n") },
-			func(b *db.Builder) *db.Builder { return b.WithRaw("c", db.Raw("select ?", 1), "n") },
+			func(q *db.Query[chainRow]) *db.Query[chainRow] { return q.WithRaw("c", db.Raw("SELECT ?", 1), "n") },
+			func(b *db.Builder) *db.Builder { return b.WithRaw("c", db.Raw("SELECT ?", 1), "n") },
 		},
 		{
 			"WithMaterialized",
@@ -307,11 +307,11 @@ func TestTypedChainHelpers(t *testing.T) {
 		Unless(false, func(q *db.Query[chainRow]) { q.Where("b", 2) }).
 		Unless(true, func(q *db.Query[chainRow]) { q.Where("never", 2) }).
 		Apply(func(b *db.Builder) { b.WhereDate("created_at", "2024-01-02") })
-	if want := `select * from "t" where "a" = $1 and "b" = $2 and "created_at"::date = $3`; sql(q) != want {
+	if want := `SELECT * FROM "t" WHERE "a" = $1 AND "b" = $2 AND "created_at"::DATE = $3`; sql(q) != want {
 		t.Errorf("got %s\nwant %s", sql(q), want)
 	}
 	c := q.Clone().Limit(1)
-	if sql(q) == sql(c) || sql(c) != sql(q)+" limit 1" {
+	if sql(q) == sql(c) || sql(c) != sql(q)+" LIMIT 1" {
 		t.Errorf("clone must be independent:\n q: %s\n c: %s", sql(q), sql(c))
 	}
 }

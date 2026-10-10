@@ -184,12 +184,12 @@ func (b *Builder) multi(boolean, inner string, columns []string, args []any) *Bu
 
 // ---- NOT ----
 
-// WhereNot adds "and not <predicate>".
+// WhereNot adds "AND NOT <predicate>".
 func (b *Builder) WhereNot(column string, args ...any) *Builder {
 	return b.addClause(&b.wheres, "and not", column, args)
 }
 
-// OrWhereNot adds "or not <predicate>".
+// OrWhereNot adds "OR NOT <predicate>".
 func (b *Builder) OrWhereNot(column string, args ...any) *Builder {
 	return b.addClause(&b.wheres, "or not", column, args)
 }
@@ -264,7 +264,7 @@ func (b *Builder) OrWhereIntegerNotInRaw(column string, values any) *Builder {
 
 // ---- NULL ----
 
-// WhereNull adds "col is null".
+// WhereNull adds "col IS NULL".
 func (b *Builder) WhereNull(column string) *Builder {
 	return b.nullClause(&b.wheres, "and", column, false)
 }
@@ -274,7 +274,7 @@ func (b *Builder) OrWhereNull(column string) *Builder {
 	return b.nullClause(&b.wheres, "or", column, false)
 }
 
-// WhereNotNull adds "col is not null".
+// WhereNotNull adds "col IS NOT NULL".
 func (b *Builder) WhereNotNull(column string) *Builder {
 	return b.nullClause(&b.wheres, "and", column, true)
 }
@@ -286,7 +286,7 @@ func (b *Builder) OrWhereNotNull(column string) *Builder {
 
 // ---- BETWEEN ----
 
-// WhereBetween adds "col between lo and hi".
+// WhereBetween adds "col BETWEEN lo AND hi".
 func (b *Builder) WhereBetween(column string, lo, hi any) *Builder {
 	return b.betweenClause(&b.wheres, "and", column, lo, hi, false)
 }
@@ -296,7 +296,7 @@ func (b *Builder) OrWhereBetween(column string, lo, hi any) *Builder {
 	return b.betweenClause(&b.wheres, "or", column, lo, hi, false)
 }
 
-// WhereNotBetween adds "col not between lo and hi".
+// WhereNotBetween adds "col NOT BETWEEN lo AND hi".
 func (b *Builder) WhereNotBetween(column string, lo, hi any) *Builder {
 	return b.betweenClause(&b.wheres, "and", column, lo, hi, true)
 }
@@ -314,7 +314,7 @@ func (b *Builder) betweenColumns(boolean, column, c1, c2 string, not bool) *Buil
 	)
 }
 
-// WhereBetweenColumns adds "col between c1 and c2" comparing against columns.
+// WhereBetweenColumns adds "col BETWEEN c1 AND c2" comparing against columns.
 func (b *Builder) WhereBetweenColumns(column, c1, c2 string) *Builder {
 	return b.betweenColumns("and", column, c1, c2, false)
 }
@@ -342,7 +342,7 @@ func (b *Builder) valueBetween(boolean string, value any, c1, c2 string, not boo
 	)
 }
 
-// WhereValueBetween adds "? between c1 and c2" (a value between two columns).
+// WhereValueBetween adds "? BETWEEN c1 AND c2" (a value between two columns).
 func (b *Builder) WhereValueBetween(value any, c1, c2 string) *Builder {
 	return b.valueBetween("and", value, c1, c2, false)
 }
@@ -437,7 +437,7 @@ func (b *Builder) whereMap(boolean string, m map[string]any) *Builder {
 
 // ---- EXISTS ----
 
-// WhereExists adds "exists (subquery)". Build sub with NewQuery() or NewBuilder.
+// WhereExists adds "EXISTS (subquery)". Build sub with NewQuery() or NewBuilder.
 func (b *Builder) WhereExists(sub *Builder) *Builder {
 	return b.push(&b.wheres, "and", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
@@ -447,7 +447,7 @@ func (b *Builder) OrWhereExists(sub *Builder) *Builder {
 	return b.push(&b.wheres, "or", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
-// WhereNotExists adds "not exists (subquery)".
+// WhereNotExists adds "NOT EXISTS (subquery)".
 func (b *Builder) WhereNotExists(sub *Builder) *Builder {
 	return b.push(&b.wheres, "and not", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
@@ -545,9 +545,11 @@ func (b *Builder) OrWhereNone(columns []string, args ...any) *Builder {
 
 func (b *Builder) rowValues(boolean string, columns []string, op string, values []any) *Builder {
 	op = strings.ToLower(strings.TrimSpace(op))
-	if _, ok := operators[op]; !ok {
+	canon, ok := operators[op]
+	if !ok {
 		return b.fail(fmt.Errorf("%w: %q", ErrInvalidOperator, op))
 	}
+	op = canon
 	if len(columns) == 0 || len(columns) != len(values) {
 		return b.fail(fmt.Errorf("%w: row values need equal, non-zero columns and values", ErrInvalidArgs))
 	}
@@ -570,7 +572,7 @@ func (b *Builder) OrWhereRowValues(columns []string, op string, values []any) *B
 
 // ---- HAVING variants ----
 
-// HavingNull adds "col is null" to HAVING.
+// HavingNull adds "col IS NULL" to HAVING.
 func (b *Builder) HavingNull(column string) *Builder {
 	return b.nullClause(&b.havings, "and", column, false)
 }
@@ -580,7 +582,7 @@ func (b *Builder) OrHavingNull(column string) *Builder {
 	return b.nullClause(&b.havings, "or", column, false)
 }
 
-// HavingNotNull adds "col is not null" to HAVING.
+// HavingNotNull adds "col IS NOT NULL" to HAVING.
 func (b *Builder) HavingNotNull(column string) *Builder {
 	return b.nullClause(&b.havings, "and", column, true)
 }
@@ -590,7 +592,7 @@ func (b *Builder) OrHavingNotNull(column string) *Builder {
 	return b.nullClause(&b.havings, "or", column, true)
 }
 
-// HavingBetween adds "col between lo and hi" to HAVING.
+// HavingBetween adds "col BETWEEN lo AND hi" to HAVING.
 func (b *Builder) HavingBetween(column string, lo, hi any) *Builder {
 	return b.betweenClause(&b.havings, "and", column, lo, hi, false)
 }
@@ -600,7 +602,7 @@ func (b *Builder) OrHavingBetween(column string, lo, hi any) *Builder {
 	return b.betweenClause(&b.havings, "or", column, lo, hi, false)
 }
 
-// HavingNotBetween adds "col not between lo and hi" to HAVING.
+// HavingNotBetween adds "col NOT BETWEEN lo AND hi" to HAVING.
 func (b *Builder) HavingNotBetween(column string, lo, hi any) *Builder {
 	return b.betweenClause(&b.havings, "and", column, lo, hi, true)
 }

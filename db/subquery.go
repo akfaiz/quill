@@ -22,14 +22,14 @@ func (b *Builder) FromRaw(sql string, args ...any) *Builder {
 	return b
 }
 
-// Union appends "union (query)". After a union, OrderBy/Limit/Offset apply to the
-// combined result. On SQLite members are wrapped as "select * from (...)".
+// Union appends "UNION (query)". After a union, OrderBy/Limit/Offset apply to the
+// combined result. On SQLite members are wrapped as "SELECT * FROM (...)".
 func (b *Builder) Union(q *Builder) *Builder {
 	b.unions = append(b.unions, unionClause{q: q.Clone()})
 	return b
 }
 
-// UnionAll appends "union all (query)".
+// UnionAll appends "UNION ALL (query)".
 func (b *Builder) UnionAll(q *Builder) *Builder {
 	b.unions = append(b.unions, unionClause{q: q.Clone(), all: true})
 	return b

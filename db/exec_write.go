@@ -46,7 +46,7 @@ func (b *Builder) InsertOrIgnore(ctx context.Context, rows ...map[string]any) (i
 	return noop(b.execSQL(ctx, func() (string, []any, error) { return b.InsertOrIgnoreSQL(rows...) }))
 }
 
-// InsertUsing runs "insert into t (columns) select ...".
+// InsertUsing runs "INSERT INTO t (columns) SELECT ...".
 func (b *Builder) InsertUsing(ctx context.Context, columns []string, sub *Builder) (int64, error) {
 	return b.execSQL(ctx, func() (string, []any, error) { return b.InsertUsingSQL(columns, sub) })
 }

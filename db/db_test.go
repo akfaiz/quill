@@ -16,10 +16,10 @@ func TestUseSetsTheDialectThenChainsFromTable(t *testing.T) {
 		d    db.Dialect
 		want string
 	}{
-		{db.Postgres, `select "id", "name" from "users" where "votes" > $1 order by "id" desc limit 10`},
-		{db.MySQL, "select `id`, `name` from `users` where `votes` > ? order by `id` desc limit 10"},
-		{db.SQLite, `select "id", "name" from "users" where "votes" > ? order by "id" desc limit 10`},
-		{db.MariaDB, "select `id`, `name` from `users` where `votes` > ? order by `id` desc limit 10"},
+		{db.Postgres, `SELECT "id", "name" FROM "users" WHERE "votes" > $1 ORDER BY "id" DESC LIMIT 10`},
+		{db.MySQL, "SELECT `id`, `name` FROM `users` WHERE `votes` > ? ORDER BY `id` DESC LIMIT 10"},
+		{db.SQLite, `SELECT "id", "name" FROM "users" WHERE "votes" > ? ORDER BY "id" DESC LIMIT 10`},
+		{db.MariaDB, "SELECT `id`, `name` FROM `users` WHERE `votes` > ? ORDER BY `id` DESC LIMIT 10"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.d.String(), func(t *testing.T) {
@@ -41,12 +41,12 @@ func TestUseIsReusableAndKeepsBuildersIndependent(t *testing.T) {
 	pg := db.Use(db.Postgres) // set once, chain many times
 	a, _, _ := pg.Table("a").Where("x", 1).ToSQL()
 	b, _, _ := pg.Table("b").Limit(1).ToSQL()
-	if a != `select * from "a" where "x" = $1` || b != `select * from "b" limit 1` {
+	if a != `SELECT * FROM "a" WHERE "x" = $1` || b != `SELECT * FROM "b" LIMIT 1` {
 		t.Errorf("builders leaked into each other:\n a: %s\n b: %s", a, b)
 	}
 	// NewQuery gives a table-less builder for subquery sources
 	sql, _, err := pg.NewQuery().FromSub(pg.Table("inner").Where("k", 1), "i").ToSQL()
-	if err != nil || sql != `select * from (select * from "inner" where "k" = $1) as "i"` {
+	if err != nil || sql != `SELECT * FROM (SELECT * FROM "inner" WHERE "k" = $1) AS "i"` {
 		t.Errorf("got %s (%v)", sql, err)
 	}
 }
@@ -54,7 +54,7 @@ func TestUseIsReusableAndKeepsBuildersIndependent(t *testing.T) {
 func TestUseAppliesOptions(t *testing.T) {
 	sql, _, err := db.Use(db.MySQL, db.WithPrefix("app_")).Table("users as u").Where("u.id", 1).ToSQL()
 	require.NoError(t, err)
-	if want := "select * from `app_users` as `app_u` where `app_u`.`id` = ?"; sql != want {
+	if want := "SELECT * FROM `app_users` AS `app_u` WHERE `app_u`.`id` = ?"; sql != want {
 		t.Errorf("got %s\nwant %s", sql, want)
 	}
 }
@@ -88,8 +88,8 @@ func TestUseCannotRunQueriesButNeverPanics(t *testing.T) {
 		"Update":      func() error { _, err := users().Where("id", 1).Update(ctx, map[string]any{"a": 1}); return err },
 		"Delete":      func() error { _, err := users().Where("id", 1).Delete(ctx); return err },
 		"Truncate":    func() error { return users().Truncate(ctx) },
-		"DB.Query":    func() error { return conn.Query(ctx, &rows, "select 1") },
-		"DB.Exec":     func() error { _, err := conn.Exec(ctx, "select 1"); return err },
+		"DB.Query":    func() error { return conn.Query(ctx, &rows, "SELECT 1") },
+		"DB.Exec":     func() error { _, err := conn.Exec(ctx, "SELECT 1"); return err },
 		"Transaction": func() error { return conn.Transaction(ctx, func(*db.DB) error { return nil }) },
 		"typed Get":   func() error { _, err := db.From[chainRow](conn).Get(ctx); return err },
 		"typed Insert": func() error {

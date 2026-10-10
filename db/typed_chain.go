@@ -62,7 +62,7 @@ func (q *Query[T]) OrWhere(column string, args ...any) *Query[T] {
 	return q
 }
 
-// WhereNot adds "and not <predicate>".
+// WhereNot adds "AND NOT <predicate>".
 func (q *Query[T]) WhereNot(column string, args ...any) *Query[T] {
 	q.b.WhereNot(column, args...)
 	return q
@@ -104,7 +104,7 @@ func (q *Query[T]) WhereNotIn(column string, values any) *Query[T] {
 	return q
 }
 
-// WhereNull adds "col is null".
+// WhereNull adds "col IS NULL".
 func (q *Query[T]) WhereNull(column string) *Query[T] {
 	q.b.WhereNull(column)
 	return q
@@ -116,19 +116,19 @@ func (q *Query[T]) OrWhereNull(column string) *Query[T] {
 	return q
 }
 
-// WhereNotNull adds "col is not null".
+// WhereNotNull adds "col IS NOT NULL".
 func (q *Query[T]) WhereNotNull(column string) *Query[T] {
 	q.b.WhereNotNull(column)
 	return q
 }
 
-// WhereBetween adds "col between lo and hi".
+// WhereBetween adds "col BETWEEN lo AND hi".
 func (q *Query[T]) WhereBetween(column string, lo, hi any) *Query[T] {
 	q.b.WhereBetween(column, lo, hi)
 	return q
 }
 
-// WhereNotBetween adds "col not between lo and hi".
+// WhereNotBetween adds "col NOT BETWEEN lo AND hi".
 func (q *Query[T]) WhereNotBetween(column string, lo, hi any) *Query[T] {
 	q.b.WhereNotBetween(column, lo, hi)
 	return q
@@ -152,13 +152,13 @@ func (q *Query[T]) OrWhereGroup(fn func(*Builder)) *Query[T] {
 	return q
 }
 
-// WhereExists adds "exists (subquery)".
+// WhereExists adds "EXISTS (subquery)".
 func (q *Query[T]) WhereExists(sub *Builder) *Query[T] {
 	q.b.WhereExists(sub)
 	return q
 }
 
-// WhereNotExists adds "not exists (subquery)".
+// WhereNotExists adds "NOT EXISTS (subquery)".
 func (q *Query[T]) WhereNotExists(sub *Builder) *Query[T] {
 	q.b.WhereNotExists(sub)
 	return q
@@ -260,7 +260,7 @@ func (q *Query[T]) ForPage(page, perPage int) *Query[T] {
 	return q
 }
 
-// LockForUpdate adds "for update" (PostgreSQL, MySQL).
+// LockForUpdate adds "FOR UPDATE" (PostgreSQL, MySQL).
 func (q *Query[T]) LockForUpdate() *Query[T] {
 	q.b.LockForUpdate()
 	return q

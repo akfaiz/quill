@@ -26,9 +26,9 @@ func (c *compiler) selectQuery(b *Builder) error {
 			return u.q.err
 		}
 		if u.all {
-			c.write(" union all ")
+			c.write(" UNION ALL ")
 		} else {
-			c.write(" union ")
+			c.write(" UNION ")
 		}
 		c.write(c.g.UnionOpen())
 		if err := c.selectQuery(u.q); err != nil {
@@ -43,9 +43,9 @@ func (c *compiler) selectCore(b *Builder) error {
 	if b.table == "" && b.fromSub == nil && b.fromRaw == nil {
 		return ErrNoTable
 	}
-	c.write("select ")
+	c.write("SELECT ")
 	if b.distinct {
-		c.write("distinct ")
+		c.write("DISTINCT ")
 	}
 	if len(b.columns) == 0 {
 		c.write("*")
@@ -59,7 +59,7 @@ func (c *compiler) selectCore(b *Builder) error {
 		}
 	}
 
-	c.write(" from ")
+	c.write(" FROM ")
 	switch {
 	case b.fromRaw != nil:
 		c.raw(*b.fromRaw)
@@ -70,7 +70,7 @@ func (c *compiler) selectCore(b *Builder) error {
 		if err := c.subquery(b.fromSub); err != nil {
 			return err
 		}
-		c.write(" as ")
+		c.write(" AS ")
 		c.writeTable(b.fromAlias)
 	default:
 		c.writeTable(b.table)
@@ -94,13 +94,13 @@ func (c *compiler) selectCore(b *Builder) error {
 	}
 
 	if len(b.wheres) > 0 {
-		c.write(" where ")
+		c.write(" WHERE ")
 		if err := c.clauses(b.wheres); err != nil {
 			return err
 		}
 	}
 	if len(b.groups) > 0 {
-		c.write(" group by ")
+		c.write(" GROUP BY ")
 		for i, it := range b.groups {
 			if i > 0 {
 				c.write(", ")
@@ -111,7 +111,7 @@ func (c *compiler) selectCore(b *Builder) error {
 		}
 	}
 	if len(b.havings) > 0 {
-		c.write(" having ")
+		c.write(" HAVING ")
 		if err := c.clauses(b.havings); err != nil {
 			return err
 		}
@@ -125,10 +125,10 @@ func (c *compiler) selectCore(b *Builder) error {
 	return nil
 }
 
-// orderLimitOffset writes " order by ... limit n offset m" for a query or a union.
+// orderLimitOffset writes " ORDER BY ... LIMIT n OFFSET m" for a query or a union.
 func (c *compiler) orderLimitOffset(orders []orderItem, limit, offset *int) error {
 	if len(orders) > 0 {
-		c.write(" order by ")
+		c.write(" ORDER BY ")
 		for i, o := range orders {
 			if i > 0 {
 				c.write(", ")
@@ -149,10 +149,10 @@ func (c *compiler) orderLimitOffset(orders []orderItem, limit, offset *int) erro
 		lim = c.g.UnboundedLimit()
 	}
 	if lim != "" {
-		c.write(" limit " + lim)
+		c.write(" LIMIT " + lim)
 	}
 	if offset != nil {
-		c.write(" offset " + strconv.Itoa(*offset))
+		c.write(" OFFSET " + strconv.Itoa(*offset))
 	}
 	return nil
 }
@@ -165,7 +165,7 @@ func (c *compiler) item(it selectItem) error {
 		if err := c.subquery(it.sub); err != nil {
 			return err
 		}
-		c.write(" as ")
+		c.write(" AS ")
 		c.writeColumn(it.alias)
 	default:
 		c.writeColumn(it.column)
@@ -181,7 +181,7 @@ func (c *compiler) clauses(cs []clause) error {
 			c.write(cl.conn.String())
 			c.write(" ")
 		case cl.conn.negated():
-			c.write("not ")
+			c.write("NOT ")
 		}
 		if err := c.clause(cl); err != nil {
 			return err
@@ -197,9 +197,9 @@ func (c *compiler) clause(cl clause) error {
 	case clauseNull:
 		c.writeColumn(cl.column)
 		if cl.not {
-			c.write(" is not null")
+			c.write(" IS NOT NULL")
 		} else {
-			c.write(" is null")
+			c.write(" IS NULL")
 		}
 	case clauseBasic:
 		c.writeColumn(cl.column)
@@ -241,13 +241,13 @@ func (c *compiler) clause(cl clause) error {
 		if err := c.value(cl.values[0]); err != nil {
 			return err
 		}
-		c.write(" and ")
+		c.write(" AND ")
 		return c.value(cl.values[1])
 	case clauseBetweenColumns:
 		c.writeColumn(cl.column)
 		c.write(betweenKw(cl.not))
 		c.writeColumn(cl.cols()[0])
-		c.write(" and ")
+		c.write(" AND ")
 		c.writeColumn(cl.cols()[1])
 	case clauseValueBetween:
 		if err := c.value(cl.value); err != nil {
@@ -255,7 +255,7 @@ func (c *compiler) clause(cl clause) error {
 		}
 		c.write(betweenKw(cl.not))
 		c.writeColumn(cl.cols()[0])
-		c.write(" and ")
+		c.write(" AND ")
 		c.writeColumn(cl.cols()[1])
 	case clauseNested:
 		c.write("(")
@@ -264,7 +264,7 @@ func (c *compiler) clause(cl clause) error {
 		}
 		c.write(")")
 	case clauseExists:
-		c.write("exists ")
+		c.write("EXISTS ")
 		return c.subquery(cl.subquery())
 	case clauseDate:
 		c.write(c.g.DatePart(cl.datePart(), c.wrapColumn(cl.column)) + " " + cl.op + " ")
@@ -288,15 +288,15 @@ func (c *compiler) clause(cl clause) error {
 
 func betweenKw(not bool) string {
 	if not {
-		return " not between "
+		return " NOT BETWEEN "
 	}
-	return " between "
+	return " BETWEEN "
 }
 
 func (c *compiler) inClause(cl clause) error {
-	kw, empty := " in ", "0 = 1"
+	kw, empty := " IN ", "0 = 1"
 	if cl.not {
-		kw, empty = " not in ", "1 = 1"
+		kw, empty = " NOT IN ", "1 = 1"
 	}
 	if sub := cl.subquery(); sub != nil {
 		c.writeColumn(cl.column)
@@ -337,7 +337,7 @@ func (c *compiler) valueList(vs []any, closer string) error {
 	return nil
 }
 
-// subquery writes "(select ...)" sharing this compiler's arg numbering.
+// subquery writes "(SELECT ...)" sharing this compiler's arg numbering.
 func (c *compiler) subquery(q *Builder) error {
 	if q.err != nil {
 		return q.err

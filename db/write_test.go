@@ -69,9 +69,9 @@ func TestInsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").InsertSQL(m("name", "ann", "age", 30))
 			},
-			pg:   `insert into "users" ("age", "name") values ($1, $2)`,
-			my:   "insert into `users` (`age`, `name`) values (?, ?)",
-			lite: `insert into "users" ("age", "name") values (?, ?)`,
+			pg:   `INSERT INTO "users" ("age", "name") VALUES ($1, $2)`,
+			my:   "INSERT INTO `users` (`age`, `name`) VALUES (?, ?)",
+			lite: `INSERT INTO "users" ("age", "name") VALUES (?, ?)`,
 			args: []any{30, "ann"},
 		},
 		{
@@ -83,9 +83,9 @@ func TestInsertGolden(t *testing.T) {
 					m("a", 2, "b", sub),
 				)
 			},
-			pg:   `insert into "users" ("a", "b") values ($1, now()), ($2, (select "id" from "teams" where "slug" = $3))`,
-			my:   "insert into `users` (`a`, `b`) values (?, now()), (?, (select `id` from `teams` where `slug` = ?))",
-			lite: `insert into "users" ("a", "b") values (?, now()), (?, (select "id" from "teams" where "slug" = ?))`,
+			pg:   `INSERT INTO "users" ("a", "b") VALUES ($1, now()), ($2, (SELECT "id" FROM "teams" WHERE "slug" = $3))`,
+			my:   "INSERT INTO `users` (`a`, `b`) VALUES (?, now()), (?, (SELECT `id` FROM `teams` WHERE `slug` = ?))",
+			lite: `INSERT INTO "users" ("a", "b") VALUES (?, now()), (?, (SELECT "id" FROM "teams" WHERE "slug" = ?))`,
 			args: []any{1, 2, "x"},
 		},
 		{
@@ -93,18 +93,18 @@ func TestInsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").InsertSQL(m())
 			},
-			pg:   `insert into "t" default values`,
-			my:   "insert into `t` () values ()",
-			lite: `insert into "t" default values`,
+			pg:   `INSERT INTO "t" DEFAULT VALUES`,
+			my:   "INSERT INTO `t` () VALUES ()",
+			lite: `INSERT INTO "t" DEFAULT VALUES`,
 		},
 		{
 			name: "insert or ignore",
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").InsertOrIgnoreSQL(m("a", 1))
 			},
-			pg:   `insert into "t" ("a") values ($1) on conflict do nothing`,
-			my:   "insert ignore into `t` (`a`) values (?)",
-			lite: `insert or ignore into "t" ("a") values (?)`,
+			pg:   `INSERT INTO "t" ("a") VALUES ($1) ON CONFLICT DO NOTHING`,
+			my:   "INSERT IGNORE INTO `t` (`a`) VALUES (?)",
+			lite: `INSERT OR IGNORE INTO "t" ("a") VALUES (?)`,
 			args: []any{1},
 		},
 		{
@@ -112,9 +112,9 @@ func TestInsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").InsertGetIDSQL(m("a", 1))
 			},
-			pg:   `insert into "t" ("a") values ($1) returning "id"`,
-			my:   "insert into `t` (`a`) values (?)",
-			lite: `insert into "t" ("a") values (?)`,
+			pg:   `INSERT INTO "t" ("a") VALUES ($1) RETURNING "id"`,
+			my:   "INSERT INTO `t` (`a`) VALUES (?)",
+			lite: `INSERT INTO "t" ("a") VALUES (?)`,
 			args: []any{1},
 		},
 		{
@@ -122,9 +122,9 @@ func TestInsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").InsertGetIDSQL(m("a", 1), "uid")
 			},
-			pg:   `insert into "t" ("a") values ($1) returning "uid"`,
-			my:   "insert into `t` (`a`) values (?)",
-			lite: `insert into "t" ("a") values (?)`,
+			pg:   `INSERT INTO "t" ("a") VALUES ($1) RETURNING "uid"`,
+			my:   "INSERT INTO `t` (`a`) VALUES (?)",
+			lite: `INSERT INTO "t" ("a") VALUES (?)`,
 			args: []any{1},
 		},
 		{
@@ -132,9 +132,9 @@ func TestInsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Returning("id", "name").InsertSQL(m("a", 1))
 			},
-			pg:   `insert into "t" ("a") values ($1) returning "id", "name"`,
+			pg:   `INSERT INTO "t" ("a") VALUES ($1) RETURNING "id", "name"`,
 			my:   unsupported,
-			lite: `insert into "t" ("a") values (?) returning "id", "name"`,
+			lite: `INSERT INTO "t" ("a") VALUES (?) RETURNING "id", "name"`,
 			args: []any{1},
 		},
 		{
@@ -143,9 +143,9 @@ func TestInsertGolden(t *testing.T) {
 				src := db.Use(d).Table("old").Select("a", "b").Where("n", ">", 1)
 				return db.Use(d).Table("new").InsertUsingSQL([]string{"a", "b"}, src)
 			},
-			pg:   `insert into "new" ("a", "b") select "a", "b" from "old" where "n" > $1`,
-			my:   "insert into `new` (`a`, `b`) select `a`, `b` from `old` where `n` > ?",
-			lite: `insert into "new" ("a", "b") select "a", "b" from "old" where "n" > ?`,
+			pg:   `INSERT INTO "new" ("a", "b") SELECT "a", "b" FROM "old" WHERE "n" > $1`,
+			my:   "INSERT INTO `new` (`a`, `b`) SELECT `a`, `b` FROM `old` WHERE `n` > ?",
+			lite: `INSERT INTO "new" ("a", "b") SELECT "a", "b" FROM "old" WHERE "n" > ?`,
 			args: []any{1},
 		},
 		{
@@ -153,9 +153,9 @@ func TestInsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("new").InsertOrIgnoreUsingSQL([]string{"*"}, db.Use(d).Table("old"))
 			},
-			pg:   `insert into "new" select * from "old" on conflict do nothing`,
-			my:   "insert ignore into `new` select * from `old`",
-			lite: `insert or ignore into "new" select * from "old"`,
+			pg:   `INSERT INTO "new" SELECT * FROM "old" ON CONFLICT DO NOTHING`,
+			my:   "INSERT IGNORE INTO `new` SELECT * FROM `old`",
+			lite: `INSERT OR IGNORE INTO "new" SELECT * FROM "old"`,
 		},
 	})
 }
@@ -168,9 +168,9 @@ func TestUpsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").UpsertSQL(rows, []string{"email"}, []string{"name"})
 			},
-			pg:   `insert into "users" ("email", "name") values ($1, $2), ($3, $4) on conflict ("email") do update set "name" = "excluded"."name"`,
-			my:   "insert into `users` (`email`, `name`) values (?, ?), (?, ?) on duplicate key update `name` = values(`name`)",
-			lite: `insert into "users" ("email", "name") values (?, ?), (?, ?) on conflict ("email") do update set "name" = "excluded"."name"`,
+			pg:   `INSERT INTO "users" ("email", "name") VALUES ($1, $2), ($3, $4) ON CONFLICT ("email") DO UPDATE SET "name" = "excluded"."name"`,
+			my:   "INSERT INTO `users` (`email`, `name`) VALUES (?, ?), (?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)",
+			lite: `INSERT INTO "users" ("email", "name") VALUES (?, ?), (?, ?) ON CONFLICT ("email") DO UPDATE SET "name" = "excluded"."name"`,
 			args: []any{"a@x", "A", "b@x", "B"},
 		},
 		{
@@ -178,9 +178,9 @@ func TestUpsertGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").Returning("id").UpsertSQL(rows[:1], []string{"email"}, nil)
 			},
-			pg:   `insert into "users" ("email", "name") values ($1, $2) on conflict ("email") do update set "email" = "excluded"."email", "name" = "excluded"."name" returning "id"`,
+			pg:   `INSERT INTO "users" ("email", "name") VALUES ($1, $2) ON CONFLICT ("email") DO UPDATE SET "email" = "excluded"."email", "name" = "excluded"."name" RETURNING "id"`,
 			my:   unsupported,
-			lite: `insert into "users" ("email", "name") values (?, ?) on conflict ("email") do update set "email" = "excluded"."email", "name" = "excluded"."name" returning "id"`,
+			lite: `INSERT INTO "users" ("email", "name") VALUES (?, ?) ON CONFLICT ("email") DO UPDATE SET "email" = "excluded"."email", "name" = "excluded"."name" RETURNING "id"`,
 			args: []any{"a@x", "A"},
 		},
 	})
@@ -193,9 +193,9 @@ func TestUpdateGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").Where("id", 7).UpdateSQL(m("name", "z", "age", 5))
 			},
-			pg:   `update "users" set "age" = $1, "name" = $2 where "id" = $3`,
-			my:   "update `users` set `age` = ?, `name` = ? where `id` = ?",
-			lite: `update "users" set "age" = ?, "name" = ? where "id" = ?`,
+			pg:   `UPDATE "users" SET "age" = $1, "name" = $2 WHERE "id" = $3`,
+			my:   "UPDATE `users` SET `age` = ?, `name` = ? WHERE `id` = ?",
+			lite: `UPDATE "users" SET "age" = ?, "name" = ? WHERE "id" = ?`,
 			args: []any{5, "z", 7},
 		},
 		{
@@ -203,9 +203,9 @@ func TestUpdateGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Where("id", 1).Returning("*").UpdateSQL(m("n", db.Raw("n + ?", 2)))
 			},
-			pg:   `update "t" set "n" = n + $1 where "id" = $2 returning *`,
+			pg:   `UPDATE "t" SET "n" = n + $1 WHERE "id" = $2 RETURNING *`,
 			my:   unsupported,
-			lite: `update "t" set "n" = n + ? where "id" = ? returning *`,
+			lite: `UPDATE "t" SET "n" = n + ? WHERE "id" = ? RETURNING *`,
 			args: []any{2, 1},
 		},
 		{
@@ -216,9 +216,9 @@ func TestUpdateGolden(t *testing.T) {
 					Where("o.total", ">", 100).
 					UpdateSQL(m("u.vip", true))
 			},
-			pg:   `update "users" as "u" set "vip" = $1 where "ctid" in (select "u"."ctid" from "users" as "u" inner join "orders" as "o" on "o"."uid" = "u"."id" where "o"."total" > $2)`,
-			my:   "update `users` as `u` inner join `orders` as `o` on `o`.`uid` = `u`.`id` set `u`.`vip` = ? where `o`.`total` > ?",
-			lite: `update "users" as "u" set "vip" = ? where "rowid" in (select "u"."rowid" from "users" as "u" inner join "orders" as "o" on "o"."uid" = "u"."id" where "o"."total" > ?)`,
+			pg:   `UPDATE "users" AS "u" SET "vip" = $1 WHERE "ctid" IN (SELECT "u"."ctid" FROM "users" AS "u" INNER JOIN "orders" AS "o" ON "o"."uid" = "u"."id" WHERE "o"."total" > $2)`,
+			my:   "UPDATE `users` AS `u` INNER JOIN `orders` AS `o` ON `o`.`uid` = `u`.`id` SET `u`.`vip` = ? WHERE `o`.`total` > ?",
+			lite: `UPDATE "users" AS "u" SET "vip" = ? WHERE "rowid" IN (SELECT "u"."rowid" FROM "users" AS "u" INNER JOIN "orders" AS "o" ON "o"."uid" = "u"."id" WHERE "o"."total" > ?)`,
 			args: []any{true, 100},
 		},
 		{
@@ -226,9 +226,9 @@ func TestUpdateGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Where("a", 1).OrderBy("id").Limit(2).UpdateSQL(m("b", 2))
 			},
-			pg:   `update "t" set "b" = $1 where "ctid" in (select "t"."ctid" from "t" where "a" = $2 order by "id" asc limit 2)`,
-			my:   "update `t` set `b` = ? where `a` = ? order by `id` asc limit 2",
-			lite: `update "t" set "b" = ? where "rowid" in (select "t"."rowid" from "t" where "a" = ? order by "id" asc limit 2)`,
+			pg:   `UPDATE "t" SET "b" = $1 WHERE "ctid" IN (SELECT "t"."ctid" FROM "t" WHERE "a" = $2 ORDER BY "id" ASC LIMIT 2)`,
+			my:   "UPDATE `t` SET `b` = ? WHERE `a` = ? ORDER BY `id` ASC LIMIT 2",
+			lite: `UPDATE "t" SET "b" = ? WHERE "rowid" IN (SELECT "t"."rowid" FROM "t" WHERE "a" = ? ORDER BY "id" ASC LIMIT 2)`,
 			args: []any{2, 1},
 		},
 		{
@@ -236,9 +236,9 @@ func TestUpdateGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").AllRows().UpdateSQL(m("a", 1))
 			},
-			pg:   `update "t" set "a" = $1`,
-			my:   "update `t` set `a` = ?",
-			lite: `update "t" set "a" = ?`,
+			pg:   `UPDATE "t" SET "a" = $1`,
+			my:   "UPDATE `t` SET `a` = ?",
+			lite: `UPDATE "t" SET "a" = ?`,
 			args: []any{1},
 		},
 		{
@@ -249,7 +249,7 @@ func TestUpdateGolden(t *testing.T) {
 					Where("accounts.active", true).
 					UpdateFromSQL(m("plan", db.Raw(`"accounts"."plan"`)))
 			},
-			pg:   `update "users" set "plan" = "accounts"."plan" from "accounts" where "accounts"."active" = $1 and "accounts"."uid" = "users"."id"`,
+			pg:   `UPDATE "users" SET "plan" = "accounts"."plan" FROM "accounts" WHERE "accounts"."active" = $1 AND "accounts"."uid" = "users"."id"`,
 			my:   unsupported,
 			lite: unsupported,
 			args: []any{true},
@@ -259,7 +259,7 @@ func TestUpdateGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").Join("a", "a.uid", "users.id").UpdateFromSQL(m("x", 1))
 			},
-			pg:   `update "users" set "x" = $1 from "a" where "a"."uid" = "users"."id"`,
+			pg:   `UPDATE "users" SET "x" = $1 FROM "a" WHERE "a"."uid" = "users"."id"`,
 			my:   unsupported,
 			lite: unsupported,
 			args: []any{1},
@@ -274,9 +274,9 @@ func TestIncrementGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("posts").Where("id", 3).IncrementSQL("views", 1, m("seen_at", "now"))
 			},
-			pg:   `update "posts" set "views" = "views" + $1, "seen_at" = $2 where "id" = $3`,
-			my:   "update `posts` set `views` = `views` + ?, `seen_at` = ? where `id` = ?",
-			lite: `update "posts" set "views" = "views" + ?, "seen_at" = ? where "id" = ?`,
+			pg:   `UPDATE "posts" SET "views" = "views" + $1, "seen_at" = $2 WHERE "id" = $3`,
+			my:   "UPDATE `posts` SET `views` = `views` + ?, `seen_at` = ? WHERE `id` = ?",
+			lite: `UPDATE "posts" SET "views" = "views" + ?, "seen_at" = ? WHERE "id" = ?`,
 			args: []any{1, "now", 3},
 		},
 		{
@@ -287,9 +287,9 @@ func TestIncrementGolden(t *testing.T) {
 					Where("sku", "a").
 					DecrementEachSQL(m("qty", 2, "reserved", 1.5), m("reserved", 0))
 			},
-			pg:   `update "stock" set "qty" = "qty" - $1, "reserved" = $2 where "sku" = $3`,
-			my:   "update `stock` set `qty` = `qty` - ?, `reserved` = ? where `sku` = ?",
-			lite: `update "stock" set "qty" = "qty" - ?, "reserved" = ? where "sku" = ?`,
+			pg:   `UPDATE "stock" SET "qty" = "qty" - $1, "reserved" = $2 WHERE "sku" = $3`,
+			my:   "UPDATE `stock` SET `qty` = `qty` - ?, `reserved` = ? WHERE `sku` = ?",
+			lite: `UPDATE "stock" SET "qty" = "qty" - ?, "reserved" = ? WHERE "sku" = ?`,
 			args: []any{2, 0, "a"},
 		},
 		{
@@ -297,9 +297,9 @@ func TestIncrementGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Where("id", 1).IncrementEachSQL(m("a", 1, "b", 2), nil)
 			},
-			pg:   `update "t" set "a" = "a" + $1, "b" = "b" + $2 where "id" = $3`,
-			my:   "update `t` set `a` = `a` + ?, `b` = `b` + ? where `id` = ?",
-			lite: `update "t" set "a" = "a" + ?, "b" = "b" + ? where "id" = ?`,
+			pg:   `UPDATE "t" SET "a" = "a" + $1, "b" = "b" + $2 WHERE "id" = $3`,
+			my:   "UPDATE `t` SET `a` = `a` + ?, `b` = `b` + ? WHERE `id` = ?",
+			lite: `UPDATE "t" SET "a" = "a" + ?, "b" = "b" + ? WHERE "id" = ?`,
 			args: []any{1, 2, 1},
 		},
 	})
@@ -312,9 +312,9 @@ func TestDeleteGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Where("a", 1).DeleteSQL()
 			},
-			pg:   `delete from "t" where "a" = $1`,
-			my:   "delete from `t` where `a` = ?",
-			lite: `delete from "t" where "a" = ?`,
+			pg:   `DELETE FROM "t" WHERE "a" = $1`,
+			my:   "DELETE FROM `t` WHERE `a` = ?",
+			lite: `DELETE FROM "t" WHERE "a" = ?`,
 			args: []any{1},
 		},
 		{
@@ -322,9 +322,9 @@ func TestDeleteGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Where("a", 1).OrderBy("id").Limit(5).DeleteSQL()
 			},
-			pg:   `delete from "t" where "ctid" in (select "t"."ctid" from "t" where "a" = $1 order by "id" asc limit 5)`,
-			my:   "delete from `t` where `a` = ? order by `id` asc limit 5",
-			lite: `delete from "t" where "rowid" in (select "t"."rowid" from "t" where "a" = ? order by "id" asc limit 5)`,
+			pg:   `DELETE FROM "t" WHERE "ctid" IN (SELECT "t"."ctid" FROM "t" WHERE "a" = $1 ORDER BY "id" ASC LIMIT 5)`,
+			my:   "DELETE FROM `t` WHERE `a` = ? ORDER BY `id` ASC LIMIT 5",
+			lite: `DELETE FROM "t" WHERE "rowid" IN (SELECT "t"."rowid" FROM "t" WHERE "a" = ? ORDER BY "id" ASC LIMIT 5)`,
 			args: []any{1},
 		},
 		{
@@ -336,9 +336,9 @@ func TestDeleteGolden(t *testing.T) {
 					Where("b.active", true).
 					DeleteSQL()
 			},
-			pg:   `delete from "users" as "u" where "ctid" in (select "u"."ctid" from "users" as "u" inner join "bans" as "b" on "b"."uid" = "u"."id" where "b"."active" = $1)`,
-			my:   "delete `u` from `users` as `u` inner join `bans` as `b` on `b`.`uid` = `u`.`id` where `b`.`active` = ?",
-			lite: `delete from "users" as "u" where "rowid" in (select "u"."rowid" from "users" as "u" inner join "bans" as "b" on "b"."uid" = "u"."id" where "b"."active" = ?)`,
+			pg:   `DELETE FROM "users" AS "u" WHERE "ctid" IN (SELECT "u"."ctid" FROM "users" AS "u" INNER JOIN "bans" AS "b" ON "b"."uid" = "u"."id" WHERE "b"."active" = $1)`,
+			my:   "DELETE `u` FROM `users` AS `u` INNER JOIN `bans` AS `b` ON `b`.`uid` = `u`.`id` WHERE `b`.`active` = ?",
+			lite: `DELETE FROM "users" AS "u" WHERE "rowid" IN (SELECT "u"."rowid" FROM "users" AS "u" INNER JOIN "bans" AS "b" ON "b"."uid" = "u"."id" WHERE "b"."active" = ?)`,
 			args: []any{true},
 		},
 		{
@@ -346,9 +346,9 @@ func TestDeleteGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").Where("a", 1).Returning("id").DeleteSQL()
 			},
-			pg:   `delete from "t" where "a" = $1 returning "id"`,
+			pg:   `DELETE FROM "t" WHERE "a" = $1 RETURNING "id"`,
 			my:   unsupported,
-			lite: `delete from "t" where "a" = ? returning "id"`,
+			lite: `DELETE FROM "t" WHERE "a" = ? RETURNING "id"`,
 			args: []any{1},
 		},
 		{
@@ -356,18 +356,18 @@ func TestDeleteGolden(t *testing.T) {
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("t").AllRows().DeleteSQL()
 			},
-			pg:   `delete from "t"`,
-			my:   "delete from `t`",
-			lite: `delete from "t"`,
+			pg:   `DELETE FROM "t"`,
+			my:   "DELETE FROM `t`",
+			lite: `DELETE FROM "t"`,
 		},
 		{
 			name: "prefix applies to write tables",
 			build: func(d db.Dialect) (string, []any, error) {
 				return db.Use(d).Table("users").Prefix("p_").Where("id", 1).DeleteSQL()
 			},
-			pg:   `delete from "p_users" where "id" = $1`,
-			my:   "delete from `p_users` where `id` = ?",
-			lite: `delete from "p_users" where "id" = ?`,
+			pg:   `DELETE FROM "p_users" WHERE "id" = $1`,
+			my:   "DELETE FROM `p_users` WHERE `id` = ?",
+			lite: `DELETE FROM "p_users" WHERE "id" = ?`,
 			args: []any{1},
 		},
 	})
@@ -379,15 +379,15 @@ func TestTruncate(t *testing.T) {
 		tbl  string
 		want []db.Stmt
 	}{
-		{db.Postgres, "users", []db.Stmt{{SQL: `truncate "pre_users" restart identity`}}},
-		{db.MySQL, "users", []db.Stmt{{SQL: "truncate table `pre_users`"}}},
+		{db.Postgres, "users", []db.Stmt{{SQL: `TRUNCATE "pre_users" RESTART IDENTITY`}}},
+		{db.MySQL, "users", []db.Stmt{{SQL: "TRUNCATE TABLE `pre_users`"}}},
 		{db.SQLite, "users", []db.Stmt{
-			{SQL: `delete from sqlite_sequence where name = ?`, Args: []any{"pre_users"}},
-			{SQL: `delete from "pre_users"`},
+			{SQL: `DELETE FROM sqlite_sequence WHERE name = ?`, Args: []any{"pre_users"}},
+			{SQL: `DELETE FROM "pre_users"`},
 		}},
 		{db.SQLite, "aux.users", []db.Stmt{
-			{SQL: `delete from "aux".sqlite_sequence where name = ?`, Args: []any{"pre_users"}},
-			{SQL: `delete from "aux"."pre_users"`},
+			{SQL: `DELETE FROM "aux".sqlite_sequence WHERE name = ?`, Args: []any{"pre_users"}},
+			{SQL: `DELETE FROM "aux"."pre_users"`},
 		}},
 	}
 	for _, tc := range cases {

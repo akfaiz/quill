@@ -20,44 +20,44 @@ and SQLite; [MariaDB](#mariadb) is the MySQL column except where its section say
 | --- | --- | --- | --- |
 | Identifier quoting | `"x"` | `` `x` `` | `"x"` |
 | Placeholders | `$1, $2, ...` | `?` | `?` |
-| `OFFSET` with no `LIMIT` | `offset n` | adds `limit 18446744073709551615` | adds `limit -1` |
+| `OFFSET` with no `LIMIT` | `OFFSET n` | adds `LIMIT 18446744073709551615` | adds `LIMIT -1` |
 | Random order | `RANDOM()` | `RAND()` / `RAND(seed)` | `RANDOM()` |
-| Union members | `(select ...)` | `(select ...)` | `select * from (select ...)` |
-| Recursive CTE members | `anchor union all step` | same | same |
+| Union members | `(SELECT ...)` | `(SELECT ...)` | `SELECT * FROM (SELECT ...)` |
+| Recursive CTE members | `anchor UNION ALL step` | same | same |
 | `WithMaterialized` | `as [not] materialized` | `ErrUnsupported` | `ErrUnsupported` |
-| Insert, no columns | `default values` | `() values ()` | `default values` |
+| Insert, no columns | `DEFAULT VALUES` | `() VALUES ()` | `DEFAULT VALUES` |
 
 ## Matching and comparison
 
 | | PostgreSQL | MySQL | SQLite |
 | --- | --- | --- | --- |
-| Case-insensitive `WhereLike` | `ilike` | `like` | `like` |
-| Case-sensitive `WhereLike` | `like` | `like binary` | `glob` (`%`→`*`, `_`→`?`, literal `*` `?` escaped) |
-| `like` on a column | column cast `::text` | | |
-| `WhereNullSafeEquals` | `is not distinct from` | `<=>` | `is` |
+| Case-insensitive `WhereLike` | `ILIKE` | `LIKE` | `LIKE` |
+| Case-sensitive `WhereLike` | `LIKE` | `LIKE BINARY` | `GLOB` (`%`→`*`, `_`→`?`, literal `*` `?` escaped) |
+| `like` on a column | column cast `::TEXT` | | |
+| `WhereNullSafeEquals` | `IS NOT DISTINCT FROM` | `<=>` | `IS` |
 
 ## Dates
 
 | Part | PostgreSQL | MySQL | SQLite |
 | --- | --- | --- | --- |
-| `WhereDate` | `col::date` | `date(col)` | `strftime('%Y-%m-%d', col)` |
-| `WhereTime` | `col::time` | `time(col)` | `strftime('%H:%M:%S', col)` |
-| `WhereDay` / `Month` / `Year` | `extract(day from col)` | `day(col)` | `strftime('%d', col)` |
+| `WhereDate` | `col::DATE` | `DATE(col)` | `STRFTIME('%Y-%m-%d', col)` |
+| `WhereTime` | `col::TIME` | `TIME(col)` | `STRFTIME('%H:%M:%S', col)` |
+| `WhereDay` / `Month` / `Year` | `EXTRACT(DAY FROM col)` | `DAY(col)` | `STRFTIME('%d', col)` |
 
-SQLite compares the part as text (`cast(? as text)`), which is why numeric day and month values are
+SQLite compares the part as text (`CAST(? AS TEXT)`), which is why numeric day and month values are
 zero-padded for every dialect.
 
 ## Writes
 
 | | PostgreSQL | MySQL | SQLite |
 | --- | --- | --- | --- |
-| `InsertOrIgnore` | `on conflict do nothing` | `insert ignore` | `insert or ignore` |
-| `Upsert` | `on conflict (...) do update set x = "excluded"."x"` | `on duplicate key update x = values(x)` | as PostgreSQL |
+| `InsertOrIgnore` | `ON CONFLICT DO NOTHING` | `INSERT IGNORE` | `INSERT OR IGNORE` |
+| `Upsert` | `ON CONFLICT (...) DO UPDATE SET x = "excluded"."x"` | `ON DUPLICATE KEY UPDATE x = VALUES(x)` | as PostgreSQL |
 | `RETURNING` | yes | `ErrUnsupported` | yes, SQLite 3.35+ |
 | Update/delete with a join or limit | `ctid` subquery | native | `rowid` subquery |
 | `UpdateFrom` | yes | `ErrUnsupported` | `ErrUnsupported` |
-| `Truncate` | `truncate ... restart identity` | `truncate table` | `delete` + reset `sqlite_sequence` |
-| `InsertGetID` | `returning "id"` | last insert id | last insert id |
+| `Truncate` | `TRUNCATE ... RESTART IDENTITY` | `TRUNCATE TABLE` | `DELETE` + reset `sqlite_sequence` |
+| `InsertGetID` | `RETURNING "id"` | last insert id | last insert id |
 | Rows affected by an update | matched rows | **changed** rows only | matched rows |
 | Upsert rows affected | per row | 2 per updated row | per row |
 
@@ -67,11 +67,11 @@ zero-padded for every dialect.
 | --- | --- | --- | --- |
 | `JoinLateral`, `LeftJoinLateral` | yes | yes, MySQL 8.0.14+ | `ErrUnsupported` |
 | `StraightJoin` | `ErrUnsupported` | yes | `ErrUnsupported` |
-| `LockForUpdate` | `for update` | `for update` | ignored |
-| `SharedLock` | `for share` | `lock in share mode` | ignored |
+| `LockForUpdate` | `FOR UPDATE` | `FOR UPDATE` | ignored |
+| `SharedLock` | `FOR SHARE` | `LOCK IN SHARE MODE` | ignored |
 | `Lock("...")` | the clause as given | the clause as given | ignored |
 | `UseIndex`, `IgnoreIndex` | ignored | `use index (...)`, `ignore index (...)` | ignored |
-| `ForceIndex` | ignored | `force index (...)` | `indexed by name` (one name) |
+| `ForceIndex` | ignored | `FORCE INDEX (...)` | `INDEXED BY name` (one name) |
 
 ## JSON
 
@@ -79,13 +79,13 @@ The `column->a->b[0]` syntax works everywhere; the SQL differs.
 
 | | PostgreSQL | MySQL | SQLite |
 | --- | --- | --- | --- |
-| Text selector | `"c"->'a'->>'b'` | ``json_unquote(json_extract(`c`, '$."a"."b"'))`` | `json_extract("c", '$."a"."b"')` |
-| Compare to a boolean | `("c"->'a')::jsonb = 'true'::jsonb` | `json_extract(...) = true` | `json_extract(...) = true` |
-| `WhereJsonContains` | `("c"->'a')::jsonb @> ?` | `json_contains(c, ?, '$."a"')` | `exists (select 1 from json_each(...) where value is ?)` |
-| `WhereJsonContainsKey` | `coalesce((c)::jsonb ? 'k', false)` | `json_contains_path(...)` | `json_type(...) is not null` |
-| `WhereJsonLength` | `jsonb_array_length(...)` | `json_length(...)` | `json_array_length(...)` |
-| `WhereJsonOverlaps` | `ErrUnsupported` | `json_overlaps(...)` | `ErrUnsupported` |
-| JSON path update | `jsonb_set` | `json_set` | `json_patch` |
+| Text selector | `"c"->'a'->>'b'` | ``JSON_UNQUOTE(JSON_EXTRACT(`c`, '$."a"."b"'))`` | `JSON_EXTRACT("c", '$."a"."b"')` |
+| Compare to a boolean | `("c"->'a')::JSONB = 'true'::JSONB` | `JSON_EXTRACT(...) = TRUE` | `JSON_EXTRACT(...) = TRUE` |
+| `WhereJsonContains` | `("c"->'a')::JSONB @> ?` | `JSON_CONTAINS(c, ?, '$."a"')` | `EXISTS (SELECT 1 FROM JSON_EACH(...) WHERE value IS ?)` |
+| `WhereJsonContainsKey` | `COALESCE((c)::JSONB ? 'k', FALSE)` | `JSON_CONTAINS_PATH(...)` | `JSON_TYPE(...) IS NOT NULL` |
+| `WhereJsonLength` | `JSONB_ARRAY_LENGTH(...)` | `JSON_LENGTH(...)` | `JSON_ARRAY_LENGTH(...)` |
+| `WhereJsonOverlaps` | `ErrUnsupported` | `JSON_OVERLAPS(...)` | `ErrUnsupported` |
+| JSON path update | `JSONB_SET` | `JSON_SET` | `JSON_PATCH` |
 
 Differences you can observe:
 
@@ -115,20 +115,20 @@ Differences you can observe:
 
 ## MariaDB
 
-`db.MariaDB` uses MySQL's grammar (backtick quoting, `?` placeholders, `insert ignore`,
-`on duplicate key update`, native `update ... join`, `delete alias from`, `straight_join`, index
-hints, `lock in share mode`, `truncate table`). The generated SQL is **identical to MySQL's**
+`db.MariaDB` uses MySQL's grammar (backtick quoting, `?` placeholders, `INSERT IGNORE`,
+`ON DUPLICATE KEY UPDATE`, native `UPDATE ... JOIN`, `DELETE alias FROM`, `STRAIGHT_JOIN`, index
+hints, `LOCK IN SHARE MODE`, `TRUNCATE TABLE`). The generated SQL is **identical to MySQL's**
 except in two places, both of which the server rejects otherwise:
 
 | | MySQL | MariaDB |
 | --- | --- | --- |
 | `JoinLateral`, `LeftJoinLateral` | `lateral` (8.0.14+) | `db.ErrUnsupported`: MariaDB has no `LATERAL` |
-| JSON container value in an update (a map or slice) | ``cast(? as json)`` | ``json_query(?, '$')``: MariaDB has no `CAST AS JSON` |
+| JSON container value in an update (a map or slice) | ``CAST(? AS JSON)`` | ``JSON_QUERY(?, '$')``: MariaDB has no `CAST AS JSON` |
 
 Verified on MariaDB 11.4 against a live server:
 
 - **JSON text selectors are not changed.** `col->path` still renders as
-  ``json_unquote(json_extract(col, path))``, which returns arrays and objects as JSON text exactly
+  ``JSON_UNQUOTE(JSON_EXTRACT(col, path))``, which returns arrays and objects as JSON text exactly
   as the other dialects do. MariaDB's `json_value` would return `NULL` for arrays and objects (and
   `1` for a JSON `true`), so it is deliberately not used.
 - **`WhereJsonDoesntContain` on a missing path includes the row** (like SQLite): MariaDB's

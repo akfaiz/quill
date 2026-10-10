@@ -134,7 +134,7 @@ func TestRowFeedsTheSQLBuilders(t *testing.T) {
 	require.NoError(t, err)
 	sql, args, err := db.Use(db.Postgres).Table("accounts").InsertSQL(row)
 	require.NoError(t, err)
-	if want := `insert into "accounts" ("email", "name", "nick") values ($1, $2, $3)`; sql != want {
+	if want := `INSERT INTO "accounts" ("email", "name", "nick") VALUES ($1, $2, $3)`; sql != want {
 		t.Errorf("got %s\nwant %s", sql, want)
 	}
 	require.Len(t, args, 3)
@@ -142,7 +142,7 @@ func TestRowFeedsTheSQLBuilders(t *testing.T) {
 	row, _ = db.Row(struct {
 		A int `db:"a,omitempty"`
 	}{})
-	if sql, _, _ := db.Use(db.Postgres).Table("t").InsertSQL(row); sql != `insert into "t" default values` {
+	if sql, _, _ := db.Use(db.Postgres).Table("t").InsertSQL(row); sql != `INSERT INTO "t" DEFAULT VALUES` {
 		t.Errorf("got %s", sql)
 	}
 }

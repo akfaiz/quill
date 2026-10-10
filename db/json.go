@@ -27,10 +27,10 @@ func (c *compiler) wrapJSONSelector(value string) string {
 		// MariaDB's json_value would return NULL for arrays and objects, so it uses
 		// MySQL's form, which returns the JSON text like every other dialect.
 		field, path := c.jsonFieldAndPath(value)
-		return "json_unquote(json_extract(" + field + path + "))"
+		return "JSON_UNQUOTE(JSON_EXTRACT(" + field + path + "))"
 	case SQLite:
 		field, path := c.jsonFieldAndPath(value)
-		return "json_extract(" + field + path + ")"
+		return "JSON_EXTRACT(" + field + path + ")"
 	}
 	parts := strings.Split(value, "->")
 	field := c.wrapColumn(parts[0])
@@ -50,11 +50,11 @@ func (c *compiler) wrapJSONBooleanSelector(value string) string {
 	switch c.d {
 	case MySQL, MariaDB:
 		field, path := c.jsonFieldAndPath(value)
-		return "json_extract(" + field + path + ")"
+		return "JSON_EXTRACT(" + field + path + ")"
 	case SQLite:
 		return c.wrapJSONSelector(value)
 	}
-	return "(" + strings.ReplaceAll(c.wrapJSONSelector(value), "->>", "->") + ")::jsonb"
+	return "(" + strings.ReplaceAll(c.wrapJSONSelector(value), "->>", "->") + ")::JSONB"
 }
 
 // pgJSONColumn wraps a selector for jsonb operators: the final "->>" becomes "->".
@@ -85,7 +85,7 @@ func (c *compiler) jsonValue(v any) error {
 
 func notKw(not bool) string {
 	if not {
-		return "not "
+		return "NOT "
 	}
 	return ""
 }
@@ -94,12 +94,12 @@ func (c *compiler) jsonClause(cl clause) error {
 	switch cl.kind {
 	case clauseJSONBool:
 		c.write(c.wrapJSONBooleanSelector(cl.column) + " " + cl.op + " ")
-		lit := "false"
+		lit := "FALSE"
 		if cl.value.(bool) {
-			lit = "true"
+			lit = "TRUE"
 		}
 		if c.d == Postgres {
-			lit = "'" + lit + "'::jsonb"
+			lit = "'" + strings.ToLower(lit) + "'::JSONB" // a jsonb literal is lowercase JSON text
 		}
 		c.write(lit)
 	case clauseJSONContains:
@@ -110,9 +110,9 @@ func (c *compiler) jsonClause(cl clause) error {
 		}
 		field, path := c.jsonFieldAndPath(cl.column)
 		if path != "" {
-			field = "json_extract(" + field + path + ")"
+			field = "JSON_EXTRACT(" + field + path + ")"
 		}
-		c.write(notKw(cl.not) + "json_overlaps(" + field + ", ")
+		c.write(notKw(cl.not) + "JSON_OVERLAPS(" + field + ", ")
 		if err := c.jsonValue(cl.value); err != nil {
 			return err
 		}
@@ -130,21 +130,21 @@ func (c *compiler) jsonContains(cl clause) error {
 	switch c.d {
 	case MySQL, MariaDB:
 		field, path := c.jsonFieldAndPath(cl.column)
-		c.write("json_contains(" + field + ", ")
+		c.write("JSON_CONTAINS(" + field + ", ")
 		if err := c.jsonValue(cl.value); err != nil {
 			return err
 		}
 		c.write(path + ")")
 	case SQLite:
 		field, path := c.jsonFieldAndPath(cl.column)
-		c.write("exists (select 1 from json_each(" + field + path + ") where " +
-			c.g.Quote("json_each") + "." + c.g.Quote("value") + " is ")
+		c.write("EXISTS (SELECT 1 FROM JSON_EACH(" + field + path + ") WHERE " +
+			c.g.Quote("json_each") + "." + c.g.Quote("value") + " IS ")
 		if err := c.jsonValue(cl.value); err != nil {
 			return err
 		}
 		c.write(")")
 	default:
-		c.write("(" + c.pgJSONColumn(cl.column) + ")::jsonb @> ")
+		c.write("(" + c.pgJSONColumn(cl.column) + ")::JSONB @> ")
 		return c.jsonValue(cl.value)
 	}
 	return nil
@@ -155,10 +155,10 @@ func (c *compiler) jsonContainsKey(cl clause) error {
 	switch c.d {
 	case MySQL, MariaDB:
 		field, path := c.jsonFieldAndPath(cl.column)
-		c.write("ifnull(json_contains_path(" + field + ", 'one'" + path + "), 0)")
+		c.write("IFNULL(JSON_CONTAINS_PATH(" + field + ", 'one'" + path + "), 0)")
 	case SQLite:
 		field, path := c.jsonFieldAndPath(cl.column)
-		c.write("json_type(" + field + path + ") is not null")
+		c.write("JSON_TYPE(" + field + path + ") IS NOT NULL")
 	default:
 		segs := strings.Split(cl.column, "->")
 		if len(segs) < 2 {
@@ -176,12 +176,12 @@ func (c *compiler) jsonContainsKey(cl clause) error {
 			if index < 0 {
 				n = -index
 			}
-			c.write("case when jsonb_typeof((" + col + ")::jsonb) = 'array' then jsonb_array_length((" +
-				col + ")::jsonb) >= " + strconv.Itoa(n) + " else false end")
+			c.write("CASE WHEN JSONB_TYPEOF((" + col + ")::JSONB) = 'array' THEN JSONB_ARRAY_LENGTH((" +
+				col + ")::JSONB) >= " + strconv.Itoa(n) + " ELSE FALSE END")
 			return nil
 		}
 		// a bare "?" is the jsonb key-exists operator; it is not a bind marker.
-		c.write("coalesce((" + col + ")::jsonb ? '" + strings.ReplaceAll(last, "'", "''") + "', false)")
+		c.write("COALESCE((" + col + ")::JSONB ? '" + strings.ReplaceAll(last, "'", "''") + "', FALSE)")
 	}
 	return nil
 }
@@ -190,12 +190,12 @@ func (c *compiler) jsonLength(cl clause) error {
 	switch c.d {
 	case MySQL, MariaDB:
 		field, path := c.jsonFieldAndPath(cl.column)
-		c.write("json_length(" + field + path + ") " + cl.op + " ")
+		c.write("JSON_LENGTH(" + field + path + ") " + cl.op + " ")
 	case SQLite:
 		field, path := c.jsonFieldAndPath(cl.column)
-		c.write("json_array_length(" + field + path + ") " + cl.op + " ")
+		c.write("JSON_ARRAY_LENGTH(" + field + path + ") " + cl.op + " ")
 	default:
-		c.write("jsonb_array_length((" + c.pgJSONColumn(cl.column) + ")::jsonb) " + cl.op + " ")
+		c.write("JSONB_ARRAY_LENGTH((" + c.pgJSONColumn(cl.column) + ")::JSONB) " + cl.op + " ")
 	}
 	return c.value(cl.value)
 }
@@ -318,7 +318,7 @@ func (c *compiler) jsonColumnKey(key string) string {
 func (c *compiler) mysqlJSONValue(value any) error {
 	switch v := value.(type) {
 	case bool:
-		c.write(strconv.FormatBool(v))
+		c.write(strings.ToUpper(strconv.FormatBool(v)))
 	case Expression:
 		c.raw(v)
 	default:
@@ -331,14 +331,14 @@ func (c *compiler) mysqlJSONValue(value any) error {
 			return err
 		}
 		if c.d == MariaDB { // MariaDB has no CAST AS JSON
-			c.write("json_query(")
+			c.write("JSON_QUERY(")
 			c.param(enc)
 			c.write(", '$')")
 			return nil
 		}
-		c.write("cast(")
+		c.write("CAST(")
 		c.param(enc)
-		c.write(" as json)")
+		c.write(" AS JSON)")
 	}
 	return nil
 }
@@ -349,7 +349,7 @@ func (c *compiler) mysqlJSONValue(value any) error {
 func (c *compiler) jsonUpdateGroup(items []setItem) error {
 	if c.d.mysqlFamily() {
 		field, _ := c.jsonFieldAndPath(items[0].column)
-		c.write(field + " = json_set(" + field)
+		c.write(field + " = JSON_SET(" + field)
 		for _, it := range items {
 			_, p := c.jsonFieldAndPath(it.column)
 			c.write(p + ", ")
@@ -362,7 +362,7 @@ func (c *compiler) jsonUpdateGroup(items []setItem) error {
 	}
 	col, _ := jsonpath.SplitKey(items[0].column)
 	field := c.wrapColumn(jsonpath.LastSegment(col))
-	c.write(field + " = " + strings.Repeat("jsonb_set(", len(items)) + field + "::jsonb")
+	c.write(field + " = " + strings.Repeat("JSONB_SET(", len(items)) + field + "::JSONB")
 	for _, it := range items {
 		_, path := jsonpath.SplitKey(it.column)
 		c.write(", '{" + strings.Join(jsonpath.PgAttributes(path, `"`), ",") + "}', ")
