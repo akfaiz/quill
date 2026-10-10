@@ -27,4 +27,4 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+# .vscode/test/bench/*.new

@@ -2,11 +2,13 @@ GO       ?= go
 FUZZTIME ?= 20s
 BENCH    ?= .
 BENCHTIME ?= 1s
+BENCHSET ?= Select|Insert|Update|Upsert|Delete|ToRaw|Clone|Join
+BASELINE := test/bench/baseline.txt
 INTEGRATION_DIR := test/integration
 
 .DEFAULT_GOAL := help
 .PHONY: help build fmt vet lint test test-integration test-integration-lite \
-        test-postgres test-mysql test-mariadb test-sqlite bench fuzz tidy check ci
+        test-postgres test-mysql test-mariadb test-sqlite bench bench-baseline bench-compare fuzz tidy check ci
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -48,6 +50,13 @@ test-sqlite: ## Integration tests, SQLite only (no Docker)
 
 bench: ## Run benchmarks (BENCH=regexp, BENCHTIME=1s); no tests
 	$(GO) test -run=NONE -bench=$(BENCH) -benchmem -benchtime=$(BENCHTIME) ./...
+
+bench-baseline: ## Record the db benchmarks (6 runs) as the comparison baseline
+	$(GO) test -run=NONE -bench='$(BENCHSET)' -benchmem -count=6 ./db | tee $(BASELINE)
+
+bench-compare: ## Re-run the db benchmarks and compare with the baseline (needs benchstat)
+	$(GO) test -run=NONE -bench='$(BENCHSET)' -benchmem -count=6 ./db > $(BASELINE).new
+	benchstat $(BASELINE) $(BASELINE).new
 
 fuzz: ## Run every fuzz target for FUZZTIME (default 20s)
 	$(GO) test -run=NONE -fuzz=FuzzIdentifierQuoting          -fuzztime=$(FUZZTIME) ./db
