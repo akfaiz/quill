@@ -84,6 +84,10 @@ func TestSubqueryAndUnionErrors(t *testing.T) {
 		{"FROM sub needs alias", db.NewBuilder(d).FromSub(db.Use(d).Table("x"), ""), db.ErrInvalidArgs},
 		{"UNION member error", db.Use(d).Table("a").Union(db.NewBuilder(d)), db.ErrNoTable},
 		{"SELECT sub error", db.Use(d).Table("a").SelectSub(db.NewBuilder(d), "s"), db.ErrNoTable},
+		{"nil SELECT sub", db.Use(d).Table("a").SelectSub(nil, "s"), db.ErrInvalidArgs},
+		{"nil FROM sub", db.NewBuilder(d).FromSub(nil, "s"), db.ErrInvalidArgs},
+		{"nil UNION member", db.Use(d).Table("a").Union(nil), db.ErrInvalidArgs},
+		{"nil UNION ALL member", db.Use(d).Table("a").UnionAll(nil), db.ErrInvalidArgs},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

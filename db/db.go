@@ -303,9 +303,12 @@ func finishTx(tx *DB, fn func(*DB) error, commit, rollback func() error) (err er
 		if done {
 			return
 		}
-		// fn panicked: undo, then keep unwinding.
+		// fn panicked or called runtime.Goexit (t.FailNow): undo, then keep
+		// unwinding. Goexit leaves nothing to recover, so only a panic is re-raised.
 		_ = rollback()
-		panic(recover())
+		if r := recover(); r != nil {
+			panic(r)
+		}
 	}()
 	err = fn(tx)
 	done = true

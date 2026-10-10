@@ -10,6 +10,9 @@ package db
 //	// SELECT "name", (SELECT count(*) FROM "posts" WHERE "posts"."user_id" = "users"."id") AS
 //	//     "post_count" FROM "users"
 func (b *Builder) SelectSub(sub *Builder, as string) *Builder {
+	if sub == nil {
+		return b.fail(errNilSubquery)
+	}
 	b.columns = append(b.columns, selectItem{sub: sub.Clone(), alias: as})
 	return b
 }
@@ -24,6 +27,9 @@ func (b *Builder) SelectSub(sub *Builder, as string) *Builder {
 //	//     "t" WHERE "spent" > $1
 //	//     args: [100]
 func (b *Builder) FromSub(sub *Builder, as string) *Builder {
+	if sub == nil {
+		return b.fail(errNilSubquery)
+	}
 	b.table, b.fromRaw = "", nil
 	b.fromSub, b.fromAlias = sub.Clone(), as
 	return b
@@ -54,6 +60,9 @@ func (b *Builder) FromRaw(sql string, args ...any) *Builder {
 //	//     BY "name" ASC LIMIT 10
 //	//     args: [true]
 func (b *Builder) Union(q *Builder) *Builder {
+	if q == nil {
+		return b.fail(errNilSubquery)
+	}
 	b.unions = append(b.unions, unionClause{q: q.Clone()})
 	return b
 }
@@ -69,6 +78,9 @@ func (b *Builder) Union(q *Builder) *Builder {
 //	//     ORDER BY "name" ASC LIMIT 10
 //	//     args: [true]
 func (b *Builder) UnionAll(q *Builder) *Builder {
+	if q == nil {
+		return b.fail(errNilSubquery)
+	}
 	b.unions = append(b.unions, unionClause{q: q.Clone(), all: true})
 	return b
 }

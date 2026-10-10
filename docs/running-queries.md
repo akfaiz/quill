@@ -177,6 +177,9 @@ err := conn.Table("jobs").Where("state", "new").ChunkByID(ctx, 100, &batch, func
 }) // keyset on "id"; pass a column name last to use another unique column
 ```
 
+The next page starts after the last key as fetched, read before `fn` runs, so `fn` may sort,
+filter or truncate `batch` without changing which rows come next.
+
 ### One row at a time
 
 ```go

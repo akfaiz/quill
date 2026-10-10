@@ -310,6 +310,46 @@ func TestSubquerySnapshotSemantics(t *testing.T) {
 	}
 }
 
+func TestNilSubqueryInWhereIsAnError(t *testing.T) {
+	var nilSub *db.Builder
+	tests := []struct {
+		name  string
+		build *db.Builder
+	}{
+		{"where in", newT(db.Postgres).WhereIn("id", nilSub)},
+		{"where not in", newT(db.Postgres).WhereNotIn("id", nilSub)},
+		{"where value", newT(db.Postgres).Where("id", nilSub)},
+		{"where exists", newT(db.Postgres).WhereExists(nil)},
+		{"or where not exists", newT(db.Postgres).OrWhereNotExists(nil)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				_, _, err := tc.build.ToSQL()
+				assert.ErrorIs(t, err, db.ErrInvalidArgs)
+			})
+		})
+	}
+}
+
+func TestCallerSlicesAreCopied(t *testing.T) {
+	ids := []any{1, 2}
+	in := newT(db.Postgres).WhereIn("id", ids)
+	cols, vals := []string{"a", "b"}, []any{1, 2}
+	row := newT(db.Postgres).WhereRowValues(cols, "=", vals)
+	ids[0], cols[0], vals[0] = 99, "zzz", 99 // changing the caller's slices after use must not leak in
+
+	sql, args, err := in.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, `SELECT * FROM "t" WHERE "id" IN ($1, $2)`, sql)
+	assert.Equal(t, []any{1, 2}, args)
+
+	sql, args, err = row.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, `SELECT * FROM "t" WHERE ("a", "b") = ($1, $2)`, sql)
+	assert.Equal(t, []any{1, 2}, args)
+}
+
 // TestEveryWhereVariantUsesTheRightConnective appends each predicate method after
 // `where a = $1` and checks the connective that was emitted.
 func TestEveryWhereVariantUsesTheRightConnective(t *testing.T) {

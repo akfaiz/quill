@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,13 +34,14 @@ func (b *Builder) push(dst *[]clause, boolean string, c clause) *Builder {
 	return b
 }
 
-// flatten turns a slice/array (any element type) into []any; a scalar becomes a
-// one-element list. []byte is treated as a scalar.
+// flatten turns a slice/array (any element type) into a new []any; a scalar becomes
+// a one-element list. []byte is treated as a scalar. The result never shares the
+// caller's backing array, so changing the caller's slice later cannot change the query.
 func flatten(v any) []any {
 	// Common element types skip reflection, which boxes every element on the heap.
 	switch vs := v.(type) {
 	case []any:
-		return vs
+		return slices.Clone(vs)
 	case []int:
 		return toAny(vs)
 	case []int64:
@@ -68,6 +70,9 @@ func toAny[T any](vs []T) []any {
 
 func (b *Builder) inClause(dst *[]clause, boolean, column string, values any, not bool) *Builder {
 	if sub, ok := values.(*Builder); ok {
+		if sub == nil {
+			return b.fail(errNilSubquery)
+		}
 		return b.push(dst, boolean, clause{kind: clauseIn, column: column, x: &clauseExt{sub: sub}, not: not})
 	}
 	return b.push(dst, boolean, clause{kind: clauseIn, column: column, values: flatten(values), not: not})
@@ -917,7 +922,12 @@ func (b *Builder) rowValues(boolean string, columns []string, op string, values 
 	return b.push(
 		&b.wheres,
 		boolean,
-		clause{kind: clauseRowValues, x: &clauseExt{columns: columns}, op: op, values: values},
+		clause{
+			kind:   clauseRowValues,
+			x:      &clauseExt{columns: slices.Clone(columns)},
+			op:     op,
+			values: slices.Clone(values),
+		},
 	)
 }
 
