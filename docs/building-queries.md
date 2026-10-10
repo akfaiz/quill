@@ -236,6 +236,11 @@ conditions that contain an `OR` or a raw fragment are wrapped in parentheses fir
 `Where("a", 1).OrWhere("b", 2)` becomes `("a" = $1 OR "b" = $2) AND "id" > $3`. `Find`,
 `CursorPaginate`, `ChunkByID` and `UpdateOrInsert` group their added conditions the same way.
 
+Keyset paging on a query with `Union` returns `ErrInvalidArgs`: the key condition would apply to the
+first member only, so every page would re-read the others. Wrap the union with `FromSub` and page the
+wrapper. `ChunkByID` also replaces any `OrderBy` with the key order, since the last row of a page has
+to hold the highest key.
+
 ## Limit and offset
 
 ```go

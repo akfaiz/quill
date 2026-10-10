@@ -3,8 +3,24 @@ package db_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/akfaiz/quill/db"
 )
+
+func TestKeysetPagingRejectsUnions(t *testing.T) {
+	d := db.Postgres
+	union := func() *db.Builder { return db.Use(d).Table("a").Union(db.Use(d).Table("b")) }
+	for name, q := range map[string]*db.Builder{
+		"after":  union().ForPageAfterID(10, 5),
+		"before": union().ForPageBeforeID(10, 5),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := q.ToSQL()
+			require.ErrorIs(t, err, db.ErrInvalidArgs)
+		})
+	}
+}
 
 func TestOrderingGolden(t *testing.T) {
 	tests := []golden{

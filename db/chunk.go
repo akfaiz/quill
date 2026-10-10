@@ -48,7 +48,9 @@ func (b *Builder) Chunk(ctx context.Context, size int, dest any, fn func() (bool
 }
 
 // ChunkByID is Chunk using keyset paging on a unique column (default "id"), so
-// it is safe while fn updates or deletes the rows it was given.
+// it is safe while fn updates or deletes the rows it was given. Any OrderBy on the
+// query is replaced by the key order, and a query with a Union returns
+// ErrInvalidArgs (wrap it with FromSub first).
 //
 // Example:
 //
@@ -66,7 +68,9 @@ func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (
 	col := idColumn(column)
 	var last any
 	for {
-		if err := b.Clone().ForPageAfterID(size, last, col).Get(ctx, dest); err != nil {
+		// Reorder: the last row of a page must hold the highest key, so the key is
+		// the only ordering; a leading user ORDER BY would skip or repeat rows.
+		if err := b.Clone().Reorder().ForPageAfterID(size, last, col).Get(ctx, dest); err != nil {
 			return err
 		}
 		n := sliceLen(dest)

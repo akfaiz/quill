@@ -1,5 +1,7 @@
 package db
 
+import "fmt"
+
 // Latest orders by column descending (default "created_at").
 //
 // Example:
@@ -81,6 +83,9 @@ func (b *Builder) removeOrdersFor(column string) {
 //	conn.Table("posts").ForPageBeforeID(10, 42)
 //	// SELECT * FROM "posts" WHERE "id" < $1 ORDER BY "id" DESC LIMIT 10   args: [42]
 func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Builder {
+	if len(b.unions) > 0 {
+		return b.fail(errKeysetUnion)
+	}
 	col := idColumn(column)
 	b.removeOrdersFor(col)
 	b.wheres = isolated(b.wheres)
@@ -99,6 +104,9 @@ func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Bu
 //	conn.Table("posts").ForPageAfterID(10, 42)
 //	// SELECT * FROM "posts" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 10   args: [42]
 func (b *Builder) ForPageAfterID(perPage int, lastID any, column ...string) *Builder {
+	if len(b.unions) > 0 {
+		return b.fail(errKeysetUnion)
+	}
 	col := idColumn(column)
 	b.removeOrdersFor(col)
 	b.wheres = isolated(b.wheres)
@@ -109,6 +117,11 @@ func (b *Builder) ForPageAfterID(perPage int, lastID any, column ...string) *Bui
 	}
 	return b.OrderBy(col, "asc").Limit(perPage)
 }
+
+// errKeysetUnion is recorded when keyset paging meets a union: the key condition
+// would land in the first member only, so every page would re-read the others.
+var errKeysetUnion = fmt.Errorf(
+	"%w: keyset paging on a union; wrap it with FromSub and page the wrapper", ErrInvalidArgs)
 
 func idColumn(column []string) string {
 	if len(column) > 0 && column[0] != "" {
