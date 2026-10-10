@@ -9,7 +9,7 @@ root module stays free of third-party dependencies.
 ```sh
 make bench-libs                 # from the repo root: 6 runs per benchmark, saved to results.txt
 make bench-libs-update          # rewrite the Results table below from results.txt (no re-run)
-cd test/bench-libs && go test -v -run Comparable .   # print the SQL each library produces
+cd test/benchmark && go test -v -run Comparable .   # print the SQL each library produces
 ```
 
 ## What is measured
@@ -31,30 +31,30 @@ better; the last column is time relative to quill.
 
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
 | --- | --- | ---: | ---: | ---: | ---: |
-| SimpleSelect | quill | 547 | 856 | 7 | 1.0x |
-| | squirrel | 3,810 | 3,881 | 69 | 7.0x |
-| | goqu | 2,428 | 3,832 | 77 | 4.4x |
-| | sqlbuilder | 1,060 | 1,488 | 37 | 1.9x |
-| ComplexSelect | quill | 2,559 | 2,955 | 19 | 1.0x |
-| | squirrel | 10,490 | 10,901 | 180 | 4.1x |
-| | goqu | 9,146 | 11,328 | 329 | 3.6x |
-| | sqlbuilder | 2,511 | 3,865 | 60 | 1.0x |
-| WideWhere (12 predicates) | quill | 1,984 | 4,920 | 13 | 1.0x |
-| | squirrel | 12,646 | 12,989 | 230 | 6.4x |
-| | goqu | 6,210 | 7,024 | 214 | 3.1x |
-| | sqlbuilder | 2,812 | 3,793 | 57 | 1.4x |
-| Insert3Rows | quill | 1,446 | 2,432 | 24 | 1.0x |
-| | squirrel | 4,298 | 4,505 | 93 | 3.0x |
-| | goqu | 2,823 | 3,944 | 105 | 2.0x |
-| | sqlbuilder | 1,967 | 2,168 | 41 | 1.4x |
-| Update | quill | 820 | 1,040 | 16 | 1.0x |
-| | squirrel | 3,189 | 3,217 | 65 | 3.9x |
-| | goqu | 1,990 | 2,616 | 71 | 2.4x |
-| | sqlbuilder | 1,247 | 1,400 | 41 | 1.5x |
-| Delete | quill | 365 | 720 | 7 | 1.0x |
-| | squirrel | 1,719 | 1,808 | 34 | 4.7x |
-| | goqu | 1,091 | 1,284 | 37 | 3.0x |
-| | sqlbuilder | 779 | 936 | 28 | 2.1x |
+| SimpleSelect | quill | 504 | 856 | 7 | 1.0x |
+| | squirrel | 3,572 | 3,881 | 69 | 7.1x |
+| | goqu | 2,316 | 3,832 | 77 | 4.6x |
+| | sqlbuilder | 1,066 | 1,488 | 37 | 2.1x |
+| ComplexSelect | quill | 2,332 | 2,955 | 19 | 1.0x |
+| | squirrel | 9,431 | 10,900 | 180 | 4.0x |
+| | goqu | 8,159 | 11,328 | 329 | 3.5x |
+| | sqlbuilder | 2,308 | 3,865 | 60 | 1.0x |
+| WideWhere (12 predicates) | quill | 1,887 | 4,920 | 13 | 1.0x |
+| | squirrel | 11,725 | 12,989 | 230 | 6.2x |
+| | goqu | 5,658 | 7,024 | 214 | 3.0x |
+| | sqlbuilder | 2,595 | 3,793 | 57 | 1.4x |
+| Insert3Rows | quill | 1,286 | 2,432 | 24 | 1.0x |
+| | squirrel | 4,248 | 4,505 | 93 | 3.3x |
+| | goqu | 2,766 | 3,944 | 105 | 2.2x |
+| | sqlbuilder | 1,838 | 2,168 | 41 | 1.4x |
+| Update | quill | 769 | 1,040 | 16 | 1.0x |
+| | squirrel | 3,053 | 3,217 | 65 | 4.0x |
+| | goqu | 1,921 | 2,616 | 71 | 2.5x |
+| | sqlbuilder | 1,201 | 1,400 | 41 | 1.6x |
+| Delete | quill | 333 | 720 | 7 | 1.0x |
+| | squirrel | 1,631 | 1,808 | 34 | 4.9x |
+| | goqu | 946 | 1,284 | 37 | 2.8x |
+| | sqlbuilder | 676 | 936 | 28 | 2.0x |
 <!-- bench:end -->
 
 sqlbuilder is the closest competitor. On ComplexSelect it is level with quill (about 1.0x;

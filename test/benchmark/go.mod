@@ -1,4 +1,4 @@
-module github.com/akfaiz/quill/test/bench-libs
+module github.com/akfaiz/quill/test/benchmark
 
 go 1.25
 
