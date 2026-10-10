@@ -11,6 +11,15 @@ import (
 
 var aliasRe = regexp.MustCompile(`(?i)^(.+?)\s+as\s+(.+)$`)
 
+// matchAlias is aliasRe.FindStringSubmatch with a cheap pre-check: an alias needs
+// whitespace around "as" (RE2 \s is [\t\n\f\r ]), so most identifiers skip the regexp.
+func matchAlias(s string) []string {
+	if !strings.ContainsAny(s, " \t\n\f\r") {
+		return nil
+	}
+	return aliasRe.FindStringSubmatch(s)
+}
+
 // compiler accumulates SQL text and bind arguments in order, so placeholder
 // numbering stays correct across nested subqueries.
 type compiler struct {
@@ -64,44 +73,64 @@ func (c *compiler) raw(e Expression) {
 
 // wrapColumn quotes a column reference: "t.col", "col as alias", "*", "t.*".
 func (c *compiler) wrapColumn(s string) string {
-	if m := aliasRe.FindStringSubmatch(s); m != nil {
+	if m := matchAlias(s); m != nil {
 		return c.wrapColumn(m[1]) + " as " + c.g.Quote(m[2])
 	}
 	if jsonpath.IsSelector(s) {
 		return c.wrapJSONSelector(s)
 	}
-	segs := strings.Split(s, ".")
-	for i, seg := range segs {
+	if !strings.Contains(s, ".") { // common case: one segment, nothing to split or join
+		if s == "*" {
+			return s
+		}
+		return c.g.Quote(s)
+	}
+	var sb strings.Builder
+	sb.Grow(len(s) + 8)
+	for i := 0; ; i++ {
+		seg, rest, more := strings.Cut(s, ".")
 		switch {
 		case seg == "*":
-		case i == 0 && len(segs) > 1:
-			segs[i] = c.g.Quote(c.prefix + seg)
+			sb.WriteString(seg)
+		case i == 0 && more:
+			sb.WriteString(c.g.Quote(c.prefix + seg))
 		default:
-			segs[i] = c.g.Quote(seg)
+			sb.WriteString(c.g.Quote(seg))
 		}
+		if !more {
+			return sb.String()
+		}
+		sb.WriteByte('.')
+		s = rest
 	}
-	return strings.Join(segs, ".")
 }
 
 // wrapTable quotes a table reference ("schema.tbl", "tbl as t"), applying the
 // table prefix to the table name and alias.
 func (c *compiler) wrapTable(s string) string {
-	if m := aliasRe.FindStringSubmatch(s); m != nil {
+	if m := matchAlias(s); m != nil {
 		return c.wrapTable(m[1]) + " as " + c.g.Quote(c.prefix+m[2])
 	}
-	segs := strings.Split(s, ".")
-	for i, seg := range segs {
-		if i == len(segs)-1 {
-			seg = c.prefix + seg
-		}
-		segs[i] = c.g.Quote(seg)
+	if !strings.Contains(s, ".") {
+		return c.g.Quote(c.prefix + s)
 	}
-	return strings.Join(segs, ".")
+	var sb strings.Builder
+	sb.Grow(len(s) + 8)
+	for {
+		seg, rest, more := strings.Cut(s, ".")
+		if !more {
+			sb.WriteString(c.g.Quote(c.prefix + seg)) // only the last segment is the table name
+			return sb.String()
+		}
+		sb.WriteString(c.g.Quote(seg))
+		sb.WriteByte('.')
+		s = rest
+	}
 }
 
 // bareColumn strips a table qualifier and alias: "t.id", "id as x" -> "id" / "x".
 func bareColumn(c string) string {
-	if m := aliasRe.FindStringSubmatch(c); m != nil {
+	if m := matchAlias(c); m != nil {
 		return strings.TrimSpace(m[2])
 	}
 	if i := strings.LastIndex(c, "."); i >= 0 {

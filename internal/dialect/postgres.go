@@ -54,6 +54,20 @@ func (pgGrammar) LockSQL(k LockKind, raw string) string {
 func (pgGrammar) IndexHint(string, string) (string, error) { return "", nil }
 func (pgGrammar) Random(*int) string                       { return "RANDOM()" }
 
-func (pgGrammar) Quote(s string) string    { return `"` + doubleChar(s, '"') + `"` }
-func (pgGrammar) Placeholder(n int) string { return "$" + strconv.Itoa(n) }
-func (pgGrammar) UnboundedLimit() string   { return "" }
+func (pgGrammar) Quote(s string) string { return `"` + doubleChar(s, '"') + `"` }
+func (pgGrammar) Placeholder(n int) string {
+	if n >= 0 && n < len(pgPlaceholders) {
+		return pgPlaceholders[n]
+	}
+	return "$" + strconv.Itoa(n)
+}
+
+// pgPlaceholders caches "$0".."$99" so typical queries allocate no placeholder strings.
+var pgPlaceholders = func() (p [100]string) {
+	for i := range p {
+		p[i] = "$" + strconv.Itoa(i)
+	}
+	return
+}()
+
+func (pgGrammar) UnboundedLimit() string { return "" }

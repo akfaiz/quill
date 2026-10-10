@@ -72,7 +72,10 @@ func validateIndexNames(index string, list bool) error {
 }
 
 func doubleChar(s string, c byte) string {
-	out := make([]byte, 0, len(s))
+	if strings.IndexByte(s, c) < 0 { // nothing to escape: no copy
+		return s
+	}
+	out := make([]byte, 0, len(s)+1)
 	for i := 0; i < len(s); i++ {
 		if s[i] == c {
 			out = append(out, c)
