@@ -25,6 +25,10 @@ const (
 	endMarker   = "<!-- bench:end -->"
 )
 
+// libOrder is the row order within a scenario. A library not listed follows these in the
+// order it appears in the output. quill must stay first: the other rows are relative to it.
+var libOrder = []string{"quill", "sqlbuilder", "goqu", "squirrel"}
+
 // labels override the scenario name shown in the table.
 var labels = map[string]string{"WideWhere": "WideWhere (12 predicates)"}
 
@@ -98,6 +102,7 @@ func render(out string) (string, error) {
 		return "", fmt.Errorf("no benchmark lines parsed from output:\n%s", out)
 	}
 
+	slices.SortStableFunc(libs, func(a, b string) int { return libRank(a) - libRank(b) })
 	count := len(data[scenarios[0]+"/"+libs[0]].ns)
 	var w strings.Builder
 	fmt.Fprintf(&w, "%s\n", startMarker)
@@ -125,6 +130,13 @@ func render(out string) (string, error) {
 	}
 	fmt.Fprintf(&w, "%s", endMarker)
 	return w.String(), nil
+}
+
+func libRank(lib string) int {
+	if i := slices.Index(libOrder, lib); i >= 0 {
+		return i
+	}
+	return len(libOrder)
 }
 
 func splice(path, section string) error {

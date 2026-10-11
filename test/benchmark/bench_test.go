@@ -252,7 +252,7 @@ func libs(s scenario) []struct {
 	return []struct {
 		name string
 		fn   build
-	}{{"quill", s.quill}, {"squirrel", s.squirr}, {"goqu", s.goqu}, {"sqlbuilder", s.sqlb}}
+	}{{"quill", s.quill}, {"sqlbuilder", s.sqlb}, {"goqu", s.goqu}, {"squirrel", s.squirr}}
 }
 
 // TestScenariosAreComparable guards the comparison itself: every library must build

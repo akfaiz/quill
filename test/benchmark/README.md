@@ -1,9 +1,9 @@
 # Library comparison benchmarks
 
 Compares how fast quill builds SQL against three other Go query builders:
-[squirrel](https://github.com/Masterminds/squirrel) v1.5.4,
+[go-sqlbuilder](https://github.com/huandu/go-sqlbuilder) v1.44.0,
 [goqu](https://github.com/doug-martin/goqu) v9.19.0 and
-[go-sqlbuilder](https://github.com/huandu/go-sqlbuilder) v1.44.0. This is a separate module, so the
+[squirrel](https://github.com/Masterminds/squirrel) v1.5.4. This is a separate module, so the
 root module stays free of third-party dependencies.
 
 ```sh
@@ -32,29 +32,29 @@ better; the last column is time relative to quill.
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
 | --- | --- | ---: | ---: | ---: | ---: |
 | SimpleSelect | quill | 630 | 864 | 8 | 1.0x |
-| | squirrel | 4,001 | 3,881 | 69 | 6.4x |
-| | goqu | 2,416 | 3,832 | 77 | 3.8x |
 | | sqlbuilder | 1,132 | 1,488 | 37 | 1.8x |
+| | goqu | 2,416 | 3,832 | 77 | 3.8x |
+| | squirrel | 4,001 | 3,881 | 69 | 6.4x |
 | ComplexSelect | quill | 2,853 | 2,968 | 20 | 1.0x |
-| | squirrel | 10,697 | 10,901 | 180 | 3.7x |
-| | goqu | 9,656 | 11,328 | 329 | 3.4x |
 | | sqlbuilder | 2,952 | 3,865 | 60 | 1.0x |
+| | goqu | 9,656 | 11,328 | 329 | 3.4x |
+| | squirrel | 10,697 | 10,901 | 180 | 3.7x |
 | WideWhere (12 predicates) | quill | 2,210 | 4,920 | 13 | 1.0x |
-| | squirrel | 13,690 | 12,989 | 230 | 6.2x |
-| | goqu | 6,381 | 7,024 | 214 | 2.9x |
 | | sqlbuilder | 2,866 | 3,793 | 57 | 1.3x |
+| | goqu | 6,381 | 7,024 | 214 | 2.9x |
+| | squirrel | 13,690 | 12,989 | 230 | 6.2x |
 | Insert3Rows | quill | 1,516 | 2,432 | 24 | 1.0x |
-| | squirrel | 4,704 | 4,505 | 93 | 3.1x |
-| | goqu | 3,017 | 3,944 | 105 | 2.0x |
 | | sqlbuilder | 2,038 | 2,168 | 41 | 1.3x |
+| | goqu | 3,017 | 3,944 | 105 | 2.0x |
+| | squirrel | 4,704 | 4,505 | 93 | 3.1x |
 | Update | quill | 870 | 1,040 | 16 | 1.0x |
-| | squirrel | 3,402 | 3,217 | 65 | 3.9x |
-| | goqu | 2,188 | 2,616 | 71 | 2.5x |
 | | sqlbuilder | 1,458 | 1,400 | 41 | 1.7x |
+| | goqu | 2,188 | 2,616 | 71 | 2.5x |
+| | squirrel | 3,402 | 3,217 | 65 | 3.9x |
 | Delete | quill | 416 | 720 | 7 | 1.0x |
-| | squirrel | 1,851 | 1,808 | 34 | 4.4x |
-| | goqu | 1,077 | 1,284 | 37 | 2.6x |
 | | sqlbuilder | 731 | 936 | 28 | 1.8x |
+| | goqu | 1,077 | 1,284 | 37 | 2.6x |
+| | squirrel | 1,851 | 1,808 | 34 | 4.4x |
 <!-- bench:end -->
 
 sqlbuilder is the closest competitor. On ComplexSelect it is level with quill (about 1.0x;
@@ -76,14 +76,14 @@ what is bound to the `$n` placeholders.
 -- quill   args: [100]
 SELECT "id", "name" FROM "users" WHERE "votes" > $1 ORDER BY "id" DESC LIMIT 10
 
--- squirrel   args: [100]
-SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT 10
+-- sqlbuilder   args: [100 10]
+SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT $2
 
 -- goqu   args: [100 10]
 SELECT "id", "name" FROM "users" WHERE ("votes" > $1) ORDER BY "id" DESC LIMIT $2
 
--- sqlbuilder   args: [100 10]
-SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT $2
+-- squirrel   args: [100]
+SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT 10
 ```
 
 ### ComplexSelect
@@ -92,14 +92,14 @@ SELECT id, name FROM users WHERE votes > $1 ORDER BY id DESC LIMIT $2
 -- quill   args: [18 1 2 3 4 5 1]
 SELECT "u"."id", "u"."name", "p"."title" FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" LEFT JOIN "profiles" ON "profiles"."user_id" = "u"."id" WHERE "u"."age" >= $1 AND "u"."id" IN ($2, $3, $4, $5, $6) AND "u"."deleted_at" IS NULL GROUP BY "u"."id", "u"."name", "p"."title" HAVING "count(*)" > $7 ORDER BY "u"."name" ASC LIMIT 50 OFFSET 100
 
--- squirrel   args: [18 1 2 3 4 5 1]
-SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2,$3,$4,$5,$6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT 50 OFFSET 100
+-- sqlbuilder   args: [18 1 2 3 4 5 1 50 100]
+SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2, $3, $4, $5, $6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT $8 OFFSET $9
 
 -- goqu   args: [18 1 2 3 4 5 1 50 100]
 SELECT "u"."id", "u"."name", "p"."title" FROM "users" AS "u" INNER JOIN "posts" AS "p" ON ("p"."user_id" = "u"."id") LEFT JOIN "profiles" ON ("profiles"."user_id" = "u"."id") WHERE (("u"."age" >= $1) AND ("u"."id" IN ($2, $3, $4, $5, $6)) AND ("u"."deleted_at" IS NULL)) GROUP BY "u"."id", "u"."name", "p"."title" HAVING (COUNT(*) > $7) ORDER BY "u"."name" ASC LIMIT $8 OFFSET $9
 
--- sqlbuilder   args: [18 1 2 3 4 5 1 50 100]
-SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2, $3, $4, $5, $6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT $8 OFFSET $9
+-- squirrel   args: [18 1 2 3 4 5 1]
+SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id LEFT JOIN profiles ON profiles.user_id = u.id WHERE u.age >= $1 AND u.id IN ($2,$3,$4,$5,$6) AND u.deleted_at IS NULL GROUP BY u.id, u.name, p.title HAVING count(*) > $7 ORDER BY u.name ASC LIMIT 50 OFFSET 100
 ```
 
 ### WideWhere (12 predicates)
@@ -108,14 +108,14 @@ SELECT u.id, u.name, p.title FROM users AS u JOIN posts AS p ON p.user_id = u.id
 -- quill   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
 SELECT * FROM "orders" WHERE "a" = $1 AND "b" > $2 AND "c" < $3 AND "d" != $4 AND "e" >= $5 AND "f" <= $6 AND "g" IN ($7, $8, $9, $10, $11) AND "h" IS NULL AND "i" IS NOT NULL AND "j" BETWEEN $12 AND $13 AND "k"::TEXT ILIKE $14 AND "l" = $15
 
--- squirrel   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
-SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7,$8,$9,$10,$11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
+-- sqlbuilder   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
+SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7, $8, $9, $10, $11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
 
 -- goqu   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
 SELECT * FROM "orders" WHERE (("a" = $1) AND ("b" > $2) AND ("c" < $3) AND ("d" != $4) AND ("e" >= $5) AND ("f" <= $6) AND ("g" IN ($7, $8, $9, $10, $11)) AND ("h" IS NULL) AND ("i" IS NOT NULL) AND ("j" BETWEEN $12 AND $13) AND ("k" LIKE $14) AND ("l" = $15))
 
--- sqlbuilder   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
-SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7, $8, $9, $10, $11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
+-- squirrel   args: [1 2 3 4 5 6 1 2 3 4 5 7 8 x% 9]
+SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 AND f <= $6 AND g IN ($7,$8,$9,$10,$11) AND h IS NULL AND i IS NOT NULL AND j BETWEEN $12 AND $13 AND k LIKE $14 AND l = $15
 ```
 
 ### Insert3Rows
@@ -124,14 +124,14 @@ SELECT * FROM orders WHERE a = $1 AND b > $2 AND c < $3 AND d <> $4 AND e >= $5 
 -- quill   args: [30 a@x ann 25 b@x bob 41 c@x cy]
 INSERT INTO "users" ("age", "email", "name") VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
 
--- squirrel   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
-INSERT INTO users (name,age,email) VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9)
+-- sqlbuilder   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
+INSERT INTO users (name, age, email) VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
 
 -- goqu   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
 INSERT INTO "users" ("name", "age", "email") VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
 
--- sqlbuilder   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
-INSERT INTO users (name, age, email) VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)
+-- squirrel   args: [ann 30 a@x bob 25 b@x cy 41 c@x]
+INSERT INTO users (name,age,email) VALUES ($1,$2,$3),($4,$5,$6),($7,$8,$9)
 ```
 
 ### Update
@@ -140,13 +140,13 @@ INSERT INTO users (name, age, email) VALUES ($1, $2, $3), ($4, $5, $6), ($7, $8,
 -- quill   args: [31 ann 1]
 UPDATE "users" SET "age" = $1, "name" = $2 WHERE "id" = $3
 
--- squirrel   args: [ann 31 1]
+-- sqlbuilder   args: [ann 31 1]
 UPDATE users SET name = $1, age = $2 WHERE id = $3
 
 -- goqu   args: [31 ann 1]
 UPDATE "users" SET "age"=$1,"name"=$2 WHERE ("id" = $3)
 
--- sqlbuilder   args: [ann 31 1]
+-- squirrel   args: [ann 31 1]
 UPDATE users SET name = $1, age = $2 WHERE id = $3
 ```
 
@@ -156,13 +156,13 @@ UPDATE users SET name = $1, age = $2 WHERE id = $3
 -- quill   args: [1]
 DELETE FROM "users" WHERE "id" = $1
 
--- squirrel   args: [1]
+-- sqlbuilder   args: [1]
 DELETE FROM users WHERE id = $1
 
 -- goqu   args: [1]
 DELETE FROM "users" WHERE ("id" = $1)
 
--- sqlbuilder   args: [1]
+-- squirrel   args: [1]
 DELETE FROM users WHERE id = $1
 ```
 

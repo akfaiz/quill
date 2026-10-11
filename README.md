@@ -140,7 +140,7 @@ err := conn.Transaction(ctx, func(tx *db.DB) error {
 | [Dialects](docs/dialects.md) | What differs between PostgreSQL, MySQL, MariaDB and SQLite, with versions |
 | [Security](docs/security.md) | Injection, raw SQL, logging and personal data, untrusted cursors |
 | [Reference](docs/reference.md) | Errors, types, options and an index of every method |
-| [Benchmarks](test/benchmark/README.md) | Build-time comparison with squirrel, goqu and go-sqlbuilder |
+| [Benchmarks](test/benchmark/README.md) | Build-time comparison with go-sqlbuilder, goqu and squirrel |
 | [Contributing](CONTRIBUTING.md) | Layout, tests, fuzzing, integration suites, adding a dialect |
 
 API documentation is also available through `go doc github.com/akfaiz/quill/db`.
