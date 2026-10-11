@@ -31,30 +31,30 @@ better; the last column is time relative to quill.
 
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
 | --- | --- | ---: | ---: | ---: | ---: |
-| SimpleSelect | quill | 504 | 856 | 7 | 1.0x |
-| | squirrel | 3,572 | 3,881 | 69 | 7.1x |
-| | goqu | 2,316 | 3,832 | 77 | 4.6x |
-| | sqlbuilder | 1,066 | 1,488 | 37 | 2.1x |
-| ComplexSelect | quill | 2,332 | 2,955 | 19 | 1.0x |
-| | squirrel | 9,431 | 10,900 | 180 | 4.0x |
-| | goqu | 8,159 | 11,328 | 329 | 3.5x |
-| | sqlbuilder | 2,308 | 3,865 | 60 | 1.0x |
-| WideWhere (12 predicates) | quill | 1,887 | 4,920 | 13 | 1.0x |
-| | squirrel | 11,725 | 12,989 | 230 | 6.2x |
-| | goqu | 5,658 | 7,024 | 214 | 3.0x |
-| | sqlbuilder | 2,595 | 3,793 | 57 | 1.4x |
-| Insert3Rows | quill | 1,286 | 2,432 | 24 | 1.0x |
-| | squirrel | 4,248 | 4,505 | 93 | 3.3x |
-| | goqu | 2,766 | 3,944 | 105 | 2.2x |
-| | sqlbuilder | 1,838 | 2,168 | 41 | 1.4x |
-| Update | quill | 769 | 1,040 | 16 | 1.0x |
-| | squirrel | 3,053 | 3,217 | 65 | 4.0x |
-| | goqu | 1,921 | 2,616 | 71 | 2.5x |
-| | sqlbuilder | 1,201 | 1,400 | 41 | 1.6x |
-| Delete | quill | 333 | 720 | 7 | 1.0x |
-| | squirrel | 1,631 | 1,808 | 34 | 4.9x |
-| | goqu | 946 | 1,284 | 37 | 2.8x |
-| | sqlbuilder | 676 | 936 | 28 | 2.0x |
+| SimpleSelect | quill | 630 | 864 | 8 | 1.0x |
+| | squirrel | 4,001 | 3,881 | 69 | 6.4x |
+| | goqu | 2,416 | 3,832 | 77 | 3.8x |
+| | sqlbuilder | 1,132 | 1,488 | 37 | 1.8x |
+| ComplexSelect | quill | 2,853 | 2,968 | 20 | 1.0x |
+| | squirrel | 10,697 | 10,901 | 180 | 3.7x |
+| | goqu | 9,656 | 11,328 | 329 | 3.4x |
+| | sqlbuilder | 2,952 | 3,865 | 60 | 1.0x |
+| WideWhere (12 predicates) | quill | 2,210 | 4,920 | 13 | 1.0x |
+| | squirrel | 13,690 | 12,989 | 230 | 6.2x |
+| | goqu | 6,381 | 7,024 | 214 | 2.9x |
+| | sqlbuilder | 2,866 | 3,793 | 57 | 1.3x |
+| Insert3Rows | quill | 1,516 | 2,432 | 24 | 1.0x |
+| | squirrel | 4,704 | 4,505 | 93 | 3.1x |
+| | goqu | 3,017 | 3,944 | 105 | 2.0x |
+| | sqlbuilder | 2,038 | 2,168 | 41 | 1.3x |
+| Update | quill | 870 | 1,040 | 16 | 1.0x |
+| | squirrel | 3,402 | 3,217 | 65 | 3.9x |
+| | goqu | 2,188 | 2,616 | 71 | 2.5x |
+| | sqlbuilder | 1,458 | 1,400 | 41 | 1.7x |
+| Delete | quill | 416 | 720 | 7 | 1.0x |
+| | squirrel | 1,851 | 1,808 | 34 | 4.4x |
+| | goqu | 1,077 | 1,284 | 37 | 2.6x |
+| | sqlbuilder | 731 | 936 | 28 | 1.8x |
 <!-- bench:end -->
 
 sqlbuilder is the closest competitor. On ComplexSelect it is level with quill (about 1.0x;
