@@ -22,6 +22,13 @@ type setItem struct {
 	value  any
 }
 
+// adjustment is a SET value that adds to or subtracts from the column itself:
+// "col = col + ?".
+type adjustment struct {
+	op     string // "+" or "-"
+	amount any
+}
+
 var tableAliasRe = regexp.MustCompile(`(?i)\s+as\s+`)
 
 // Returning adds a RETURNING clause to insert/update/delete/upsert
@@ -29,24 +36,24 @@ var tableAliasRe = regexp.MustCompile(`(?i)\s+as\s+`)
 //
 // Example:
 //
-//	conn.Table("users").Returning("id", "created_at").InsertSQL(map[string]any{"name": "Ann"})
+//	conn.Insert("users").Values(map[string]any{"name": "Ann"}).Returning("id", "created_at").ToSQL()
 //	// INSERT INTO "users" ("name") VALUES ($1) RETURNING "id", "created_at"   args: [Ann]
-//	// MySQL: InsertSQL returns ErrUnsupported
-func (b *Builder) Returning(columns ...string) *Builder {
+//	// MySQL: ToSQL returns ErrUnsupported
+func (b *query) Returning(columns ...string) *query {
 	b.returning = append(b.returning, columns...)
 	return b
 }
 
 // AllRows confirms that an update/delete without a where clause is intended.
-// Without it, UpdateSQL/DeleteSQL/IncrementSQL refuse to build (ErrNoWhere).
+// Without it, an UpdateBuilder or DeleteBuilder refuses to build (ErrNoWhere).
 //
 // Example:
 //
-//	conn.Table("sessions").AllRows().DeleteSQL()
+//	conn.Delete("sessions").AllRows().ToSQL()
 //	// DELETE FROM "sessions"   args: []
-func (b *Builder) AllRows() *Builder { b.allRows = true; return b }
+func (b *query) AllRows() *query { b.allRows = true; return b }
 
-func (b *Builder) writeCompiler() (*compiler, error) {
+func (b *query) writeCompiler() (*compiler, error) {
 	c, err := b.newCompiler()
 	if err != nil {
 		return nil, err
@@ -61,7 +68,7 @@ func (b *Builder) writeCompiler() (*compiler, error) {
 	return c, nil
 }
 
-func (b *Builder) requireWhere() error {
+func (b *query) requireWhere() error {
 	if len(b.wheres) == 0 && b.limit == nil && !b.allRows {
 		return ErrNoWhere
 	}
@@ -70,7 +77,7 @@ func (b *Builder) requireWhere() error {
 
 // reserveWrite sizes the buffer and the args for an UPDATE/DELETE with nSets assignments,
 // as reserve does for SELECT. The numbers are estimates: undershooting only costs a regrow.
-func (c *compiler) reserveWrite(b *Builder, nSets int) {
+func (c *compiler) reserveWrite(b *query, nSets int) {
 	c.sb.Grow(48 + 20*nSets + 24*len(b.wheres))
 	if n := nSets + len(b.wheres); n > 0 && c.args == nil {
 		c.args = make([]any, 0, n)
@@ -153,7 +160,7 @@ func (c *compiler) returningClause(cols []string) error {
 	return nil
 }
 
-func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error {
+func (c *compiler) insert(b *query, rows []map[string]any, ignore bool) error {
 	cols, err := normalizeRows(rows)
 	if err != nil {
 		return err
@@ -196,15 +203,8 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 	return c.returningClause(b.returning)
 }
 
-// InsertSQL builds "INSERT INTO t (cols) VALUES (...), (...)". Columns are the
-// sorted keys of the first row; every row must have the same keys. A single
-// empty row inserts default values.
-//
-// Example:
-//
-//	conn.Table("users").InsertSQL(map[string]any{"name": "Ann", "email": "ann@example.com"})
-//	// INSERT INTO "users" ("email", "name") VALUES ($1, $2)   args: [ann@example.com Ann]
-func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
+// insertSQL compiles INSERT INTO t (cols) VALUES (...), (...) for DB.Insert.
+func (b *query) insertSQL(rows ...map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -212,16 +212,8 @@ func (b *Builder) InsertSQL(rows ...map[string]any) (string, []any, error) {
 	return c.result(c.insert(b, rows, false))
 }
 
-// InsertOrIgnoreSQL builds an insert that skips conflicting rows
-// (mysql "INSERT IGNORE", sqlite "INSERT OR IGNORE", postgres "ON CONFLICT DO NOTHING").
-//
-// Example:
-//
-//	conn.Table("users").InsertOrIgnoreSQL(map[string]any{"email": "ann@example.com"})
-//	// INSERT INTO "users" ("email") VALUES ($1) ON CONFLICT DO NOTHING
-//	// MySQL:  INSERT IGNORE INTO `users` (`email`) VALUES (?)
-//	// SQLite: INSERT OR IGNORE INTO "users" ("email") VALUES (?)
-func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, error) {
+// insertOrIgnoreSQL compiles an insert that skips conflicting rows (InsertBuilder.Ignore).
+func (b *query) insertOrIgnoreSQL(rows ...map[string]any) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -229,16 +221,9 @@ func (b *Builder) InsertOrIgnoreSQL(rows ...map[string]any) (string, []any, erro
 	return c.result(c.insert(b, rows, true))
 }
 
-// InsertGetIDSQL builds a single-row insert. On Postgres it appends
-// `RETURNING "<sequence>"` (default "id"); on MySQL/SQLite read the id from
-// the driver's LastInsertId.
-//
-// Example:
-//
-//	conn.Table("users").InsertGetIDSQL(map[string]any{"name": "Ann"})
-//	// INSERT INTO "users" ("name") VALUES ($1) RETURNING "id"   args: [Ann]
-//	// MySQL: INSERT INTO `users` (`name`) VALUES (?)   (no RETURNING)
-func (b *Builder) InsertGetIDSQL(row map[string]any, sequence ...string) (string, []any, error) {
+// insertGetIDSQL compiles a single-row insert; Postgres appends RETURNING "<sequence>"
+// (default "id"), MySQL/SQLite read LastInsertId (InsertBuilder.IDSQL).
+func (b *query) insertGetIDSQL(row map[string]any, sequence ...string) (string, []any, error) {
 	if b.dialect == Postgres {
 		seq := "id"
 		if len(sequence) > 0 && sequence[0] != "" {
@@ -247,10 +232,10 @@ func (b *Builder) InsertGetIDSQL(row map[string]any, sequence ...string) (string
 		b = b.Clone()
 		b.returning = []string{seq}
 	}
-	return b.InsertSQL(row)
+	return b.insertSQL(row)
 }
 
-func (c *compiler) insertUsing(b *Builder, columns []string, sub *Builder, ignore bool) error {
+func (c *compiler) insertUsing(b *query, columns []string, sub *query, ignore bool) error {
 	if sub == nil {
 		return fmt.Errorf("%w: nil subquery", ErrInvalidArgs)
 	}
@@ -271,15 +256,8 @@ func (c *compiler) insertUsing(b *Builder, columns []string, sub *Builder, ignor
 	return c.returningClause(b.returning)
 }
 
-// InsertUsingSQL builds "INSERT INTO t (cols) SELECT ...".
-//
-// Example:
-//
-//	sub := conn.Table("users").Select("name", "email").Where("active", true)
-//	conn.Table("archived_users").InsertUsingSQL([]string{"name", "email"}, sub)
-//	// INSERT INTO "archived_users" ("name", "email")
-//	//   SELECT "name", "email" FROM "users" WHERE "active" = $1   args: [true]
-func (b *Builder) InsertUsingSQL(columns []string, sub *Builder) (string, []any, error) {
+// insertUsingSQL compiles INSERT INTO t (cols) SELECT ... (InsertBuilder.Using).
+func (b *query) insertUsingSQL(columns []string, sub *query) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -287,15 +265,8 @@ func (b *Builder) InsertUsingSQL(columns []string, sub *Builder) (string, []any,
 	return c.result(c.insertUsing(b, columns, sub, false))
 }
 
-// InsertOrIgnoreUsingSQL is InsertUsingSQL that skips conflicting rows.
-//
-// Example:
-//
-//	sub := conn.Table("users").Select("name", "email")
-//	conn.Table("archived_users").InsertOrIgnoreUsingSQL([]string{"name", "email"}, sub)
-//	// INSERT INTO "archived_users" ("name", "email")
-//	//   SELECT "name", "email" FROM "users" ON CONFLICT DO NOTHING   args: []
-func (b *Builder) InsertOrIgnoreUsingSQL(columns []string, sub *Builder) (string, []any, error) {
+// insertOrIgnoreUsingSQL is insertUsingSQL that skips conflicting rows.
+func (b *query) insertOrIgnoreUsingSQL(columns []string, sub *query) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -305,17 +276,10 @@ func (b *Builder) InsertOrIgnoreUsingSQL(columns []string, sub *Builder) (string
 
 // ---- upsert ----
 
-// UpsertSQL builds an insert that updates on conflict. update lists the columns
-// that take the inserted value (nil means every inserted column). uniqueBy is
-// required on Postgres/SQLite (conflict target) and ignored on MySQL.
-//
-// Example:
-//
-//	rows := []map[string]any{{"email": "ann@example.com", "name": "Ann"}}
-//	conn.Table("users").UpsertSQL(rows, []string{"email"}, []string{"name"})
-//	// MySQL: INSERT INTO `users` (`email`, `name`) VALUES (?, ?)
-//	//        ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)   args: [ann@example.com Ann]
-func (b *Builder) UpsertSQL(rows []map[string]any, uniqueBy, update []string) (string, []any, error) {
+// upsertSQL compiles an insert that updates on conflict (InsertBuilder.Upsert). update
+// lists the columns that take the inserted value (nil means every inserted column);
+// uniqueBy is the conflict target on Postgres/SQLite and ignored on MySQL.
+func (b *query) upsertSQL(rows []map[string]any, uniqueBy, update []string) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -355,7 +319,7 @@ func (b *Builder) UpsertSQL(rows []map[string]any, uniqueBy, update []string) (s
 	return c.result(c.returningClause(b.returning))
 }
 
-func (b *Builder) withoutReturning() *Builder {
+func (b *query) withoutReturning() *query {
 	n := *b
 	n.returning = nil
 	return &n
@@ -417,7 +381,11 @@ func (c *compiler) setList(sets []setItem) error {
 		}
 		c.setColumnTo(&c.sb, s.column)
 		c.write(" = ")
-		if err := c.value(s.value); err != nil {
+		v := s.value
+		if a, ok := v.(adjustment); ok {
+			v = Raw(c.wrapColumn(s.column)+" "+a.op+" ?", a.amount)
+		}
+		if err := c.value(v); err != nil {
 			return err
 		}
 		written = true
@@ -425,7 +393,7 @@ func (c *compiler) setList(sets []setItem) error {
 	return nil
 }
 
-func (c *compiler) whereSuffix(b *Builder) error {
+func (c *compiler) whereSuffix(b *query) error {
 	if len(b.wheres) == 0 {
 		return nil
 	}
@@ -433,7 +401,7 @@ func (c *compiler) whereSuffix(b *Builder) error {
 	return c.clauses(b.wheres)
 }
 
-func (c *compiler) orderLimitSuffix(b *Builder) error {
+func (c *compiler) orderLimitSuffix(b *query) error {
 	return c.orderLimitOffset(b.orders, b.limit, nil)
 }
 
@@ -447,7 +415,7 @@ func (c *compiler) rowIDColumn() string {
 
 // rowIDSubquery writes `WHERE "ctid" IN (SELECT alias.ctid FROM ... )` for
 // Postgres/SQLite updates and deletes that carry joins or a limit.
-func (c *compiler) rowIDSubquery(b *Builder) error {
+func (c *compiler) rowIDSubquery(b *query) error {
 	alias := b.table
 	if parts := tableAliasRe.Split(b.table, -1); len(parts) > 1 {
 		alias = parts[len(parts)-1]
@@ -462,14 +430,14 @@ func (c *compiler) rowIDSubquery(b *Builder) error {
 // joinedOrderLimit rejects ORDER BY and LIMIT on a MySQL-family UPDATE or DELETE
 // with joins: the multiple-table syntax does not accept them, and dropping the
 // LIMIT would widen the write (the limit may be what satisfied requireWhere).
-func (c *compiler) joinedOrderLimit(b *Builder, stmt string) error {
+func (c *compiler) joinedOrderLimit(b *query, stmt string) error {
 	if c.d.mysqlFamily() && len(b.joins) > 0 && (b.limit != nil || len(b.orders) > 0) {
 		return fmt.Errorf("%w: order by or limit on %s with joins on %s", ErrUnsupported, stmt, c.d)
 	}
 	return nil
 }
 
-func (c *compiler) update(b *Builder, sets []setItem) error {
+func (c *compiler) update(b *query, sets []setItem) error {
 	if err := c.joinedOrderLimit(b, "update"); err != nil {
 		return err
 	}
@@ -505,42 +473,28 @@ func (c *compiler) update(b *Builder, sets []setItem) error {
 	return c.returningClause(b.returning)
 }
 
-// UpdateSQL builds "UPDATE t SET a = ?, ... WHERE ...". Columns are sorted.
-// Values may be Raw expressions or *Builder subqueries. Joins use native
-// UPDATE ... JOIN on MySQL and a ctid/rowid subquery on Postgres/SQLite.
-// Refuses to build without a where clause or limit unless AllRows() was called.
-//
-// Example:
-//
-//	conn.Table("users").Where("id", 7).UpdateSQL(map[string]any{"name": "Ann"})
-//	// UPDATE "users" SET "name" = $1 WHERE "id" = $2   args: [Ann 7]
-func (b *Builder) UpdateSQL(values map[string]any) (string, []any, error) {
+// updateSQL compiles UPDATE t SET ... WHERE ... (UpdateBuilder.ToSQL). Joins use native
+// UPDATE ... JOIN on MySQL and a ctid/rowid subquery on Postgres/SQLite. Refuses to
+// build without a where clause or limit unless AllRows was called.
+func (b *query) updateSQL(sets []setItem) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
 	}
-	if len(values) == 0 {
+	if len(sets) == 0 {
 		return "", nil, ErrNoValues
 	}
 	if err := b.requireWhere(); err != nil {
 		return "", nil, err
 	}
-	sets := sortedSets(values)
 	c.reserveWrite(b, len(sets))
 	return c.result(c.update(b, sets))
 }
 
-// UpdateFromSQL builds a Postgres "UPDATE t SET ... FROM j1, j2 WHERE <join conditions> AND <wheres>",
-// where each Join's ON conditions become part of the WHERE. Other dialects return
-// ErrUnsupported (use UpdateSQL with joins on MySQL).
-//
-// Example:
-//
-//	conn.Table("posts").Join("users", "users.id", "=", "posts.user_id").
-//		Where("users.banned", true).UpdateFromSQL(map[string]any{"hidden": true})
-//	// UPDATE "posts" SET "hidden" = $1 FROM "users"
-//	//   WHERE "users"."banned" = $2 AND "users"."id" = "posts"."user_id"   args: [true true]
-func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
+// updateFromSQL compiles a Postgres UPDATE t SET ... FROM j1, j2 WHERE <join conditions> AND <wheres>
+// (UpdateBuilder.FromJoins); each Join's ON conditions become part of the WHERE.
+// Other dialects return ErrUnsupported.
+func (b *query) updateFromSQL(sets []setItem) (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -548,7 +502,7 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 	if c.d != Postgres {
 		return "", nil, fmt.Errorf("%w: UpdateFrom on %s", ErrUnsupported, c.d)
 	}
-	if len(values) == 0 {
+	if len(sets) == 0 {
 		return "", nil, ErrNoValues
 	}
 	if len(b.wheres) == 0 && len(b.joins) == 0 && !b.allRows {
@@ -557,7 +511,7 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 	c.write("UPDATE ")
 	c.writeTable(b.table)
 	c.write(" SET ")
-	if err := c.setList(sortedSets(values)); err != nil {
+	if err := c.setList(sets); err != nil {
 		return "", nil, err
 	}
 	// The wheres and each join's ON conditions are separate predicates ANDed
@@ -593,80 +547,9 @@ func isNumber(v any) bool {
 	return false
 }
 
-// adjust builds "col = col <op> ?" updates for increment/decrement; extra columns
-// are set verbatim and win over an adjusted column of the same name.
-func (b *Builder) adjust(op string, amounts map[string]any, extra map[string]any) (string, []any, error) {
-	c, err := b.writeCompiler()
-	if err != nil {
-		return "", nil, err
-	}
-	if len(amounts) == 0 {
-		return "", nil, ErrNoValues
-	}
-	if err := b.requireWhere(); err != nil {
-		return "", nil, err
-	}
-	var sets []setItem
-	for _, it := range sortedSets(amounts) {
-		if _, overridden := extra[it.column]; overridden {
-			continue
-		}
-		if !isNumber(it.value) {
-			return "", nil, fmt.Errorf("%w: amount for %q must be numeric, got %T", ErrInvalidArgs, it.column, it.value)
-		}
-		sets = append(sets, setItem{it.column, Raw(c.wrapColumn(it.column)+" "+op+" ?", it.value)})
-	}
-	sets = append(sets, sortedSets(extra)...)
-	return c.result(c.update(b, sets))
-}
-
-// IncrementSQL builds "UPDATE t SET col = col + ? [, extra...] WHERE ...".
-//
-// Example:
-//
-//	conn.Table("posts").Where("id", 7).IncrementSQL("views", 1, map[string]any{"seen_by": "ann"})
-//	// UPDATE "posts" SET "views" = "views" + $1, "seen_by" = $2 WHERE "id" = $3   args: [1 ann 7]
-func (b *Builder) IncrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
-	return b.adjust("+", map[string]any{column: amount}, extra)
-}
-
-// DecrementSQL builds "UPDATE t SET col = col - ? [, extra...] WHERE ...".
-//
-// Example:
-//
-//	conn.Table("products").Where("id", 3).DecrementSQL("stock", 2, nil)
-//	// UPDATE "products" SET "stock" = "stock" - $1 WHERE "id" = $2   args: [2 3]
-func (b *Builder) DecrementSQL(column string, amount any, extra map[string]any) (string, []any, error) {
-	return b.adjust("-", map[string]any{column: amount}, extra)
-}
-
-// IncrementEachSQL increments several columns at once; amounts maps column to amount.
-//
-// Example:
-//
-//	conn.Table("stats").Where("day", "2026-01-01").
-//		IncrementEachSQL(map[string]any{"views": 5, "clicks": 1}, nil)
-//	// UPDATE "stats" SET "clicks" = "clicks" + $1, "views" = "views" + $2 WHERE "day" = $3
-//	// args: [1 5 2026-01-01]
-func (b *Builder) IncrementEachSQL(amounts, extra map[string]any) (string, []any, error) {
-	return b.adjust("+", amounts, extra)
-}
-
-// DecrementEachSQL decrements several columns at once.
-//
-// Example:
-//
-//	conn.Table("stats").Where("day", "2026-01-01").
-//		DecrementEachSQL(map[string]any{"views": 5, "clicks": 1}, nil)
-//	// UPDATE "stats" SET "clicks" = "clicks" - $1, "views" = "views" - $2 WHERE "day" = $3
-//	// args: [1 5 2026-01-01]
-func (b *Builder) DecrementEachSQL(amounts, extra map[string]any) (string, []any, error) {
-	return b.adjust("-", amounts, extra)
-}
-
 // ---- delete / truncate ----
 
-func (c *compiler) delete(b *Builder) error {
+func (c *compiler) delete(b *query) error {
 	if err := c.joinedOrderLimit(b, "delete"); err != nil {
 		return err
 	}
@@ -707,16 +590,11 @@ func (c *compiler) delete(b *Builder) error {
 	return c.returningClause(b.returning)
 }
 
-// DeleteSQL builds "DELETE FROM t WHERE ...". Joins use "DELETE alias FROM ... JOIN"
-// on MySQL and a ctid/rowid subquery on Postgres/SQLite; MySQL also honors
-// order/limit. Refuses to build without a where clause or limit unless
-// AllRows() was called (use TruncateSQL to empty a table).
-//
-// Example:
-//
-//	conn.Table("users").Where("id", 7).DeleteSQL()
-//	// DELETE FROM "users" WHERE "id" = $1   args: [7]
-func (b *Builder) DeleteSQL() (string, []any, error) {
+// deleteSQL compiles DELETE FROM t WHERE ... (DeleteBuilder.ToSQL). Joins use
+// "DELETE alias FROM ... JOIN" on MySQL and a ctid/rowid subquery on Postgres/SQLite;
+// MySQL also honors order/limit. Refuses to build without a where clause or limit
+// unless AllRows was called (use DB.Truncate to empty a table).
+func (b *query) deleteSQL() (string, []any, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -736,22 +614,14 @@ func (c *compiler) sqliteSchema(table string) string {
 	return ""
 }
 
-// TruncateSQL builds the statements that empty the table and reset its identity.
-// Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE),
-// so referencing tables are never emptied implicitly. MySQL: "TRUNCATE TABLE t".
-// SQLite has no TRUNCATE: it deletes the sqlite_sequence row, then every row.
-// Truncate runs both in one transaction and skips the first when the database has
-// no sqlite_sequence table yet (no table uses AUTOINCREMENT); run TruncateSQL's
-// statements yourself only if you handle that case.
-//
-// Example:
-//
-//	stmts, err := conn.Table("users").TruncateSQL()
-//	// Postgres: TRUNCATE "users" RESTART IDENTITY
-//	// MySQL:    TRUNCATE TABLE `users`
-//	// SQLite:   DELETE FROM sqlite_sequence WHERE name = ?  args: [users]
-//	//           DELETE FROM "users"
-func (b *Builder) TruncateSQL() ([]Stmt, error) {
+// truncateSQL builds the statements that empty the table and reset its identity.
+// Postgres: "TRUNCATE t RESTART IDENTITY" (no CASCADE), so referencing tables are
+// never emptied implicitly. MySQL: "TRUNCATE TABLE t". SQLite has no TRUNCATE: it
+// deletes the sqlite_sequence row, then every row. DB.Truncate runs them in one
+// transaction and skips the first when the database has no sqlite_sequence table
+// yet (no table uses AUTOINCREMENT); run DB.TruncateSQL's statements yourself only
+// if you handle that case.
+func (b *query) truncateSQL() ([]Stmt, error) {
 	c, err := b.writeCompiler()
 	if err != nil {
 		return nil, err

@@ -4,7 +4,8 @@
 
 | Path | Contents |
 | --- | --- |
-| `db/` | The public package. Builder, compiler, executor, typed API |
+| `db/` | The public package. Select, insert, update and delete builders, compiler, executor, typed API |
+| `internal/chaingen` | The generator for the builders' chain methods (`db/chain_gen.go`, run with `go generate ./db`) |
 | `internal/dialect` | The per-database `Grammar` implementations (quoting, placeholders, LIKE, dates, locks, index hints) |
 | `internal/rowmap` | Rows to structs, maps and scalars, and structs back to rows |
 | `internal/jsonpath` | `col->a->b[0]` selectors rendered into JSON path literals |
@@ -16,7 +17,7 @@
 | `docs/` | The guides |
 
 Why `internal/`: each package is self-contained (no import of `db`), unit-testable on its own,
-and hidden from users. Code that works on `Builder`'s unexported state (the compiler, the
+and hidden from users. Code that works on the builders' unexported state (the compiler, the
 `where`/`join`/`write` code, the executor) has to stay in `db/`, because Go cannot define methods
 on a type from another package.
 
@@ -47,7 +48,7 @@ go test -race ./...                  # runs on SQLite, PostgreSQL and MySQL
 | Layer | Where | Proves |
 | --- | --- | --- |
 | Golden SQL | `db/*_test.go` | The exact SQL and arguments for every dialect. Use `db.Use(...)`, no database needed |
-| Parity | `db/typed_chain_test.go` | Every typed chain method produces the same SQL as its builder method |
+| Parity | `db/chain_gen.go`, `internal/chaingen` | The clause and typed chain methods are generated from one source, so every `Query[T]` method matches its `SelectBuilder` method |
 | Unit | `internal/*/..._test.go` | Each internal package in isolation (fake `database/sql` driver for scanning) |
 | Examples | `db/example_test.go` | Documentation that is executed and checked |
 | Fuzz | see below | Quoting, placeholder and untrusted-input code never misbehave |
@@ -69,7 +70,7 @@ Each container-backed file starts its own container on first use through
 [testcontainers-go](https://github.com/testcontainers/testcontainers-go), shares it across that
 file's tests, and removes it when the run ends. They hold the schema, the seed rows, and every
 dialect-specific expectation inline (for example MySQL's straight joins and index hints, or
-PostgreSQL's `UpdateFrom` and `RETURNING`), so there is no branching on the dialect.
+PostgreSQL's `UpdateBuilder.FromJoins` and `RETURNING`), so there is no branching on the dialect.
 
 Run one database:
 
@@ -129,14 +130,18 @@ runs as a regression case in a plain `go test`.
 
 ## Adding a builder method
 
-1. Add the method on `Builder` (record bad arguments with `b.fail(err)`, do not panic).
+1. Add the method on the internal `query` type in `db/builder.go` (or the file for its group; record bad
+   arguments with `b.fail(err)`, do not panic).
 2. Add the clause or state, and compile it in `db/grammar.go` (or `write.go`, `join.go`,
    `json.go`). Write arguments through `c.param` / `c.value` so numbering stays right.
 3. Add a golden test for PostgreSQL, MySQL and SQLite, plus an error test.
-4. If it is commonly chained, add it to `typed_chain.go` and the parity table in
-   `typed_chain_test.go`. The parity test fails if you forget.
-5. Add it to the relevant guide in `docs/`. `docs/reference.md` lists every method, so add it there
-   as well.
+4. Run `go generate ./db`. `internal/chaingen` copies the exported chain methods of `query` onto the
+   builders that may expose them (`SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`,
+   `WhereClause`, `HavingClause` and `Query[T]`) in `db/chain_gen.go`; never edit that file by hand. If
+   the method belongs to a new group (for example select-only), add it to the group table in
+   `internal/chaingen`.
+5. Add it to the relevant guide in `docs/`. `docs/reference.md` lists every method of every builder, so
+   add it there as well.
 6. If a database could reject or reinterpret the SQL, add an integration case.
 
 ## Adding a dialect

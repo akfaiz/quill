@@ -15,7 +15,7 @@ import (
 // Example:
 //
 //	var users []User
-//	p, err := conn.Table("users").OrderBy("id").Paginate(ctx, 2, 2, &users)
+//	p, err := conn.Select().From("users").OrderBy("id").Paginate(ctx, 2, 2, &users)
 //	// with 5 matching rows: p.Total = 5, p.PerPage = 2, p.CurrentPage = 2
 //	// p.LastPage = 3, p.From = 3, p.To = 4
 //	// with no rows: p.LastPage = 1, p.From = 0, p.To = 0 and users is empty
@@ -33,7 +33,7 @@ type Page struct {
 // Example:
 //
 //	var users []User
-//	p, err := conn.Table("users").OrderBy("id").SimplePaginate(ctx, 1, 2, &users)
+//	p, err := conn.Select().From("users").OrderBy("id").SimplePaginate(ctx, 1, 2, &users)
 //	// p.PerPage = 2, p.CurrentPage = 1, p.HasMore = true when a third row exists
 type SimplePage struct {
 	PerPage     int
@@ -46,7 +46,7 @@ type SimplePage struct {
 // Example:
 //
 //	var users []User
-//	p, err := conn.Table("users").CursorPaginate(ctx, 10, "", &users)
+//	p, err := conn.Select().From("users").CursorPaginate(ctx, 10, "", &users)
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 11
 //	// p.HasMore = false and p.NextCursor = "" when 10 or fewer rows remain
 type CursorPage struct {
@@ -61,7 +61,7 @@ type CursorPage struct {
 // Example:
 //
 //	opt := db.CursorOptions{Column: "id", Desc: true}
-//	p, err := conn.Table("orders").CursorPaginate(ctx, 5, "", &orders, opt)
+//	p, err := conn.Select().From("orders").CursorPaginate(ctx, 5, "", &orders, opt)
 //	// SELECT * FROM "orders" ORDER BY "id" DESC LIMIT 6
 type CursorOptions struct {
 	Column string
@@ -97,11 +97,11 @@ func truncateSlice(dest any, n int) {
 // Example:
 //
 //	var users []User
-//	p, err := conn.Table("users").OrderBy("id").Paginate(ctx, 2, 2, &users)
+//	p, err := conn.Select().From("users").OrderBy("id").Paginate(ctx, 2, 2, &users)
 //	// SELECT COUNT(*) AS "aggregate" FROM "users"
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 2 OFFSET 2
 //	// with 5 rows: p.Total = 5, p.LastPage = 3, p.From = 3, p.To = 4
-func (b *Builder) Paginate(ctx context.Context, page, perPage int, dest any) (Page, error) {
+func (b *query) Paginate(ctx context.Context, page, perPage int, dest any) (Page, error) {
 	page, err := checkPaging(page, perPage)
 	if err != nil {
 		return Page{}, err
@@ -137,10 +137,10 @@ func (b *Builder) Paginate(ctx context.Context, page, perPage int, dest any) (Pa
 // Example:
 //
 //	var users []User
-//	p, err := conn.Table("users").OrderBy("id").SimplePaginate(ctx, 1, 2, &users)
+//	p, err := conn.Select().From("users").OrderBy("id").SimplePaginate(ctx, 1, 2, &users)
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 3 OFFSET 0
 //	// users holds at most 2 rows; p.HasMore = true when a third came back
-func (b *Builder) SimplePaginate(ctx context.Context, page, perPage int, dest any) (SimplePage, error) {
+func (b *query) SimplePaginate(ctx context.Context, page, perPage int, dest any) (SimplePage, error) {
 	page, err := checkPaging(page, perPage)
 	if err != nil {
 		return SimplePage{}, err
@@ -163,11 +163,11 @@ func (b *Builder) SimplePaginate(ctx context.Context, page, perPage int, dest an
 // Example:
 //
 //	var users []User
-//	p, err := conn.Table("users").CursorPaginate(ctx, 2, "", &users)
+//	p, err := conn.Select().From("users").CursorPaginate(ctx, 2, "", &users)
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 3
-//	// next page: conn.Table("users").CursorPaginate(ctx, 2, p.NextCursor, &users)
+//	// next page: conn.Select().From("users").CursorPaginate(ctx, 2, p.NextCursor, &users)
 //	// SELECT * FROM "users" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 3   args: [2]
-func (b *Builder) CursorPaginate(
+func (b *query) CursorPaginate(
 	ctx context.Context,
 	perPage int,
 	cursor string,

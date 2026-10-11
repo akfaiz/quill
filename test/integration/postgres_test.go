@@ -84,7 +84,7 @@ func (s *pgServer) reset(t *testing.T) *db.DB {
 func TestPostgresScanningAndReads(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
-	users := func() *db.Builder { return conn.Table("users").OrderBy("id") }
+	users := func() *db.SelectBuilder { return conn.Select().From("users").OrderBy("id") }
 
 	var us []User
 	require.NoError(t, users().Get(ctx, &us))
@@ -96,7 +96,7 @@ func TestPostgresScanningAndReads(t *testing.T) {
 	assert.Equal(t, 1.5, us[0].Score)
 
 	var rows []map[string]any
-	require.NoError(t, conn.Table("users").Select("name", "age").OrderBy("id").Get(ctx, &rows))
+	require.NoError(t, conn.Select("name", "age").From("users").OrderBy("id").Get(ctx, &rows))
 	assert.Equal(t, "Ann", rows[0]["name"]) // text columns arrive as string, not []byte
 	assert.Nil(t, rows[3]["age"])
 
@@ -122,40 +122,40 @@ func TestPostgresScanningAndReads(t *testing.T) {
 func TestPostgresAggregates(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
-	n, err := conn.Table("users").Count(ctx)
+	n, err := conn.Select().From("users").Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), n)
-	n, err = conn.Table("users").Count(ctx, "age")
+	n, err = conn.Select().From("users").Count(ctx, "age")
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), n)
-	sum, err := conn.Table("users").Sum(ctx, "age")
+	sum, err := conn.Select().From("users").Sum(ctx, "age")
 	require.NoError(t, err)
 	assert.Equal(t, 96.0, sum)
-	avg, err := conn.Table("users").Avg(ctx, "age")
+	avg, err := conn.Select().From("users").Avg(ctx, "age")
 	require.NoError(t, err)
 	assert.Equal(t, 32.0, avg)
 	var mn, mx int
-	require.NoError(t, conn.Table("users").Min(ctx, "age", &mn))
-	require.NoError(t, conn.Table("users").Max(ctx, "age", &mx))
+	require.NoError(t, conn.Select().From("users").Min(ctx, "age", &mn))
+	require.NoError(t, conn.Select().From("users").Max(ctx, "age", &mx))
 	assert.Equal(t, [2]int{25, 41}, [2]int{mn, mx})
-	none, err := conn.Table("users").Where("id", 99).Sum(ctx, "age")
+	none, err := conn.Select().From("users").Where("id", 99).Sum(ctx, "age")
 	require.NoError(t, err)
 	assert.Equal(t, 0.0, none)
 
 	// wrapped forms: grouped, distinct, limited, joined. Strict servers need the group column selected.
-	n, err = conn.Table("posts").Select("user_id").GroupBy("user_id").Count(ctx)
+	n, err = conn.Select("user_id").From("posts").GroupBy("user_id").Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), n)
-	n, err = conn.Table("posts").Select("user_id").Distinct().Count(ctx)
+	n, err = conn.Select("user_id").From("posts").Distinct().Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), n)
-	n, err = conn.Table("users").OrderBy("id").Limit(2).Count(ctx)
+	n, err = conn.Select().From("users").OrderBy("id").Limit(2).Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
-	n, err = conn.Table("posts").Join("users", "users.id", "posts.user_id").Where("posts.views", ">", 0).Count(ctx)
+	n, err = conn.Select().From("posts").Join("users", "users.id", "posts.user_id").Where("posts.views", ">", 0).Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), n)
-	total, err := conn.Table("posts").OrderBy("id").Limit(3).Sum(ctx, "posts.views")
+	total, err := conn.Select().From("posts").OrderBy("id").Limit(3).Sum(ctx, "posts.views")
 	require.NoError(t, err)
 	assert.Equal(t, 22.0, total)
 }
@@ -163,12 +163,12 @@ func TestPostgresAggregates(t *testing.T) {
 func TestPostgresWhereFamily(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
-	users := func() *db.Builder { return conn.Table("users").OrderBy("users.id") }
-	posts := func() *db.Builder { return conn.Table("posts") }
+	users := func() *db.SelectBuilder { return conn.Select().From("users").OrderBy("users.id") }
+	posts := func() *db.SelectBuilder { return conn.Select().From("posts") }
 
 	cases := []struct {
 		name string
-		q    *db.Builder
+		q    *db.SelectBuilder
 		want []string
 	}{
 		{"in / not in", users().WhereIn("id", []int{1, 3}).WhereNotIn("name", []string{"Cy"}), []string{"Ann"}},
@@ -185,7 +185,7 @@ func TestPostgresWhereFamily(t *testing.T) {
 		{
 			"group",
 			users().Where("active", true).
-				WhereGroup(func(q *db.Builder) { q.Where("age", ">", 35).OrWhereNull("age") }),
+				WhereGroup(func(q *db.WhereClause) { q.Where("age", ">", 35).OrWhereNull("age") }),
 			[]string{"Cy", "Di"},
 		},
 		{"not", users().WhereNot("active", true), []string{"Bob"}},
@@ -204,7 +204,7 @@ func TestPostgresWhereFamily(t *testing.T) {
 			users().WhereIn("id", posts().Select("user_id").Where("published", true)),
 			[]string{"Ann", "Bob", "Cy"},
 		},
-		{"scalar subquery", users().Where("age", ">", conn.Table("users").SelectRaw("avg(age)")), []string{"Cy"}},
+		{"scalar subquery", users().Where("age", ">", conn.Select().From("users").SelectRaw("avg(age)")), []string{"Cy"}},
 		{"any", users().WhereAny([]string{"name", "email"}, "like", "b%"), []string{"Bob"}},
 		{"all", users().WhereAll([]string{"name", "email"}, "like", "%i%"), []string{"Di"}},
 		{"none", users().WhereNone([]string{"name", "email"}, "like", "%o%"), []string{"Ann", "Cy", "Di"}},
@@ -226,7 +226,7 @@ func TestPostgresWhereFamily(t *testing.T) {
 		{"row values", users().WhereRowValues([]string{"id", "age"}, "=", []any{1, 30}), []string{"Ann"}},
 		{"raw", users().WhereRaw("length(name) = ?", 2), []string{"Cy", "Di"}},
 		{"map", users().WhereMap(map[string]any{"active": true, "name": "Cy"}), []string{"Cy"}},
-		{"latest limit offset", conn.Table("users").Latest("id").Limit(2).Offset(1), []string{"Cy", "Bob"}},
+		{"latest limit offset", conn.Select().From("users").Latest("id").Limit(2).Offset(1), []string{"Cy", "Bob"}},
 		{
 			"left join with value",
 			users().LeftJoinFunc("posts", func(j *db.JoinClause) { j.On("posts.user_id", "users.id").Where("posts.views", ">", 8) }).
@@ -241,29 +241,29 @@ func TestPostgresWhereFamily(t *testing.T) {
 		},
 		{
 			"cross join",
-			conn.Table("users").CrossJoin("posts").Where("users.id", 1).Where("posts.id", 1),
+			conn.Select().From("users").CrossJoin("posts").Where("users.id", 1).Where("posts.id", 1),
 			[]string{"Ann"},
 		},
 		{
 			"from sub",
-			conn.NewQuery().FromSub(conn.Table("users").Where("active", true), "au").OrderBy("name"),
+			conn.Select().FromSub(conn.Select().From("users").Where("active", true), "au").OrderBy("name"),
 			[]string{"Ann", "Cy", "Di"},
 		},
 		{
 			"union",
-			conn.Table("users").
+			conn.Select().From("users").
 				Select("name").
 				Where("id", 1).
-				Union(conn.Table("users").Select("name").Where("id", 2)).
+				Union(conn.Select("name").From("users").Where("id", 2)).
 				OrderBy("name", "desc"),
 			[]string{"Bob", "Ann"},
 		},
 		{
 			"union all limit",
-			conn.Table("users").
+			conn.Select().From("users").
 				Select("name").
 				Where("id", 1).
-				UnionAll(conn.Table("users").Select("name").Where("id", 1)).
+				UnionAll(conn.Select("name").From("users").Where("id", 1)).
 				Limit(5),
 			[]string{"Ann", "Ann"},
 		},
@@ -279,7 +279,7 @@ func TestPostgresWhereFamily(t *testing.T) {
 	}
 
 	// valid-SQL-only checks
-	for name, q := range map[string]*db.Builder{
+	for name, q := range map[string]*db.SelectBuilder{
 		"column compare": posts().WhereColumn("views", ">", "user_id").OrderBy("id"),
 		"between cols":   users().WhereBetweenColumns("age", "id", "score"),
 		"random order":   users().InRandomOrder().Limit(1),
@@ -293,7 +293,7 @@ func TestPostgresWhereFamily(t *testing.T) {
 
 	t.Run("select sub value", func(t *testing.T) {
 		var rows []map[string]any
-		require.NoError(t, conn.Table("users").Select("name").
+		require.NoError(t, conn.Select("name").From("users").
 			SelectSub(posts().SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id"), "pc").
 			OrderBy("id").Get(ctx, &rows))
 		assert.Equal(t, "2", fmt.Sprint(rows[0]["pc"]))
@@ -306,35 +306,35 @@ func TestPostgresDialectSpecificJoinsAndLocks(t *testing.T) {
 	conn := s.reset(t)
 
 	t.Run("lateral join", func(t *testing.T) {
-		latest := conn.Table("posts").
+		latest := conn.Select().From("posts").
 			Select("title").
 			WhereColumn("posts.user_id", "users.id").
 			OrderBy("views", "desc").
 			Limit(1)
-		got := pluckNames(t, conn.Table("users").JoinLateral(latest, "lp").OrderBy("users.id"))
+		got := pluckNames(t, conn.Select().From("users").JoinLateral(latest, "lp").OrderBy("users.id"))
 		assert.Equal(t, []string{"Ann", "Bob", "Cy"}, got)
-		got = pluckNames(t, conn.Table("users").LeftJoinLateral(latest, "lp").OrderBy("users.id"))
+		got = pluckNames(t, conn.Select().From("users").LeftJoinLateral(latest, "lp").OrderBy("users.id"))
 		assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, got)
 	})
 	t.Run("row locks run inside a transaction", func(t *testing.T) {
 		require.NoError(t, conn.Transaction(ctx, func(tx *db.DB) error {
 			var u User
-			if err := tx.Table("users").Where("id", 1).LockForUpdate().First(ctx, &u); err != nil {
+			if err := tx.Select().From("users").Where("id", 1).LockForUpdate().First(ctx, &u); err != nil {
 				return err
 			}
-			return tx.Table("users").Where("id", 2).SharedLock().First(ctx, &u)
+			return tx.Select().From("users").Where("id", 2).SharedLock().First(ctx, &u)
 		}))
 	})
 	t.Run("custom lock clause", func(t *testing.T) {
 		clause := "for no key update"
 		require.NoError(t, conn.Transaction(ctx, func(tx *db.DB) error {
 			var u User
-			return tx.Table("users").Where("id", 1).Lock(clause).First(ctx, &u)
+			return tx.Select().From("users").Where("id", 1).Lock(clause).First(ctx, &u)
 		}))
 	})
 	t.Run("straight join unsupported", func(t *testing.T) {
 		var rows []map[string]any
-		err := conn.Table("users").StraightJoin("posts", "posts.user_id", "users.id").Get(ctx, &rows)
+		err := conn.Select().From("users").StraightJoin("posts", "posts.user_id", "users.id").Get(ctx, &rows)
 		assert.ErrorIs(t, err, db.ErrUnsupported)
 	})
 }
@@ -342,7 +342,7 @@ func TestPostgresDialectSpecificJoinsAndLocks(t *testing.T) {
 func TestPostgresJSON(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
-	ordered := func() *db.Builder { return conn.Table("users").OrderBy("id") }
+	ordered := func() *db.SelectBuilder { return conn.Select().From("users").OrderBy("id") }
 
 	assert.Equal(t, []string{"Ann", "Bob"}, pluckNames(t, ordered().WhereJsonContains("meta->tags", "b")))
 	assert.Equal(t, []string{"Ann"}, pluckNames(t, ordered().WhereJsonContains("meta->tags", "a")))
@@ -368,26 +368,25 @@ func TestPostgresJSON(t *testing.T) {
 	assert.Equal(t, []string{"Bob"}, pluckNames(t, ordered().Where("meta->theme", "light")))
 
 	var theme string
-	require.NoError(t, conn.Table("users").Where("id", 1).Value(ctx, "meta->theme", &theme))
+	require.NoError(t, conn.Select().From("users").Where("id", 1).Value(ctx, "meta->theme", &theme))
 	assert.Equal(t, "dark", theme)
 
 	var rows []map[string]any
-	err := conn.Table("users").WhereJsonOverlaps("meta->tags", []string{"a"}).Get(ctx, &rows)
+	err := conn.Select().From("users").WhereJsonOverlaps("meta->tags", []string{"a"}).Get(ctx, &rows)
 	require.ErrorIs(t, err, db.ErrUnsupported)
 
 	t.Run("updates set paths and keep siblings", func(t *testing.T) {
-		n, err := conn.Table("users").
-			Where("id", 1).
-			Update(ctx, map[string]any{"meta->theme": "blue", "meta->beta": true})
+		n, err := conn.Update("users").
+			Where("id", 1).SetMap(map[string]any{"meta->theme": "blue", "meta->beta": true}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		require.NoError(t, conn.Table("users").Where("id", 1).Value(ctx, "meta->theme", &theme))
+		require.NoError(t, conn.Select().From("users").Where("id", 1).Value(ctx, "meta->theme", &theme))
 		assert.Equal(t, "blue", theme)
 		assert.Equal(t, []string{"Ann"}, pluckNames(t, ordered().Where("meta->beta", true)))
 		assert.Equal(t, []string{"Ann"}, pluckNames(t, ordered().WhereJsonContains("meta->tags", "a")))
 	})
 	t.Run("container value", func(t *testing.T) {
-		_, err := conn.Table("users").Where("id", 2).Update(ctx, map[string]any{"meta->tags": []string{"x", "y"}})
+		_, err := conn.Update("users").Where("id", 2).SetMap(map[string]any{"meta->tags": []string{"x", "y"}}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"Bob"}, pluckNames(t, ordered().WhereJsonContains("meta->tags", "y")))
 	})
@@ -397,109 +396,103 @@ func TestPostgresWrites(t *testing.T) {
 	s := startPostgres(t)
 	t.Run("insert variants", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Table("users").
-			Insert(ctx, map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"})
+		n, err := conn.Insert("users").Values(map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		id, err := conn.Table("users").InsertGetID(ctx, map[string]any{"name": "Gus", "email": "gus@x"})
+		id, err := conn.Insert("users").Values(map[string]any{"name": "Gus", "email": "gus@x"}).ExecGetID(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(7), id)
-		n, err = conn.Table("users").InsertOrIgnore(ctx, map[string]any{"name": "Dup", "email": "ann@x"})
+		n, err = conn.Insert("users").Values(map[string]any{"name": "Dup", "email": "ann@x"}).Ignore().Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
-		n, err = conn.Table("posts").InsertUsing(ctx, []string{"user_id", "title"},
-			conn.Table("users").Select("id", "name").Where("id", "<=", 2))
+		n, err = conn.Insert("posts").Using([]string{"user_id", "title"}, conn.Select("id", "name").From("users").Where("id", "<=", 2)).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Table("users").InsertOrIgnoreUsing(ctx, []string{"name", "email"},
-			conn.Table("users").Select("name", "email").Where("id", 1))
+		n, err = conn.Insert("users").Using([]string{"name", "email"}, conn.Select("name", "email").From("users").Where("id", 1)).Ignore().Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
-		_, err = conn.Table("users").Insert(ctx, map[string]any{"name": "Ann2", "email": "ann@x"})
+		_, err = conn.Insert("users").Values(map[string]any{"name": "Ann2", "email": "ann@x"}).Exec(ctx)
 		require.Error(t, err)
 	})
 	t.Run("upsert and update or insert", func(t *testing.T) {
 		conn := s.reset(t)
-		_, err := conn.Table("users").Upsert(ctx, []map[string]any{
+		_, err := conn.Insert("users").Values([]map[string]any{
 			{"name": "Ann!", "email": "ann@x", "age": 31},
 			{"name": "New", "email": "new@x", "age": 1},
-		}, []string{"email"}, []string{"name", "age"})
+		}...).Upsert([]string{"email"}, []string{"name", "age"}).Exec(ctx)
 		require.NoError(t, err)
 		var name string
-		require.NoError(t, conn.Table("users").Where("email", "ann@x").Value(ctx, "name", &name))
+		require.NoError(t, conn.Select().From("users").Where("email", "ann@x").Value(ctx, "name", &name))
 		assert.Equal(t, "Ann!", name)
-		c, _ := conn.Table("users").Count(ctx)
+		c, _ := conn.Select().From("users").Count(ctx)
 		assert.Equal(t, int64(5), c)
 		for _, v := range []string{"Zed", "Zed2"} {
-			ok, err := conn.Table("users").
-				UpdateOrInsert(ctx, map[string]any{"email": "zed@x"}, map[string]any{"name": v})
+			ok, err := conn.UpdateOrInsert(ctx, "users", map[string]any{"email": "zed@x"}, map[string]any{"name": v})
 			require.NoError(t, err)
 			assert.True(t, ok)
 		}
-		require.NoError(t, conn.Table("users").Where("email", "zed@x").Value(ctx, "name", &name))
+		require.NoError(t, conn.Select().From("users").Where("email", "zed@x").Value(ctx, "name", &name))
 		assert.Equal(t, "Zed2", name)
 	})
 	t.Run("update increment guard", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Table("posts").Where("user_id", 1).Increment(ctx, "views", 5, map[string]any{"title": "bumped"})
+		n, err := conn.Update("posts").Where("user_id", 1).Increment("views", 5).SetMap(map[string]any{"title": "bumped"}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Table("posts").Where("id", 1).Decrement(ctx, "views", 3, nil)
+		n, err = conn.Update("posts").Where("id", 1).Decrement("views", 3).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		n, err = conn.Table("posts").Where("id", 2).IncrementEach(ctx, map[string]any{"views": 1, "user_id": 1}, nil)
+		n, err = conn.Update("posts").Where("id", 2).IncrementEach(map[string]any{"views": 1, "user_id": 1}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		var v int
-		require.NoError(t, conn.Table("posts").Where("id", 1).Value(ctx, "views", &v))
+		require.NoError(t, conn.Select().From("posts").Where("id", 1).Value(ctx, "views", &v))
 		assert.Equal(t, 12, v) // 10 + 5 - 3
-		_, err = conn.Table("users").Update(ctx, map[string]any{"bio": "x"})
+		_, err = conn.Update("users").SetMap(map[string]any{"bio": "x"}).Exec(ctx)
 		assert.Equal(t, db.ErrNoWhere, err)
-		n, err = conn.Table("users").AllRows().Update(ctx, map[string]any{"bio": "all"})
+		n, err = conn.Update("users").AllRows().SetMap(map[string]any{"bio": "all"}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), n)
 	})
 	t.Run("update and delete with join or limit", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Table("users as u").
+		n, err := conn.Update("users as u").
 			Join("posts as p", "p.user_id", "u.id").
-			Where("p.views", ">", 6).
-			Update(ctx, map[string]any{"u.score": 9})
-			// MySQL counts changed rows, so pick a column that changes
+			Where("p.views", ">", 6).SetMap(map[string]any{"u.score": 9}).Exec(ctx)
+		// MySQL counts changed rows, so pick a column that changes
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Table("posts").
+		n, err = conn.Update("posts").
 			Where("views", ">", 0).
 			OrderBy("views", "desc").
-			Limit(1).
-			Update(ctx, map[string]any{"title": "top"})
+			Limit(1).SetMap(map[string]any{"title": "top"}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		var title string
-		require.NoError(t, conn.Table("posts").Where("views", 10).Value(ctx, "title", &title))
+		require.NoError(t, conn.Select().From("posts").Where("views", 10).Value(ctx, "title", &title))
 		assert.Equal(t, "top", title)
 
-		n, err = conn.Table("posts").Where("published", false).Delete(ctx)
+		n, err = conn.Delete("posts").Where("published", false).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		n, err = conn.Table("posts").Where("views", ">", 0).OrderBy("views").Limit(1).Delete(ctx)
+		n, err = conn.Delete("posts").Where("views", ">", 0).OrderBy("views").Limit(1).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		n, err = conn.Table("posts as p").Join("users as u", "u.id", "p.user_id").Where("u.name", "Bob").Delete(ctx)
+		n, err = conn.Delete("posts as p").Join("users as u", "u.id", "p.user_id").Where("u.name", "Bob").Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		_, err = conn.Table("posts").Delete(ctx)
+		_, err = conn.Delete("posts").Exec(ctx)
 		assert.Equal(t, db.ErrNoWhere, err)
-		n, err = conn.Table("posts").AllRows().Delete(ctx)
+		n, err = conn.Delete("posts").AllRows().Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 	})
 	t.Run("truncate resets identity", func(t *testing.T) {
 		conn := s.reset(t)
-		require.NoError(t, conn.Table("posts").Truncate(ctx))
-		c, _ := conn.Table("posts").Count(ctx)
+		require.NoError(t, conn.Truncate(ctx, "posts"))
+		c, _ := conn.Select().From("posts").Count(ctx)
 		assert.Equal(t, int64(0), c)
-		id, err := conn.Table("posts").InsertGetID(ctx, map[string]any{"title": "fresh"})
+		id, err := conn.Insert("posts").Values(map[string]any{"title": "fresh"}).ExecGetID(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), id)
 	})
@@ -509,30 +502,28 @@ func TestPostgresWrites(t *testing.T) {
 			ID   int64
 			Name string
 		}
-		err := conn.Table("users").
-			Returning("id", "name").
-			InsertReturning(ctx, &out, map[string]any{"name": "Rae", "email": "rae@x"})
+		err := conn.Insert("users").
+			Returning("id", "name").Values(map[string]any{"name": "Rae", "email": "rae@x"}).Get(ctx, &out)
 		require.NoError(t, err)
 		assert.Equal(t, "Rae", out[0].Name)
 		require.NoError(
 			t,
-			conn.Table("users").
+			conn.Update("users").
 				Where("name", "Rae").
-				Returning("id", "name").
-				UpdateReturning(ctx, &out, map[string]any{"name": "Rae2"}),
+				Returning("id", "name").SetMap(map[string]any{"name": "Rae2"}).Get(ctx, &out),
 		)
 		assert.Equal(t, "Rae2", out[0].Name)
-		require.NoError(t, conn.Table("users").Where("name", "Rae2").Returning("id", "name").DeleteReturning(ctx, &out))
+		require.NoError(t, conn.Delete("users").Where("name", "Rae2").Returning("id", "name").Get(ctx, &out))
 		assert.Len(t, out, 1)
 	})
 	t.Run("update from", func(t *testing.T) {
 		conn := s.reset(t)
-		q := conn.Table("users").Join("posts", "posts.user_id", "users.id").Where("posts.views", ">", 9)
-		n, err := q.UpdateFrom(ctx, map[string]any{"bio": db.Raw(`"posts"."title"`)})
+		q := conn.Update("users").Join("posts", "posts.user_id", "users.id").Where("posts.views", ">", 9).FromJoins()
+		n, err := q.SetMap(map[string]any{"bio": db.Raw(`"posts"."title"`)}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
 		var bio string
-		require.NoError(t, conn.Table("users").Where("id", 1).Value(ctx, "bio", &bio))
+		require.NoError(t, conn.Select().From("users").Where("id", 1).Value(ctx, "bio", &bio))
 		assert.Equal(t, "p1", bio)
 	})
 }
@@ -540,7 +531,7 @@ func TestPostgresWrites(t *testing.T) {
 func TestPostgresPaginationAndChunking(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
-	users := func() *db.Builder { return conn.Table("users").OrderBy("id") }
+	users := func() *db.SelectBuilder { return conn.Select().From("users").OrderBy("id") }
 
 	var us []User
 	p, err := users().Paginate(ctx, 2, 3, &us)
@@ -555,7 +546,7 @@ func TestPostgresPaginationAndChunking(t *testing.T) {
 	cursor := ""
 	for range 5 {
 		var page []User
-		cp, pageErr := conn.Table("users").CursorPaginate(ctx, 3, cursor, &page)
+		cp, pageErr := conn.Select().From("users").CursorPaginate(ctx, 3, cursor, &page)
 		require.NoError(t, pageErr)
 		seen = append(seen, names(page)...)
 		if !cp.HasMore {
@@ -575,10 +566,10 @@ func TestPostgresPaginationAndChunking(t *testing.T) {
 	var total int
 	require.NoError(
 		t,
-		db.As[map[string]any](conn.Table("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
+		db.As[map[string]any](conn.Select().From("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
 			total += len(rows)
 			for _, r := range rows {
-				if _, delErr := conn.Table("posts").Where("id", r["id"]).Delete(ctx); delErr != nil {
+				if _, delErr := conn.Delete("posts").Where("id", r["id"]).Exec(ctx); delErr != nil {
 					return false, delErr
 				}
 			}
@@ -596,7 +587,7 @@ func TestPostgresPaginationAndChunking(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{"Ann", "Bob"}, got)
-	c, err := conn.Table("users").Count(ctx) // pool still healthy after early exit
+	c, err := conn.Select().From("users").Count(ctx) // pool still healthy after early exit
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), c)
 }
@@ -605,12 +596,12 @@ func TestPostgresTransactions(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
 	count := func() int64 {
-		n, err := conn.Table("users").Count(ctx)
+		n, err := conn.Select().From("users").Count(ctx)
 		require.NoError(t, err)
 		return n
 	}
 	insert := func(tx *db.DB, name string) error {
-		_, err := tx.Table("users").Insert(ctx, map[string]any{"name": name, "email": name + "@x"})
+		_, err := tx.Insert("users").Values(map[string]any{"name": name, "email": name + "@x"}).Exec(ctx)
 		return err
 	}
 
@@ -647,7 +638,7 @@ func TestPostgresTransactions(t *testing.T) {
 		return tx.Transaction(ctx, func(inner *db.DB) error { return insert(inner, "inner2") })
 	}))
 	var got []string
-	require.NoError(t, conn.Table("users").Where("name", "like", "%er%").OrderBy("id").Pluck(ctx, "name", &got))
+	require.NoError(t, conn.Select().From("users").Where("name", "like", "%er%").OrderBy("id").Pluck(ctx, "name", &got))
 	assert.Equal(t, []string{"outer", "inner2"}, got)
 	assert.Equal(t, int64(7), count())
 
@@ -660,21 +651,22 @@ func TestPostgresTransactions(t *testing.T) {
 func TestPostgresTypedReadsAndStructWrites(t *testing.T) {
 	s := startPostgres(t)
 	conn := s.reset(t)
-	users := func() *db.Builder { return conn.Table("users").OrderBy("id") }
+	users := func() *db.SelectBuilder { return conn.Select().From("users").OrderBy("id") }
 
 	us, err := db.As[User](users()).Get(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, names(us))
-	u, err := db.As[User](conn.Table("users")).Find(ctx, 3)
+	u, err := db.As[User](conn.Select().From("users")).Find(ctx, 3)
 	require.NoError(t, err)
 	assert.Equal(t, "Cy", u.Name)
 	_, err = db.As[User](users().Where("name", "nobody")).First(ctx)
 	require.ErrorIs(t, err, db.ErrNotFound)
 
-	ids, err := db.As[int64](conn.Table("users").Select("id").OrderBy("id")).Get(ctx)
+	ids, err := db.As[int64](conn.Select("id").From("users").OrderBy("id")).Get(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, []int64{1, 2, 3, 4}, ids)
-	mx, err := db.MaxAs[int](ctx, conn.Table("users"), "age")
+	var mx int
+	err = conn.Select().From("users").Max(ctx, "age", &mx)
 	require.NoError(t, err)
 	assert.Equal(t, 41, mx)
 
@@ -684,7 +676,7 @@ func TestPostgresTypedReadsAndStructWrites(t *testing.T) {
 	var seen []string
 	cursor := ""
 	for range 5 {
-		cp, pageErr := db.As[User](conn.Table("users")).CursorPaginate(ctx, 3, cursor)
+		cp, pageErr := db.As[User](conn.Select().From("users")).CursorPaginate(ctx, 3, cursor)
 		require.NoError(t, pageErr)
 		seen = append(seen, names(cp.Items)...)
 		if !cp.HasMore {
@@ -695,31 +687,29 @@ func TestPostgresTypedReadsAndStructWrites(t *testing.T) {
 	assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, seen)
 
 	// struct writes
-	n, err := db.As[Member](
-		conn.Table("users"),
-	).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
+	n, err := conn.Insert("users").Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
-	id, err := db.As[Member](conn.Table("users")).InsertGetID(ctx, Member{Name: "Gus", Email: ptr("gus@x")})
+	id, err := conn.Insert("users").Rows(Member{Name: "Gus", Email: ptr("gus@x")}).ExecGetID(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), id)
-	n, err = db.As[Member](conn.Table("users")).InsertOrIgnore(ctx, Member{Name: "Dup", Email: ptr("ann@x")})
+	n, err = conn.Insert("users").Rows(Member{Name: "Dup", Email: ptr("ann@x")}).Ignore().Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
-	_, err = db.As[Member](conn.Table("users")).Upsert(ctx, []Member{{Name: "Ann!", Email: ptr("ann@x"), Age: ptr(31)}},
-		[]string{"email"}, []string{"name", "age"})
+	_, err = conn.Insert("users").Rows([]Member{{Name: "Ann!", Email: ptr("ann@x"), Age: ptr(31)}}).Upsert([]string{"email"}, []string{"name", "age"}).Exec(ctx)
 	require.NoError(t, err)
-	_, err = db.As[Member](conn.Table("users").Where("id", 2)).Update(ctx, Member{Bio: "set"})
+	_, err = conn.Update("users").Where("id", 2).SetRow(Member{Bio: "set"}).Exec(ctx)
 	require.NoError(t, err)
 	var rows []User
-	require.NoError(t, conn.Table("users").WhereIn("id", []int{1, 2}).OrderBy("id").Get(ctx, &rows))
+	require.NoError(t, conn.Select().From("users").WhereIn("id", []int{1, 2}).OrderBy("id").Get(ctx, &rows))
 	assert.Equal(t, [3]any{"Ann!", "set", "Bob"}, [3]any{rows[0].Name, rows[1].Bio, rows[1].Name}) // Bob's name kept
 
 	// RETURNING
-	got, err := db.As[Member](conn.Table("users")).InsertReturning(ctx, Member{Name: "Rae", Email: ptr("rae@x")})
+	var got []Member
+	err = conn.Insert("users").Rows(Member{Name: "Rae", Email: ptr("rae@x")}).Returning("*").Get(ctx, &got)
 	require.NoError(t, err)
 	assert.Equal(t, [2]any{1, "Rae"}, [2]any{len(got), got[0].Name})
-	got, err = db.As[Member](conn.Table("users").Where("name", "Rae")).DeleteReturning(ctx)
+	err = conn.Delete("users").Where("name", "Rae").Returning("*").Get(ctx, &got)
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 }
@@ -744,25 +734,23 @@ func TestPostgresFromTakesTheTableFromTheType(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, [2]any{int64(4), "Di"}, [2]any{p.Total, names(p.Items)[0]})
 
-	cnt, err := db.From[Member](
-		conn,
-	).Insert(ctx, Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")})
+	cnt, err := conn.Insert("users").Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), cnt)
-	id, err := db.From[Member](conn).InsertGetID(ctx, Member{Name: "Gus", Email: ptr("gus@x")})
+	id, err := conn.Insert("users").Rows(Member{Name: "Gus", Email: ptr("gus@x")}).ExecGetID(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), id)
-	cnt, err = db.From[Member](conn).Where("id", 1).Update(ctx, Member{Bio: "set"})
+	cnt, err = conn.Update("users").Where("id", 1).SetRow(Member{Bio: "set"}).Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), cnt)
-	_, err = db.From[Member](conn).Update(ctx, Member{Name: "x"})
+	_, err = conn.Update("users").SetRow(Member{Name: "x"}).Exec(ctx)
 	assert.Equal(t, db.ErrNoWhere, err)
-	cnt, err = db.From[Member](conn).Where("name", "Fay").Delete(ctx)
+	cnt, err = conn.Delete("users").Where("name", "Fay").Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), cnt)
 
-	require.NoError(t, db.From[Post](conn).Truncate(ctx))
-	pid, err := db.From[Post](conn).InsertGetID(ctx, Post{Title: "fresh"})
+	require.NoError(t, conn.Truncate(ctx, "posts"))
+	pid, err := conn.Insert("posts").Rows(Post{Title: "fresh"}).ExecGetID(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), pid)
 
@@ -772,41 +760,41 @@ func TestPostgresFromTakesTheTableFromTheType(t *testing.T) {
 
 func TestPostgresCTE(t *testing.T) {
 	conn := startPostgres(t).reset(t)
-	active := func() *db.Builder { return conn.Table("users").Where("active", true) }
+	active := func() *db.SelectBuilder { return conn.Select().From("users").Where("active", true) }
 
 	t.Run("plain", func(t *testing.T) {
 		assert.Equal(
 			t,
 			[]string{"Ann", "Cy", "Di"},
-			pluckNames(t, conn.Table("au").With("au", active()).OrderBy("name")),
+			pluckNames(t, conn.Select().From("au").With("au", active()).OrderBy("name")),
 		)
 	})
 	t.Run("recursive series", func(t *testing.T) {
-		anchor := conn.Table("users").SelectRaw("1 as n").Where("id", 1)
-		step := conn.Table("seq").SelectRaw("n + 1").Where("n", "<", 5)
+		anchor := conn.Select().From("users").SelectRaw("1 as n").Where("id", 1)
+		step := conn.Select().From("seq").SelectRaw("n + 1").Where("n", "<", 5)
 		var got []int64
 		require.NoError(
 			t,
-			conn.Table("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got),
+			conn.Select().From("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got),
 		)
 		assert.Equal(t, []int64{1, 2, 3, 4, 5}, got)
 	})
 	t.Run("inside where in", func(t *testing.T) {
 		var got []string
-		sub := conn.Table("au").Select("id").With("au", active())
-		require.NoError(t, conn.Table("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got))
+		sub := conn.Select("id").From("au").With("au", active())
+		require.NoError(t, conn.Select().From("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got))
 		assert.Equal(t, []string{"p1", "p2", "p4"}, got)
 	})
 	t.Run("with an outer union", func(t *testing.T) {
-		q := conn.Table("au").Select("name").With("au", active()).Where("name", "Ann").
-			UnionAll(conn.Table("users").Select("name").Where("name", "Bob")).OrderBy("name")
+		q := conn.Select("name").From("au").With("au", active()).Where("name", "Ann").
+			UnionAll(conn.Select("name").From("users").Where("name", "Bob")).OrderBy("name")
 		assert.Equal(t, []string{"Ann", "Bob"}, pluckNames(t, q))
 	})
 	t.Run("count and exists", func(t *testing.T) {
-		n, err := conn.Table("au").With("au", active()).Count(ctx)
+		n, err := conn.Select().From("au").With("au", active()).Count(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), n)
-		ok, err := conn.Table("au").With("au", active()).Where("name", "Bob").Exists(ctx)
+		ok, err := conn.Select().From("au").With("au", active()).Where("name", "Bob").Exists(ctx)
 		require.NoError(t, err)
 		assert.False(t, ok)
 	})
@@ -814,20 +802,20 @@ func TestPostgresCTE(t *testing.T) {
 		assert.Equal(
 			t,
 			[]string{"Ann", "Cy", "Di"},
-			pluckNames(t, conn.Table("au").WithMaterialized("au", active()).OrderBy("name")),
+			pluckNames(t, conn.Select().From("au").WithMaterialized("au", active()).OrderBy("name")),
 		)
 		assert.Equal(
 			t,
 			[]string{"Ann", "Cy", "Di"},
-			pluckNames(t, conn.Table("au").WithNotMaterialized("au", active()).OrderBy("name")),
+			pluckNames(t, conn.Select().From("au").WithNotMaterialized("au", active()).OrderBy("name")),
 		)
 	})
 	t.Run("insert using", func(t *testing.T) {
-		sub := conn.Table("inactive").Select("name").With("inactive", conn.Table("users").Where("active", false))
-		n, err := conn.Table("users").InsertUsing(ctx, []string{"name"}, sub)
+		sub := conn.Select("name").From("inactive").With("inactive", conn.Select().From("users").Where("active", false))
+		n, err := conn.Insert("users").Using([]string{"name"}, sub).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), n)
-		c, err := conn.Table("users").Where("name", "Bob").Count(ctx)
+		c, err := conn.Select().From("users").Where("name", "Bob").Count(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), c)
 	})

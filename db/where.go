@@ -17,17 +17,17 @@ func snapshot(c *clause) {
 	if c.x != nil && c.x.sub != nil {
 		c.x.sub = c.x.sub.Clone()
 	}
-	if q, ok := c.value.(*Builder); ok {
+	if q, ok := subOf(c.value); ok {
 		c.value = q.Clone()
 	}
 	for i, v := range c.values {
-		if q, ok := v.(*Builder); ok {
+		if q, ok := subOf(v); ok {
 			c.values[i] = q.Clone()
 		}
 	}
 }
 
-func (b *Builder) push(dst *[]clause, boolean string, c clause) *Builder {
+func (b *query) push(dst *[]clause, boolean string, c clause) *query {
 	snapshot(&c)
 	c.conn = parseConn(boolean)
 	*dst = append(*dst, c)
@@ -68,8 +68,8 @@ func toAny[T any](vs []T) []any {
 	return out
 }
 
-func (b *Builder) inClause(dst *[]clause, boolean, column string, values any, not bool) *Builder {
-	if sub, ok := values.(*Builder); ok {
+func (b *query) inClause(dst *[]clause, boolean, column string, values any, not bool) *query {
+	if sub, ok := subOf(values); ok {
 		if sub == nil {
 			return b.fail(errNilSubquery)
 		}
@@ -78,7 +78,7 @@ func (b *Builder) inClause(dst *[]clause, boolean, column string, values any, no
 	return b.push(dst, boolean, clause{kind: clauseIn, column: column, values: flatten(values), not: not})
 }
 
-func (b *Builder) inRawClause(dst *[]clause, boolean, column string, values any, not bool) *Builder {
+func (b *query) inRawClause(dst *[]clause, boolean, column string, values any, not bool) *query {
 	vs := flatten(values)
 	ints := make([]any, len(vs))
 	for i, v := range vs {
@@ -108,8 +108,8 @@ func toInt64(v any) (int64, error) {
 	return 0, fmt.Errorf("not an integer: %T", v)
 }
 
-func (b *Builder) group(dst *[]clause, boolean string, fn func(*Builder), having bool) *Builder {
-	q := b.NewQuery()
+func (b *query) group(dst *[]clause, boolean string, fn func(*query), having bool) *query {
+	q := b.fresh()
 	fn(q)
 	if q.err != nil {
 		return b.fail(q.err)
@@ -137,7 +137,7 @@ func isolated(cs []clause) []clause {
 	return cs
 }
 
-func (b *Builder) dateClause(dst *[]clause, boolean, part, column string, args []any) *Builder {
+func (b *query) dateClause(dst *[]clause, boolean, part, column string, args []any) *query {
 	op, val, err := parseOpValue(column, args)
 	if err != nil {
 		return b.fail(err)
@@ -177,17 +177,17 @@ func dateValue(part string, v any) (any, error) {
 	return v, nil
 }
 
-func (b *Builder) nullClause(dst *[]clause, boolean, column string, not bool) *Builder {
+func (b *query) nullClause(dst *[]clause, boolean, column string, not bool) *query {
 	return b.push(dst, boolean, clause{kind: clauseNull, column: column, not: not})
 }
 
-func (b *Builder) betweenClause(dst *[]clause, boolean, column string, lo, hi any, not bool) *Builder {
+func (b *query) betweenClause(dst *[]clause, boolean, column string, lo, hi any, not bool) *query {
 	return b.push(dst, boolean, clause{kind: clauseBetween, column: column, values: []any{lo, hi}, not: not})
 }
 
 // multi applies a Where-style predicate across columns inside one group.
-func (b *Builder) multi(boolean, inner string, columns []string, args []any) *Builder {
-	q := b.NewQuery()
+func (b *query) multi(boolean, inner string, columns []string, args []any) *query {
+	q := b.fresh()
 	for _, col := range columns {
 		q.addClause(&q.wheres, inner, col, args)
 	}
@@ -206,9 +206,9 @@ func (b *Builder) multi(boolean, inner string, columns []string, args []any) *Bu
 //
 // Example:
 //
-//	conn.Table("users").WhereNot("role", "admin")
+//	conn.Select().From("users").WhereNot("role", "admin")
 //	// SELECT * FROM "users" WHERE NOT "role" = $1   args: [admin]
-func (b *Builder) WhereNot(column string, args ...any) *Builder {
+func (b *query) WhereNot(column string, args ...any) *query {
 	return b.addClause(&b.wheres, "and not", column, args)
 }
 
@@ -216,9 +216,9 @@ func (b *Builder) WhereNot(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Where("age", ">", 18).OrWhereNot("status", "<", 3)
+//	conn.Select().From("users").Where("age", ">", 18).OrWhereNot("status", "<", 3)
 //	// SELECT * FROM "users" WHERE "age" > $1 OR NOT "status" < $2   args: [18 3]
-func (b *Builder) OrWhereNot(column string, args ...any) *Builder {
+func (b *query) OrWhereNot(column string, args ...any) *query {
 	return b.addClause(&b.wheres, "or not", column, args)
 }
 
@@ -228,9 +228,9 @@ func (b *Builder) OrWhereNot(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereColumn("updated_at", ">", "created_at")
+//	conn.Select().From("users").WhereColumn("updated_at", ">", "created_at")
 //	// SELECT * FROM "users" WHERE "updated_at" > "created_at"
-func (b *Builder) WhereColumn(first string, args ...any) *Builder {
+func (b *query) WhereColumn(first string, args ...any) *query {
 	return b.columnClause("and", first, args)
 }
 
@@ -238,13 +238,13 @@ func (b *Builder) WhereColumn(first string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereColumn("first_name", "last_name").OrWhereColumn("a", "<>", "b")
+//	conn.Select().From("users").WhereColumn("first_name", "last_name").OrWhereColumn("a", "<>", "b")
 //	// SELECT * FROM "users" WHERE "first_name" = "last_name" OR "a" <> "b"
-func (b *Builder) OrWhereColumn(first string, args ...any) *Builder {
+func (b *query) OrWhereColumn(first string, args ...any) *query {
 	return b.columnClause("or", first, args)
 }
 
-func (b *Builder) columnClause(boolean, first string, args []any) *Builder {
+func (b *query) columnClause(boolean, first string, args []any) *query {
 	op, val, err := parseOpValue(first, args)
 	if err != nil {
 		return b.fail(err)
@@ -258,14 +258,14 @@ func (b *Builder) columnClause(boolean, first string, args []any) *Builder {
 
 // ---- IN ----
 
-// WhereIn adds "col IN (...)". values may be any slice, a scalar, or a *Builder subquery.
+// WhereIn adds "col IN (...)". values may be any slice, a scalar, or a *SelectBuilder subquery.
 // An empty list compiles to the always-false "0 = 1".
 //
 // Example:
 //
-//	conn.Table("users").WhereIn("id", []int{1, 2, 3})
+//	conn.Select().From("users").WhereIn("id", []int{1, 2, 3})
 //	// SELECT * FROM "users" WHERE "id" IN ($1, $2, $3)   args: [1 2 3]
-func (b *Builder) WhereIn(column string, values any) *Builder {
+func (b *query) WhereIn(column string, values any) *query {
 	return b.inClause(&b.wheres, "and", column, values, false)
 }
 
@@ -273,9 +273,9 @@ func (b *Builder) WhereIn(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereIn("role", []string{"ann", "bob"}).OrWhereIn("id", []int{9})
+//	conn.Select().From("users").WhereIn("role", []string{"ann", "bob"}).OrWhereIn("id", []int{9})
 //	// SELECT * FROM "users" WHERE "role" IN ($1, $2) OR "id" IN ($3)   args: [ann bob 9]
-func (b *Builder) OrWhereIn(column string, values any) *Builder {
+func (b *query) OrWhereIn(column string, values any) *query {
 	return b.inClause(&b.wheres, "or", column, values, false)
 }
 
@@ -283,9 +283,9 @@ func (b *Builder) OrWhereIn(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNotIn("id", []int{1, 2})
+//	conn.Select().From("users").WhereNotIn("id", []int{1, 2})
 //	// SELECT * FROM "users" WHERE "id" NOT IN ($1, $2)   args: [1 2]
-func (b *Builder) WhereNotIn(column string, values any) *Builder {
+func (b *query) WhereNotIn(column string, values any) *query {
 	return b.inClause(&b.wheres, "and", column, values, true)
 }
 
@@ -293,9 +293,9 @@ func (b *Builder) WhereNotIn(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNotIn("id", []int{1, 2}).OrWhereNotIn("role", []string{"ann"})
+//	conn.Select().From("users").WhereNotIn("id", []int{1, 2}).OrWhereNotIn("role", []string{"ann"})
 //	// SELECT * FROM "users" WHERE "id" NOT IN ($1, $2) OR "role" NOT IN ($3)   args: [1 2 ann]
-func (b *Builder) OrWhereNotIn(column string, values any) *Builder {
+func (b *query) OrWhereNotIn(column string, values any) *query {
 	return b.inClause(&b.wheres, "or", column, values, true)
 }
 
@@ -304,9 +304,9 @@ func (b *Builder) OrWhereNotIn(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereIntegerInRaw("id", []int{1, 2, 3})
+//	conn.Select().From("users").WhereIntegerInRaw("id", []int{1, 2, 3})
 //	// SELECT * FROM "users" WHERE "id" IN (1, 2, 3)
-func (b *Builder) WhereIntegerInRaw(column string, values any) *Builder {
+func (b *query) WhereIntegerInRaw(column string, values any) *query {
 	return b.inRawClause(&b.wheres, "and", column, values, false)
 }
 
@@ -314,10 +314,10 @@ func (b *Builder) WhereIntegerInRaw(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereIntegerInRaw("id", []int{1}).
+//	conn.Select().From("users").WhereIntegerInRaw("id", []int{1}).
 //		OrWhereIntegerInRaw("id", []int64{7, 8})
 //	// SELECT * FROM "users" WHERE "id" IN (1) OR "id" IN (7, 8)
-func (b *Builder) OrWhereIntegerInRaw(column string, values any) *Builder {
+func (b *query) OrWhereIntegerInRaw(column string, values any) *query {
 	return b.inRawClause(&b.wheres, "or", column, values, false)
 }
 
@@ -325,9 +325,9 @@ func (b *Builder) OrWhereIntegerInRaw(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereIntegerNotInRaw("id", []int{1, 2})
+//	conn.Select().From("users").WhereIntegerNotInRaw("id", []int{1, 2})
 //	// SELECT * FROM "users" WHERE "id" NOT IN (1, 2)
-func (b *Builder) WhereIntegerNotInRaw(column string, values any) *Builder {
+func (b *query) WhereIntegerNotInRaw(column string, values any) *query {
 	return b.inRawClause(&b.wheres, "and", column, values, true)
 }
 
@@ -335,10 +335,10 @@ func (b *Builder) WhereIntegerNotInRaw(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereIntegerNotInRaw("id", []int{1, 2}).
+//	conn.Select().From("users").WhereIntegerNotInRaw("id", []int{1, 2}).
 //		OrWhereIntegerNotInRaw("id", []int{3})
 //	// SELECT * FROM "users" WHERE "id" NOT IN (1, 2) OR "id" NOT IN (3)
-func (b *Builder) OrWhereIntegerNotInRaw(column string, values any) *Builder {
+func (b *query) OrWhereIntegerNotInRaw(column string, values any) *query {
 	return b.inRawClause(&b.wheres, "or", column, values, true)
 }
 
@@ -348,9 +348,9 @@ func (b *Builder) OrWhereIntegerNotInRaw(column string, values any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNull("deleted_at")
+//	conn.Select().From("users").WhereNull("deleted_at")
 //	// SELECT * FROM "users" WHERE "deleted_at" IS NULL
-func (b *Builder) WhereNull(column string) *Builder {
+func (b *query) WhereNull(column string) *query {
 	return b.nullClause(&b.wheres, "and", column, false)
 }
 
@@ -358,9 +358,9 @@ func (b *Builder) WhereNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNull("deleted_at").OrWhereNull("banned_at")
+//	conn.Select().From("users").WhereNull("deleted_at").OrWhereNull("banned_at")
 //	// SELECT * FROM "users" WHERE "deleted_at" IS NULL OR "banned_at" IS NULL
-func (b *Builder) OrWhereNull(column string) *Builder {
+func (b *query) OrWhereNull(column string) *query {
 	return b.nullClause(&b.wheres, "or", column, false)
 }
 
@@ -368,9 +368,9 @@ func (b *Builder) OrWhereNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNotNull("verified_at")
+//	conn.Select().From("users").WhereNotNull("verified_at")
 //	// SELECT * FROM "users" WHERE "verified_at" IS NOT NULL
-func (b *Builder) WhereNotNull(column string) *Builder {
+func (b *query) WhereNotNull(column string) *query {
 	return b.nullClause(&b.wheres, "and", column, true)
 }
 
@@ -378,9 +378,9 @@ func (b *Builder) WhereNotNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNotNull("verified_at").OrWhereNotNull("invited_at")
+//	conn.Select().From("users").WhereNotNull("verified_at").OrWhereNotNull("invited_at")
 //	// SELECT * FROM "users" WHERE "verified_at" IS NOT NULL OR "invited_at" IS NOT NULL
-func (b *Builder) OrWhereNotNull(column string) *Builder {
+func (b *query) OrWhereNotNull(column string) *query {
 	return b.nullClause(&b.wheres, "or", column, true)
 }
 
@@ -390,9 +390,9 @@ func (b *Builder) OrWhereNotNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereBetween("total", 10, 100)
+//	conn.Select().From("orders").WhereBetween("total", 10, 100)
 //	// SELECT * FROM "orders" WHERE "total" BETWEEN $1 AND $2   args: [10 100]
-func (b *Builder) WhereBetween(column string, lo, hi any) *Builder {
+func (b *query) WhereBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.wheres, "and", column, lo, hi, false)
 }
 
@@ -400,10 +400,10 @@ func (b *Builder) WhereBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Where("status", "paid").OrWhereBetween("total", 500, 900)
+//	conn.Select().From("orders").Where("status", "paid").OrWhereBetween("total", 500, 900)
 //	// SELECT * FROM "orders" WHERE "status" = $1 OR "total" BETWEEN $2 AND $3
 //	//     args: [paid 500 900]
-func (b *Builder) OrWhereBetween(column string, lo, hi any) *Builder {
+func (b *query) OrWhereBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.wheres, "or", column, lo, hi, false)
 }
 
@@ -411,9 +411,9 @@ func (b *Builder) OrWhereBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereNotBetween("total", 10, 100)
+//	conn.Select().From("orders").WhereNotBetween("total", 10, 100)
 //	// SELECT * FROM "orders" WHERE "total" NOT BETWEEN $1 AND $2   args: [10 100]
-func (b *Builder) WhereNotBetween(column string, lo, hi any) *Builder {
+func (b *query) WhereNotBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.wheres, "and", column, lo, hi, true)
 }
 
@@ -421,14 +421,14 @@ func (b *Builder) WhereNotBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereNotBetween("total", 10, 100).OrWhereNotBetween("qty", 1, 5)
+//	conn.Select().From("orders").WhereNotBetween("total", 10, 100).OrWhereNotBetween("qty", 1, 5)
 //	// SELECT * FROM "orders" WHERE "total" NOT BETWEEN $1 AND $2 OR "qty" NOT BETWEEN $3 AND $4
 //	//     args: [10 100 1 5]
-func (b *Builder) OrWhereNotBetween(column string, lo, hi any) *Builder {
+func (b *query) OrWhereNotBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.wheres, "or", column, lo, hi, true)
 }
 
-func (b *Builder) betweenColumns(boolean, column, c1, c2 string, not bool) *Builder {
+func (b *query) betweenColumns(boolean, column, c1, c2 string, not bool) *query {
 	return b.push(
 		&b.wheres,
 		boolean,
@@ -440,9 +440,9 @@ func (b *Builder) betweenColumns(boolean, column, c1, c2 string, not bool) *Buil
 //
 // Example:
 //
-//	conn.Table("products").WhereBetweenColumns("price", "min_price", "max_price")
+//	conn.Select().From("products").WhereBetweenColumns("price", "min_price", "max_price")
 //	// SELECT * FROM "products" WHERE "price" BETWEEN "min_price" AND "max_price"
-func (b *Builder) WhereBetweenColumns(column, c1, c2 string) *Builder {
+func (b *query) WhereBetweenColumns(column, c1, c2 string) *query {
 	return b.betweenColumns("and", column, c1, c2, false)
 }
 
@@ -450,11 +450,11 @@ func (b *Builder) WhereBetweenColumns(column, c1, c2 string) *Builder {
 //
 // Example:
 //
-//	conn.Table("products").WhereBetweenColumns("price", "min_price", "max_price").
+//	conn.Select().From("products").WhereBetweenColumns("price", "min_price", "max_price").
 //		OrWhereBetweenColumns("cost", "low", "high")
 //	// SELECT * FROM "products" WHERE "price" BETWEEN "min_price" AND "max_price" OR "cost"
 //	//     BETWEEN "low" AND "high"
-func (b *Builder) OrWhereBetweenColumns(column, c1, c2 string) *Builder {
+func (b *query) OrWhereBetweenColumns(column, c1, c2 string) *query {
 	return b.betweenColumns("or", column, c1, c2, false)
 }
 
@@ -462,9 +462,9 @@ func (b *Builder) OrWhereBetweenColumns(column, c1, c2 string) *Builder {
 //
 // Example:
 //
-//	conn.Table("products").WhereNotBetweenColumns("price", "min_price", "max_price")
+//	conn.Select().From("products").WhereNotBetweenColumns("price", "min_price", "max_price")
 //	// SELECT * FROM "products" WHERE "price" NOT BETWEEN "min_price" AND "max_price"
-func (b *Builder) WhereNotBetweenColumns(column, c1, c2 string) *Builder {
+func (b *query) WhereNotBetweenColumns(column, c1, c2 string) *query {
 	return b.betweenColumns("and", column, c1, c2, true)
 }
 
@@ -472,15 +472,15 @@ func (b *Builder) WhereNotBetweenColumns(column, c1, c2 string) *Builder {
 //
 // Example:
 //
-//	conn.Table("products").WhereNotBetweenColumns("price", "min_price", "max_price").
+//	conn.Select().From("products").WhereNotBetweenColumns("price", "min_price", "max_price").
 //		OrWhereNotBetweenColumns("cost", "low", "high")
 //	// SELECT * FROM "products" WHERE "price" NOT BETWEEN "min_price" AND "max_price" OR "cost"
 //	//     NOT BETWEEN "low" AND "high"
-func (b *Builder) OrWhereNotBetweenColumns(column, c1, c2 string) *Builder {
+func (b *query) OrWhereNotBetweenColumns(column, c1, c2 string) *query {
 	return b.betweenColumns("or", column, c1, c2, true)
 }
 
-func (b *Builder) valueBetween(boolean string, value any, c1, c2 string, not bool) *Builder {
+func (b *query) valueBetween(boolean string, value any, c1, c2 string, not bool) *query {
 	return b.push(
 		&b.wheres,
 		boolean,
@@ -492,9 +492,9 @@ func (b *Builder) valueBetween(boolean string, value any, c1, c2 string, not boo
 //
 // Example:
 //
-//	conn.Table("coupons").WhereValueBetween(50, "min_total", "max_total")
+//	conn.Select().From("coupons").WhereValueBetween(50, "min_total", "max_total")
 //	// SELECT * FROM "coupons" WHERE $1 BETWEEN "min_total" AND "max_total"   args: [50]
-func (b *Builder) WhereValueBetween(value any, c1, c2 string) *Builder {
+func (b *query) WhereValueBetween(value any, c1, c2 string) *query {
 	return b.valueBetween("and", value, c1, c2, false)
 }
 
@@ -502,12 +502,12 @@ func (b *Builder) WhereValueBetween(value any, c1, c2 string) *Builder {
 //
 // Example:
 //
-//	conn.Table("coupons").WhereValueBetween(50, "min_total", "max_total").
+//	conn.Select().From("coupons").WhereValueBetween(50, "min_total", "max_total").
 //		OrWhereValueBetween(7, "a", "b")
 //	// SELECT * FROM "coupons" WHERE $1 BETWEEN "min_total" AND "max_total" OR $2 BETWEEN "a" AND
 //	//     "b"
 //	//     args: [50 7]
-func (b *Builder) OrWhereValueBetween(value any, c1, c2 string) *Builder {
+func (b *query) OrWhereValueBetween(value any, c1, c2 string) *query {
 	return b.valueBetween("or", value, c1, c2, false)
 }
 
@@ -515,9 +515,9 @@ func (b *Builder) OrWhereValueBetween(value any, c1, c2 string) *Builder {
 //
 // Example:
 //
-//	conn.Table("coupons").WhereValueNotBetween(50, "min_total", "max_total")
+//	conn.Select().From("coupons").WhereValueNotBetween(50, "min_total", "max_total")
 //	// SELECT * FROM "coupons" WHERE $1 NOT BETWEEN "min_total" AND "max_total"   args: [50]
-func (b *Builder) WhereValueNotBetween(value any, c1, c2 string) *Builder {
+func (b *query) WhereValueNotBetween(value any, c1, c2 string) *query {
 	return b.valueBetween("and", value, c1, c2, true)
 }
 
@@ -525,18 +525,18 @@ func (b *Builder) WhereValueNotBetween(value any, c1, c2 string) *Builder {
 //
 // Example:
 //
-//	conn.Table("coupons").WhereValueNotBetween(50, "min_total", "max_total").
+//	conn.Select().From("coupons").WhereValueNotBetween(50, "min_total", "max_total").
 //		OrWhereValueNotBetween(7, "a", "b")
 //	// SELECT * FROM "coupons" WHERE $1 NOT BETWEEN "min_total" AND "max_total" OR $2 NOT BETWEEN
 //	//     "a" AND "b"
 //	//     args: [50 7]
-func (b *Builder) OrWhereValueNotBetween(value any, c1, c2 string) *Builder {
+func (b *query) OrWhereValueNotBetween(value any, c1, c2 string) *query {
 	return b.valueBetween("or", value, c1, c2, true)
 }
 
 // ---- LIKE / null-safe ----
 
-func (b *Builder) like(boolean, column string, value any, not bool, cs []bool) *Builder {
+func (b *query) like(boolean, column string, value any, not bool, cs []bool) *query {
 	return b.push(
 		&b.wheres,
 		boolean,
@@ -549,11 +549,11 @@ func (b *Builder) like(boolean, column string, value any, not bool, cs []bool) *
 //
 // Example:
 //
-//	conn.Table("users").WhereLike("name", "An%")
+//	conn.Select().From("users").WhereLike("name", "An%")
 //	// Postgres: SELECT * FROM "users" WHERE "name"::TEXT ILIKE $1   args: [An%]
 //	// MySQL: SELECT * FROM `users` WHERE `name` LIKE ?   args: [An%]
 //	// SQLite: SELECT * FROM "users" WHERE "name" LIKE ?   args: [An%]
-func (b *Builder) WhereLike(column string, value any, caseSensitive ...bool) *Builder {
+func (b *query) WhereLike(column string, value any, caseSensitive ...bool) *query {
 	return b.like("and", column, value, false, caseSensitive)
 }
 
@@ -561,10 +561,10 @@ func (b *Builder) WhereLike(column string, value any, caseSensitive ...bool) *Bu
 //
 // Example:
 //
-//	conn.Table("users").WhereLike("name", "an%").OrWhereLike("name", "bo%")
+//	conn.Select().From("users").WhereLike("name", "an%").OrWhereLike("name", "bo%")
 //	// SELECT * FROM "users" WHERE "name"::TEXT ILIKE $1 OR "name"::TEXT ILIKE $2
 //	//     args: [an% bo%]
-func (b *Builder) OrWhereLike(column string, value any, caseSensitive ...bool) *Builder {
+func (b *query) OrWhereLike(column string, value any, caseSensitive ...bool) *query {
 	return b.like("or", column, value, false, caseSensitive)
 }
 
@@ -572,9 +572,9 @@ func (b *Builder) OrWhereLike(column string, value any, caseSensitive ...bool) *
 //
 // Example:
 //
-//	conn.Table("users").WhereNotLike("name", "%test%")
+//	conn.Select().From("users").WhereNotLike("name", "%test%")
 //	// SELECT * FROM "users" WHERE "name"::TEXT NOT ILIKE $1   args: [%test%]
-func (b *Builder) WhereNotLike(column string, value any, caseSensitive ...bool) *Builder {
+func (b *query) WhereNotLike(column string, value any, caseSensitive ...bool) *query {
 	return b.like("and", column, value, true, caseSensitive)
 }
 
@@ -582,10 +582,10 @@ func (b *Builder) WhereNotLike(column string, value any, caseSensitive ...bool) 
 //
 // Example:
 //
-//	conn.Table("users").WhereNotLike("name", "%test%").OrWhereNotLike("name", "%demo%", true)
+//	conn.Select().From("users").WhereNotLike("name", "%test%").OrWhereNotLike("name", "%demo%", true)
 //	// SELECT * FROM "users" WHERE "name"::TEXT NOT ILIKE $1 OR "name"::TEXT NOT LIKE $2
 //	//     args: [%test% %demo%]
-func (b *Builder) OrWhereNotLike(column string, value any, caseSensitive ...bool) *Builder {
+func (b *query) OrWhereNotLike(column string, value any, caseSensitive ...bool) *query {
 	return b.like("or", column, value, true, caseSensitive)
 }
 
@@ -593,10 +593,10 @@ func (b *Builder) OrWhereNotLike(column string, value any, caseSensitive ...bool
 //
 // Example:
 //
-//	conn.Table("users").WhereNullSafeEquals("manager_id", 7)
+//	conn.Select().From("users").WhereNullSafeEquals("manager_id", 7)
 //	// Postgres: SELECT * FROM "users" WHERE "manager_id" IS NOT DISTINCT FROM $1   args: [7]
 //	// MySQL: SELECT * FROM `users` WHERE `manager_id` <=> ?   args: [7]
-func (b *Builder) WhereNullSafeEquals(column string, value any) *Builder {
+func (b *query) WhereNullSafeEquals(column string, value any) *query {
 	return b.push(&b.wheres, "and", clause{kind: clauseNullSafe, column: column, value: value})
 }
 
@@ -604,26 +604,26 @@ func (b *Builder) WhereNullSafeEquals(column string, value any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNullSafeEquals("a", 1).OrWhereNullSafeEquals("b", 2)
+//	conn.Select().From("users").WhereNullSafeEquals("a", 1).OrWhereNullSafeEquals("b", 2)
 //	// SELECT * FROM "users" WHERE "a" IS NOT DISTINCT FROM $1 OR "b" IS NOT DISTINCT FROM $2
 //	//     args: [1 2]
-func (b *Builder) OrWhereNullSafeEquals(column string, value any) *Builder {
+func (b *query) OrWhereNullSafeEquals(column string, value any) *query {
 	return b.push(&b.wheres, "or", clause{kind: clauseNullSafe, column: column, value: value})
 }
 
 // ---- grouping ----
 
 // WhereGroup wraps the predicates added inside fn in parentheses.
-// fn receives a fresh builder; only its Where* calls are used.
+// fn receives a fresh WhereClause; only its Where* calls are used.
 //
 // Example:
 //
-//	conn.Table("users").Where("active", true).WhereGroup(func(q *db.Builder) {
+//	conn.Select().From("users").Where("active", true).WhereGroup(func(q *db.WhereClause) {
 //		q.Where("role", "admin").OrWhere("role", "editor")
 //	})
 //	// SELECT * FROM "users" WHERE "active" = $1 AND ("role" = $2 OR "role" = $3)
 //	//     args: [true admin editor]
-func (b *Builder) WhereGroup(fn func(*Builder)) *Builder {
+func (b *query) WhereGroup(fn func(*query)) *query {
 	return b.group(&b.wheres, "and", fn, false)
 }
 
@@ -631,12 +631,12 @@ func (b *Builder) WhereGroup(fn func(*Builder)) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Where("active", true).OrWhereGroup(func(q *db.Builder) {
+//	conn.Select().From("users").Where("active", true).OrWhereGroup(func(q *db.WhereClause) {
 //		q.Where("role", "admin").Where("age", ">", 30)
 //	})
 //	// SELECT * FROM "users" WHERE "active" = $1 OR ("role" = $2 AND "age" > $3)
 //	//     args: [true admin 30]
-func (b *Builder) OrWhereGroup(fn func(*Builder)) *Builder {
+func (b *query) OrWhereGroup(fn func(*query)) *query {
 	return b.group(&b.wheres, "or", fn, false)
 }
 
@@ -644,25 +644,25 @@ func (b *Builder) OrWhereGroup(fn func(*Builder)) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereMap(map[string]any{"role": "ann", "active": true})
+//	conn.Select().From("users").WhereMap(map[string]any{"role": "ann", "active": true})
 //	// SELECT * FROM "users" WHERE ("active" = $1 AND "role" = $2)   args: [true ann]
-func (b *Builder) WhereMap(m map[string]any) *Builder { return b.whereMap("and", m) }
+func (b *query) WhereMap(m map[string]any) *query { return b.whereMap("and", m) }
 
 // OrWhereMap is WhereMap joined with OR.
 //
 // Example:
 //
-//	conn.Table("users").WhereMap(map[string]any{"a": 1}).OrWhereMap(map[string]any{"b": 2})
+//	conn.Select().From("users").WhereMap(map[string]any{"a": 1}).OrWhereMap(map[string]any{"b": 2})
 //	// SELECT * FROM "users" WHERE ("a" = $1) OR ("b" = $2)   args: [1 2]
-func (b *Builder) OrWhereMap(m map[string]any) *Builder { return b.whereMap("or", m) }
+func (b *query) OrWhereMap(m map[string]any) *query { return b.whereMap("or", m) }
 
-func (b *Builder) whereMap(boolean string, m map[string]any) *Builder {
+func (b *query) whereMap(boolean string, m map[string]any) *query {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	return b.group(&b.wheres, boolean, func(q *Builder) {
+	return b.group(&b.wheres, boolean, func(q *query) {
 		for _, k := range keys {
 			q.Where(k, m[k])
 		}
@@ -671,15 +671,15 @@ func (b *Builder) whereMap(boolean string, m map[string]any) *Builder {
 
 // ---- EXISTS ----
 
-// WhereExists adds "EXISTS (subquery)". Build sub with NewQuery() or NewBuilder.
+// WhereExists adds "EXISTS (subquery)". Build sub with DB.Select.
 //
 // Example:
 //
-//	posts := conn.Table("posts").Select("1").WhereColumn("posts.user_id", "users.id")
-//	conn.Table("users").WhereExists(posts)
+//	posts := conn.Select().From("posts").Select("1").WhereColumn("posts.user_id", "users.id")
+//	conn.Select().From("users").WhereExists(posts)
 //	// SELECT * FROM "users" WHERE EXISTS (SELECT "1" FROM "posts" WHERE "posts"."user_id" =
 //	//     "users"."id")
-func (b *Builder) WhereExists(sub *Builder) *Builder {
+func (b *query) WhereExists(sub *query) *query {
 	return b.push(&b.wheres, "and", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
@@ -687,12 +687,12 @@ func (b *Builder) WhereExists(sub *Builder) *Builder {
 //
 // Example:
 //
-//	posts := conn.Table("posts").Select("1").WhereColumn("posts.user_id", "users.id")
-//	conn.Table("users").Where("active", true).OrWhereExists(posts)
+//	posts := conn.Select().From("posts").Select("1").WhereColumn("posts.user_id", "users.id")
+//	conn.Select().From("users").Where("active", true).OrWhereExists(posts)
 //	// SELECT * FROM "users" WHERE "active" = $1 OR EXISTS (SELECT "1" FROM "posts" WHERE
 //	//     "posts"."user_id" = "users"."id")
 //	//     args: [true]
-func (b *Builder) OrWhereExists(sub *Builder) *Builder {
+func (b *query) OrWhereExists(sub *query) *query {
 	return b.push(&b.wheres, "or", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
@@ -700,11 +700,11 @@ func (b *Builder) OrWhereExists(sub *Builder) *Builder {
 //
 // Example:
 //
-//	posts := conn.Table("posts").Select("1").WhereColumn("posts.user_id", "users.id")
-//	conn.Table("users").WhereNotExists(posts)
+//	posts := conn.Select().From("posts").Select("1").WhereColumn("posts.user_id", "users.id")
+//	conn.Select().From("users").WhereNotExists(posts)
 //	// SELECT * FROM "users" WHERE NOT EXISTS (SELECT "1" FROM "posts" WHERE "posts"."user_id" =
 //	//     "users"."id")
-func (b *Builder) WhereNotExists(sub *Builder) *Builder {
+func (b *query) WhereNotExists(sub *query) *query {
 	return b.push(&b.wheres, "and not", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
@@ -712,12 +712,12 @@ func (b *Builder) WhereNotExists(sub *Builder) *Builder {
 //
 // Example:
 //
-//	posts := conn.Table("posts").Select("1").WhereColumn("posts.user_id", "users.id")
-//	conn.Table("users").Where("active", true).OrWhereNotExists(posts)
+//	posts := conn.Select().From("posts").Select("1").WhereColumn("posts.user_id", "users.id")
+//	conn.Select().From("users").Where("active", true).OrWhereNotExists(posts)
 //	// SELECT * FROM "users" WHERE "active" = $1 OR NOT EXISTS (SELECT "1" FROM "posts" WHERE
 //	//     "posts"."user_id" = "users"."id")
 //	//     args: [true]
-func (b *Builder) OrWhereNotExists(sub *Builder) *Builder {
+func (b *query) OrWhereNotExists(sub *query) *query {
 	return b.push(&b.wheres, "or not", clause{kind: clauseExists, x: &clauseExt{sub: sub}})
 }
 
@@ -727,12 +727,12 @@ func (b *Builder) OrWhereNotExists(sub *Builder) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereDate("created_at", ">=", "2024-01-15")
+//	conn.Select().From("orders").WhereDate("created_at", ">=", "2024-01-15")
 //	// Postgres: SELECT * FROM "orders" WHERE "created_at"::DATE >= $1   args: [2024-01-15]
 //	// MySQL: SELECT * FROM `orders` WHERE DATE(`created_at`) >= ?   args: [2024-01-15]
 //	// SQLite: SELECT * FROM "orders" WHERE STRFTIME('%Y-%m-%d', "created_at") >= CAST(? AS TEXT)
 //	//     args: [2024-01-15]
-func (b *Builder) WhereDate(column string, args ...any) *Builder {
+func (b *query) WhereDate(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "and", "date", column, args)
 }
 
@@ -740,11 +740,11 @@ func (b *Builder) WhereDate(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereDate("created_at", "2024-01-15").
+//	conn.Select().From("orders").WhereDate("created_at", "2024-01-15").
 //		OrWhereDate("created_at", "2024-02-01")
 //	// SELECT * FROM "orders" WHERE "created_at"::DATE = $1 OR "created_at"::DATE = $2
 //	//     args: [2024-01-15 2024-02-01]
-func (b *Builder) OrWhereDate(column string, args ...any) *Builder {
+func (b *query) OrWhereDate(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "or", "date", column, args)
 }
 
@@ -752,10 +752,10 @@ func (b *Builder) OrWhereDate(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereTime("created_at", ">", "10:30:00")
+//	conn.Select().From("orders").WhereTime("created_at", ">", "10:30:00")
 //	// Postgres: SELECT * FROM "orders" WHERE "created_at"::TIME > $1   args: [10:30:00]
 //	// MySQL: SELECT * FROM `orders` WHERE TIME(`created_at`) > ?   args: [10:30:00]
-func (b *Builder) WhereTime(column string, args ...any) *Builder {
+func (b *query) WhereTime(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "and", "time", column, args)
 }
 
@@ -763,11 +763,11 @@ func (b *Builder) WhereTime(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereTime("created_at", "10:30:00").
+//	conn.Select().From("orders").WhereTime("created_at", "10:30:00").
 //		OrWhereTime("created_at", "<", "08:00:00")
 //	// SELECT * FROM "orders" WHERE "created_at"::TIME = $1 OR "created_at"::TIME < $2
 //	//     args: [10:30:00 08:00:00]
-func (b *Builder) OrWhereTime(column string, args ...any) *Builder {
+func (b *query) OrWhereTime(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "or", "time", column, args)
 }
 
@@ -775,10 +775,10 @@ func (b *Builder) OrWhereTime(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereDay("created_at", 15)
+//	conn.Select().From("orders").WhereDay("created_at", 15)
 //	// Postgres: SELECT * FROM "orders" WHERE EXTRACT(DAY FROM "created_at") = $1   args: [15]
 //	// MySQL: SELECT * FROM `orders` WHERE DAY(`created_at`) = ?   args: [15]
-func (b *Builder) WhereDay(column string, args ...any) *Builder {
+func (b *query) WhereDay(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "and", "day", column, args)
 }
 
@@ -786,11 +786,11 @@ func (b *Builder) WhereDay(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereDay("created_at", 15).OrWhereDay("created_at", ">", 20)
+//	conn.Select().From("orders").WhereDay("created_at", 15).OrWhereDay("created_at", ">", 20)
 //	// SELECT * FROM "orders" WHERE EXTRACT(DAY FROM "created_at") = $1 OR EXTRACT(DAY FROM
 //	//     "created_at") > $2
 //	//     args: [15 20]
-func (b *Builder) OrWhereDay(column string, args ...any) *Builder {
+func (b *query) OrWhereDay(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "or", "day", column, args)
 }
 
@@ -798,10 +798,10 @@ func (b *Builder) OrWhereDay(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereMonth("created_at", 3)
+//	conn.Select().From("orders").WhereMonth("created_at", 3)
 //	// Postgres: SELECT * FROM "orders" WHERE EXTRACT(MONTH FROM "created_at") = $1   args: [03]
 //	// MySQL: SELECT * FROM `orders` WHERE MONTH(`created_at`) = ?   args: [03]
-func (b *Builder) WhereMonth(column string, args ...any) *Builder {
+func (b *query) WhereMonth(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "and", "month", column, args)
 }
 
@@ -809,11 +809,11 @@ func (b *Builder) WhereMonth(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereMonth("created_at", ">=", 6).OrWhereMonth("created_at", 1)
+//	conn.Select().From("orders").WhereMonth("created_at", ">=", 6).OrWhereMonth("created_at", 1)
 //	// SELECT * FROM "orders" WHERE EXTRACT(MONTH FROM "created_at") >= $1 OR EXTRACT(MONTH FROM
 //	//     "created_at") = $2
 //	//     args: [06 01]
-func (b *Builder) OrWhereMonth(column string, args ...any) *Builder {
+func (b *query) OrWhereMonth(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "or", "month", column, args)
 }
 
@@ -821,11 +821,11 @@ func (b *Builder) OrWhereMonth(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereYear("created_at", 2024)
+//	conn.Select().From("orders").WhereYear("created_at", 2024)
 //	// Postgres: SELECT * FROM "orders" WHERE EXTRACT(YEAR FROM "created_at") = $1
 //	//     args: [2024]
 //	// MySQL: SELECT * FROM `orders` WHERE YEAR(`created_at`) = ?   args: [2024]
-func (b *Builder) WhereYear(column string, args ...any) *Builder {
+func (b *query) WhereYear(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "and", "year", column, args)
 }
 
@@ -833,11 +833,11 @@ func (b *Builder) WhereYear(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").WhereYear("created_at", ">", 2020).OrWhereYear("created_at", 1999)
+//	conn.Select().From("orders").WhereYear("created_at", ">", 2020).OrWhereYear("created_at", 1999)
 //	// SELECT * FROM "orders" WHERE EXTRACT(YEAR FROM "created_at") > $1 OR EXTRACT(YEAR FROM
 //	//     "created_at") = $2
 //	//     args: [2020 1999]
-func (b *Builder) OrWhereYear(column string, args ...any) *Builder {
+func (b *query) OrWhereYear(column string, args ...any) *query {
 	return b.dateClause(&b.wheres, "or", "year", column, args)
 }
 
@@ -847,10 +847,10 @@ func (b *Builder) OrWhereYear(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereAll([]string{"first_name", "last_name"}, "like", "an%")
+//	conn.Select().From("users").WhereAll([]string{"first_name", "last_name"}, "like", "an%")
 //	// SELECT * FROM "users" WHERE ("first_name"::TEXT LIKE $1 AND "last_name"::TEXT LIKE $2)
 //	//     args: [an% an%]
-func (b *Builder) WhereAll(columns []string, args ...any) *Builder {
+func (b *query) WhereAll(columns []string, args ...any) *query {
 	return b.multi("and", "and", columns, args)
 }
 
@@ -858,10 +858,10 @@ func (b *Builder) WhereAll(columns []string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereAll([]string{"a", "b"}, 1).OrWhereAll([]string{"c", "d"}, ">", 5)
+//	conn.Select().From("users").WhereAll([]string{"a", "b"}, 1).OrWhereAll([]string{"c", "d"}, ">", 5)
 //	// SELECT * FROM "users" WHERE ("a" = $1 AND "b" = $2) OR ("c" > $3 AND "d" > $4)
 //	//     args: [1 1 5 5]
-func (b *Builder) OrWhereAll(columns []string, args ...any) *Builder {
+func (b *query) OrWhereAll(columns []string, args ...any) *query {
 	return b.multi("or", "and", columns, args)
 }
 
@@ -869,9 +869,9 @@ func (b *Builder) OrWhereAll(columns []string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereAny([]string{"first_name", "last_name"}, "ann")
+//	conn.Select().From("users").WhereAny([]string{"first_name", "last_name"}, "ann")
 //	// SELECT * FROM "users" WHERE ("first_name" = $1 OR "last_name" = $2)   args: [ann ann]
-func (b *Builder) WhereAny(columns []string, args ...any) *Builder {
+func (b *query) WhereAny(columns []string, args ...any) *query {
 	return b.multi("and", "or", columns, args)
 }
 
@@ -879,9 +879,9 @@ func (b *Builder) WhereAny(columns []string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Where("active", true).OrWhereAny([]string{"a", "b"}, ">", 5)
+//	conn.Select().From("users").Where("active", true).OrWhereAny([]string{"a", "b"}, ">", 5)
 //	// SELECT * FROM "users" WHERE "active" = $1 OR ("a" > $2 OR "b" > $3)   args: [true 5 5]
-func (b *Builder) OrWhereAny(columns []string, args ...any) *Builder {
+func (b *query) OrWhereAny(columns []string, args ...any) *query {
 	return b.multi("or", "or", columns, args)
 }
 
@@ -889,10 +889,10 @@ func (b *Builder) OrWhereAny(columns []string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereNone([]string{"first_name", "last_name"}, "like", "%test%")
+//	conn.Select().From("users").WhereNone([]string{"first_name", "last_name"}, "like", "%test%")
 //	// SELECT * FROM "users" WHERE NOT ("first_name"::TEXT LIKE $1 OR "last_name"::TEXT LIKE $2)
 //	//     args: [%test% %test%]
-func (b *Builder) WhereNone(columns []string, args ...any) *Builder {
+func (b *query) WhereNone(columns []string, args ...any) *query {
 	return b.multi("and not", "or", columns, args)
 }
 
@@ -900,16 +900,16 @@ func (b *Builder) WhereNone(columns []string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Where("active", true).OrWhereNone([]string{"a", "b"}, 0)
+//	conn.Select().From("users").Where("active", true).OrWhereNone([]string{"a", "b"}, 0)
 //	// SELECT * FROM "users" WHERE "active" = $1 OR NOT ("a" = $2 OR "b" = $3)
 //	//     args: [true 0 0]
-func (b *Builder) OrWhereNone(columns []string, args ...any) *Builder {
+func (b *query) OrWhereNone(columns []string, args ...any) *query {
 	return b.multi("or not", "or", columns, args)
 }
 
 // ---- row values ----
 
-func (b *Builder) rowValues(boolean string, columns []string, op string, values []any) *Builder {
+func (b *query) rowValues(boolean string, columns []string, op string, values []any) *query {
 	op = strings.ToLower(strings.TrimSpace(op))
 	canon, ok := operators[op]
 	if !ok {
@@ -935,10 +935,10 @@ func (b *Builder) rowValues(boolean string, columns []string, op string, values 
 //
 // Example:
 //
-//	conn.Table("events").
+//	conn.Select().From("events").
 //		WhereRowValues([]string{"created_at", "id"}, ">", []any{"2024-01-15", 42})
 //	// SELECT * FROM "events" WHERE ("created_at", "id") > ($1, $2)   args: [2024-01-15 42]
-func (b *Builder) WhereRowValues(columns []string, op string, values []any) *Builder {
+func (b *query) WhereRowValues(columns []string, op string, values []any) *query {
 	return b.rowValues("and", columns, op, values)
 }
 
@@ -946,10 +946,10 @@ func (b *Builder) WhereRowValues(columns []string, op string, values []any) *Bui
 //
 // Example:
 //
-//	conn.Table("events").Where("kind", "x").
+//	conn.Select().From("events").Where("kind", "x").
 //		OrWhereRowValues([]string{"a", "b"}, "=", []any{1, 2})
 //	// SELECT * FROM "events" WHERE "kind" = $1 OR ("a", "b") = ($2, $3)   args: [x 1 2]
-func (b *Builder) OrWhereRowValues(columns []string, op string, values []any) *Builder {
+func (b *query) OrWhereRowValues(columns []string, op string, values []any) *query {
 	return b.rowValues("or", columns, op, values)
 }
 
@@ -959,11 +959,11 @@ func (b *Builder) OrWhereRowValues(columns []string, op string, values []any) *B
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingNull("spent")
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent" IS
 //	//     NULL
-func (b *Builder) HavingNull(column string) *Builder {
+func (b *query) HavingNull(column string) *query {
 	return b.nullClause(&b.havings, "and", column, false)
 }
 
@@ -971,11 +971,11 @@ func (b *Builder) HavingNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingNull("spent").OrHavingNull("user_id")
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent" IS
 //	//     NULL OR "user_id" IS NULL
-func (b *Builder) OrHavingNull(column string) *Builder {
+func (b *query) OrHavingNull(column string) *query {
 	return b.nullClause(&b.havings, "or", column, false)
 }
 
@@ -983,11 +983,11 @@ func (b *Builder) OrHavingNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingNotNull("spent")
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent" IS
 //	//     NOT NULL
-func (b *Builder) HavingNotNull(column string) *Builder {
+func (b *query) HavingNotNull(column string) *query {
 	return b.nullClause(&b.havings, "and", column, true)
 }
 
@@ -995,11 +995,11 @@ func (b *Builder) HavingNotNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingNotNull("spent").OrHavingNotNull("user_id")
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent" IS
 //	//     NOT NULL OR "user_id" IS NOT NULL
-func (b *Builder) OrHavingNotNull(column string) *Builder {
+func (b *query) OrHavingNotNull(column string) *query {
 	return b.nullClause(&b.havings, "or", column, true)
 }
 
@@ -1007,12 +1007,12 @@ func (b *Builder) OrHavingNotNull(column string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingBetween("spent", 100, 500)
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent"
 //	//     BETWEEN $1 AND $2
 //	//     args: [100 500]
-func (b *Builder) HavingBetween(column string, lo, hi any) *Builder {
+func (b *query) HavingBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.havings, "and", column, lo, hi, false)
 }
 
@@ -1020,12 +1020,12 @@ func (b *Builder) HavingBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingBetween("spent", 100, 500).OrHavingBetween("user_id", 1, 3)
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent"
 //	//     BETWEEN $1 AND $2 OR "user_id" BETWEEN $3 AND $4
 //	//     args: [100 500 1 3]
-func (b *Builder) OrHavingBetween(column string, lo, hi any) *Builder {
+func (b *query) OrHavingBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.havings, "or", column, lo, hi, false)
 }
 
@@ -1033,12 +1033,12 @@ func (b *Builder) OrHavingBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingNotBetween("spent", 100, 500)
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent" NOT
 //	//     BETWEEN $1 AND $2
 //	//     args: [100 500]
-func (b *Builder) HavingNotBetween(column string, lo, hi any) *Builder {
+func (b *query) HavingNotBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.havings, "and", column, lo, hi, true)
 }
 
@@ -1046,12 +1046,12 @@ func (b *Builder) HavingNotBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
 //		HavingNotBetween("spent", 100, 500).OrHavingNotBetween("user_id", 1, 3)
 //	// SELECT "user_id", sum(total) as spent FROM "orders" GROUP BY "user_id" HAVING "spent" NOT
 //	//     BETWEEN $1 AND $2 OR "user_id" NOT BETWEEN $3 AND $4
 //	//     args: [100 500 1 3]
-func (b *Builder) OrHavingNotBetween(column string, lo, hi any) *Builder {
+func (b *query) OrHavingNotBetween(column string, lo, hi any) *query {
 	return b.betweenClause(&b.havings, "or", column, lo, hi, true)
 }
 
@@ -1059,14 +1059,14 @@ func (b *Builder) OrHavingNotBetween(column string, lo, hi any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
-//		SelectRaw("count(*) as n").HavingGroup(func(q *db.Builder) {
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//		SelectRaw("count(*) as n").HavingGroup(func(q *db.HavingClause) {
 //		q.Having("spent", ">", 100).OrHaving("n", ">", 5)
 //	})
 //	// SELECT "user_id", sum(total) as spent, count(*) as n FROM "orders" GROUP BY "user_id"
 //	//     HAVING ("spent" > $1 OR "n" > $2)
 //	//     args: [100 5]
-func (b *Builder) HavingGroup(fn func(*Builder)) *Builder {
+func (b *query) HavingGroup(fn func(*query)) *query {
 	return b.group(&b.havings, "and", fn, true)
 }
 
@@ -1074,13 +1074,13 @@ func (b *Builder) HavingGroup(fn func(*Builder)) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
-//		SelectRaw("count(*) as n").Having("n", ">", 1).OrHavingGroup(func(q *db.Builder) {
+//	conn.Select().From("orders").Select("user_id").SelectRaw("sum(total) as spent").GroupBy("user_id").
+//		SelectRaw("count(*) as n").Having("n", ">", 1).OrHavingGroup(func(q *db.HavingClause) {
 //		q.Having("spent", ">", 100).Having("n", "<", 3)
 //	})
 //	// SELECT "user_id", sum(total) as spent, count(*) as n FROM "orders" GROUP BY "user_id"
 //	//     HAVING "n" > $1 OR ("spent" > $2 AND "n" < $3)
 //	//     args: [1 100 3]
-func (b *Builder) OrHavingGroup(fn func(*Builder)) *Builder {
+func (b *query) OrHavingGroup(fn func(*query)) *query {
 	return b.group(&b.havings, "or", fn, true)
 }

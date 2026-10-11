@@ -129,39 +129,34 @@ func TestTypedIteration(t *testing.T) {
 	assert.Equal(t, []string{"m1", "m2"}, names)
 }
 
-func TestTypedReturning(t *testing.T) {
+func TestTypedRowsInsertReturning(t *testing.T) {
 	ctx := context.Background()
 	sqlDB, mock := newMock(t)
 	conn := db.New(sqlDB, db.Postgres)
 
+	// struct writes go through the write builders; Query[T] is select-only
 	mock.ExpectQuery(`INSERT INTO "members" ("name") VALUES ($1) RETURNING *`).
 		WithArgs("dee").
 		WillReturnRows(members(1))
-	ins, err := db.From[member](conn).InsertReturning(ctx, member{Name: "dee"})
-	require.NoError(t, err)
+	var ins []member
+	require.NoError(t, conn.Insert("members").Rows(member{Name: "dee"}).Returning("*").Get(ctx, &ins))
 	assert.Len(t, ins, 1)
 
 	mock.ExpectQuery(`UPDATE "members" SET "name" = $1 WHERE "id" = $2 RETURNING *`).
 		WithArgs("ann", 1).
 		WillReturnRows(members(1))
-	upd, err := db.From[member](conn).Where("id", 1).UpdateReturning(ctx, member{Name: "ann"})
-	require.NoError(t, err)
+	var upd []member
+	require.NoError(t, conn.Update("members").SetRow(member{Name: "ann"}).Where("id", 1).Returning("*").Get(ctx, &upd))
 	assert.Len(t, upd, 1)
 
 	mock.ExpectQuery(`DELETE FROM "members" WHERE "id" = $1 RETURNING "id"`).WithArgs(2).WillReturnRows(members(1))
-	del, err := db.From[member](conn).Where("id", 2).Returning("id").DeleteReturning(ctx)
-	require.NoError(t, err)
+	var del []member
+	require.NoError(t, conn.Delete("members").Where("id", 2).Returning("id").Get(ctx, &del))
 	assert.Len(t, del, 1)
 
-	mock.ExpectQuery(`DELETE FROM "members" WHERE "id" = $1 RETURNING *`).WithArgs(2).WillReturnRows(members(1))
-	_, err = db.From[member](conn).Where("id", 2).DeleteReturning(ctx)
-	require.NoError(t, err)
-
 	// a non-struct row cannot be converted to columns
-	_, err = db.As[int](conn.Table("t")).InsertReturning(ctx, 1)
-	require.Error(t, err)
-	_, err = db.As[int](conn.Table("t")).UpdateReturning(ctx, 1)
-	require.Error(t, err)
+	require.Error(t, conn.Insert("t").Rows(1).Returning("*").Get(ctx, &ins))
+	require.Error(t, conn.Update("t").SetRow(1).Where("id", 1).Returning("*").Get(ctx, &upd))
 }
 
 func TestTypedScalarHelpers(t *testing.T) {
@@ -171,32 +166,52 @@ func TestTypedScalarHelpers(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT "name" FROM "members" WHERE "id" = $1 LIMIT 1`).WithArgs(1).
 		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("ann"))
-	name, err := db.ValueAs[string](ctx, conn.Table("members").Where("id", 1), "name")
+	name, err := db.ValueAs[string](ctx, conn.Select().From("members").Where("id", 1), "name")
 	require.NoError(t, err)
 	assert.Equal(t, "ann", name)
 
 	mock.ExpectQuery(`SELECT "id" FROM "members"`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1).AddRow(2))
-	ids, err := db.PluckAs[int64](ctx, conn.Table("members"), "id")
+	ids, err := db.PluckAs[int64](ctx, conn.Select().From("members"), "id")
 	require.NoError(t, err)
 	assert.Equal(t, []int64{1, 2}, ids)
 
-	agg := func(v any) *sqlmock.Rows { return sqlmock.NewRows([]string{"aggregate"}).AddRow(v) }
-	mock.ExpectQuery(`SELECT AVG("age") AS "aggregate" FROM "members"`).WillReturnRows(agg(3.5))
-	avg, err := db.AggregateAs[float64](ctx, conn.Table("members"), "avg", "age")
-	require.NoError(t, err)
-	assert.InDelta(t, 3.5, avg, 0)
-
-	mock.ExpectQuery(`SELECT MIN("age") AS "aggregate" FROM "members"`).WillReturnRows(agg(18))
-	lo, err := db.MinAs[int](ctx, conn.Table("members"), "age")
-	require.NoError(t, err)
-	assert.Equal(t, 18, lo)
-
-	mock.ExpectQuery(`SELECT MAX("age") AS "aggregate" FROM "members"`).WillReturnRows(agg(60))
-	hi, err := db.MaxAs[int](ctx, conn.Table("members"), "age")
-	require.NoError(t, err)
-	assert.Equal(t, 60, hi)
-
 	mock.ExpectQuery(`SELECT "name" FROM "members" LIMIT 1`).WillReturnError(errors.New("boom"))
-	_, err = db.ValueAs[string](ctx, conn.Table("members"), "name")
+	_, err = db.ValueAs[string](ctx, conn.Select().From("members"), "name")
 	require.Error(t, err)
+}
+
+func TestTypedAggregates(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	conn := db.New(sqlDB, db.Postgres)
+	q := func() *db.Query[member] { return db.From[member](conn) }
+	agg := func(v any) *sqlmock.Rows { return sqlmock.NewRows([]string{"aggregate"}).AddRow(v) }
+	exists := func(v bool) *sqlmock.Rows { return sqlmock.NewRows([]string{"exists"}).AddRow(v) }
+
+	mock.ExpectQuery(`SELECT COUNT(*) AS "aggregate" FROM "members" WHERE "age" > $1`).
+		WithArgs(18).
+		WillReturnRows(agg(3))
+	n, err := q().Where("age", ">", 18).Count(ctx)
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, n)
+
+	mock.ExpectQuery(`SELECT EXISTS(SELECT * FROM "members") AS "exists"`).WillReturnRows(exists(true))
+	ok, err := q().Exists(ctx)
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	mock.ExpectQuery(`SELECT EXISTS(SELECT * FROM "members") AS "exists"`).WillReturnRows(exists(true))
+	none, err := q().DoesntExist(ctx)
+	require.NoError(t, err)
+	assert.False(t, none)
+
+	mock.ExpectQuery(`SELECT SUM("age") AS "aggregate" FROM "members"`).WillReturnRows(agg(86.0))
+	sum, err := q().Sum(ctx, "age")
+	require.NoError(t, err)
+	assert.InDelta(t, 86, sum, 0)
+
+	mock.ExpectQuery(`SELECT AVG("age") AS "aggregate" FROM "members"`).WillReturnRows(agg(28.5))
+	avg, err := q().Avg(ctx, "age")
+	require.NoError(t, err)
+	assert.InDelta(t, 28.5, avg, 0)
 }

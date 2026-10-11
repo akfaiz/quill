@@ -49,7 +49,7 @@ var scenarios = []scenario{
 		name:      "SimpleSelect",
 		limitArgs: 1,
 		quill: func() (string, []any, error) {
-			return pg.Table("users").Select("id", "name").Where("votes", ">", 100).OrderByDesc("id").Limit(10).ToSQL()
+			return pg.Select("id", "name").From("users").Where("votes", ">", 100).OrderByDesc("id").Limit(10).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
 			return sqPG.Select("id", "name").
@@ -83,8 +83,8 @@ var scenarios = []scenario{
 		name:      "ComplexSelect",
 		limitArgs: 2,
 		quill: func() (string, []any, error) {
-			return pg.Table("users as u").
-				Select("u.id", "u.name", "p.title").
+			return pg.Select("u.id", "u.name", "p.title").
+				From("users as u").
 				Join("posts as p", "p.user_id", "u.id").
 				LeftJoin("profiles", "profiles.user_id", "=", "u.id").
 				Where("u.age", ">=", 18).
@@ -140,7 +140,7 @@ var scenarios = []scenario{
 	{
 		name: "WideWhere",
 		quill: func() (string, []any, error) {
-			return pg.Table("orders").
+			return pg.Select().From("orders").
 				Where("a", 1).Where("b", ">", 2).Where("c", "<", 3).Where("d", "!=", 4).
 				Where("e", ">=", 5).Where("f", "<=", 6).WhereIn("g", ids).WhereNull("h").
 				WhereNotNull("i").WhereBetween("j", 7, 8).WhereLike("k", "x%").Where("l", 9).
@@ -177,7 +177,7 @@ var scenarios = []scenario{
 	{
 		name: "Insert3Rows",
 		quill: func() (string, []any, error) {
-			return pg.Table("users").InsertSQL(insMaps...)
+			return pg.Insert("users").Values(insMaps...).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
 			q := sqPG.Insert("users").Columns("name", "age", "email")
@@ -206,7 +206,7 @@ var scenarios = []scenario{
 	{
 		name: "Update",
 		quill: func() (string, []any, error) {
-			return pg.Table("users").Where("id", 1).UpdateSQL(map[string]any{"name": "ann", "age": 31})
+			return pg.Update("users").SetMap(map[string]any{"name": "ann", "age": 31}).Where("id", 1).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
 			return sqPG.Update("users").Set("name", "ann").Set("age", 31).Where(sq.Eq{"id": 1}).ToSql()
@@ -230,7 +230,7 @@ var scenarios = []scenario{
 	{
 		name: "Delete",
 		quill: func() (string, []any, error) {
-			return pg.Table("users").Where("id", 1).DeleteSQL()
+			return pg.Delete("users").Where("id", 1).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
 			return sqPG.Delete("users").Where(sq.Eq{"id": 1}).ToSql()

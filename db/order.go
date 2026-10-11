@@ -6,17 +6,17 @@ import "fmt"
 //
 // Example:
 //
-//	conn.Table("posts").Latest("published_at")
+//	conn.Select().From("posts").Latest("published_at")
 //	// SELECT * FROM "posts" ORDER BY "published_at" DESC
-func (b *Builder) Latest(column ...string) *Builder { return b.OrderBy(orDefault(column), "desc") }
+func (b *query) Latest(column ...string) *query { return b.OrderBy(orDefault(column), "desc") }
 
 // Oldest orders by column ascending (default "created_at").
 //
 // Example:
 //
-//	conn.Table("posts").Oldest()
+//	conn.Select().From("posts").Oldest()
 //	// SELECT * FROM "posts" ORDER BY "created_at" ASC
-func (b *Builder) Oldest(column ...string) *Builder { return b.OrderBy(orDefault(column), "asc") }
+func (b *query) Oldest(column ...string) *query { return b.OrderBy(orDefault(column), "asc") }
 
 func orDefault(column []string) string {
 	if len(column) > 0 && column[0] != "" {
@@ -29,10 +29,10 @@ func orDefault(column []string) string {
 //
 // Example:
 //
-//	conn.Table("posts").InRandomOrder().Limit(5)
+//	conn.Select().From("posts").InRandomOrder().Limit(5)
 //	// Postgres: SELECT * FROM "posts" ORDER BY RANDOM() LIMIT 5
 //	// MySQL: SELECT * FROM `posts` ORDER BY RAND() LIMIT 5
-func (b *Builder) InRandomOrder(seed ...int) *Builder {
+func (b *query) InRandomOrder(seed ...int) *query {
 	var s *int
 	if len(seed) > 0 {
 		s = &seed[0]
@@ -48,9 +48,9 @@ func (b *Builder) InRandomOrder(seed ...int) *Builder {
 //
 // Example:
 //
-//	conn.Table("posts").OrderBy("title").Reorder()
+//	conn.Select().From("posts").OrderBy("title").Reorder()
 //	// SELECT * FROM "posts"
-func (b *Builder) Reorder() *Builder {
+func (b *query) Reorder() *query {
 	b.orders, b.unionOrders = nil, nil
 	return b
 }
@@ -59,13 +59,13 @@ func (b *Builder) Reorder() *Builder {
 //
 // Example:
 //
-//	conn.Table("posts").OrderBy("title").ReorderBy("id", "desc")
+//	conn.Select().From("posts").OrderBy("title").ReorderBy("id", "desc")
 //	// SELECT * FROM "posts" ORDER BY "id" DESC
-func (b *Builder) ReorderBy(column string, direction ...string) *Builder {
+func (b *query) ReorderBy(column string, direction ...string) *query {
 	return b.Reorder().OrderBy(column, direction...)
 }
 
-func (b *Builder) removeOrdersFor(column string) {
+func (b *query) removeOrdersFor(column string) {
 	kept := b.orders[:0:0]
 	for _, o := range b.orders {
 		if o.raw != nil || o.column != column {
@@ -80,9 +80,9 @@ func (b *Builder) removeOrdersFor(column string) {
 //
 // Example:
 //
-//	conn.Table("posts").ForPageBeforeID(10, 42)
+//	conn.Select().From("posts").ForPageBeforeID(10, 42)
 //	// SELECT * FROM "posts" WHERE "id" < $1 ORDER BY "id" DESC LIMIT 10   args: [42]
-func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Builder {
+func (b *query) ForPageBeforeID(perPage int, lastID any, column ...string) *query {
 	if len(b.unions) > 0 {
 		return b.fail(errKeysetUnion)
 	}
@@ -101,9 +101,9 @@ func (b *Builder) ForPageBeforeID(perPage int, lastID any, column ...string) *Bu
 //
 // Example:
 //
-//	conn.Table("posts").ForPageAfterID(10, 42)
+//	conn.Select().From("posts").ForPageAfterID(10, 42)
 //	// SELECT * FROM "posts" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 10   args: [42]
-func (b *Builder) ForPageAfterID(perPage int, lastID any, column ...string) *Builder {
+func (b *query) ForPageAfterID(perPage int, lastID any, column ...string) *query {
 	if len(b.unions) > 0 {
 		return b.fail(errKeysetUnion)
 	}

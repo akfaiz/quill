@@ -17,7 +17,7 @@ import (
 // name that changes later is not picked up. A method that panics on a zero value
 // (for example by dereferencing a nil embedded pointer) is reported as
 // ErrInvalidArgs instead. For per-tenant or per-period tables, give the name
-// explicitly with As[T](conn.Table(name)).
+// explicitly with As[T](conn.Select().From(name)).
 type Tabler interface{ TableName() string }
 
 var tableNames sync.Map // reflect.Type -> string
@@ -73,16 +73,16 @@ func callTableName(tb Tabler, t reflect.Type) (name string, err error) {
 //
 // Example:
 //
-//	q := db.From[Order](conn) // same as db.As[Order](conn.Table("orders"))
+//	q := db.From[Order](conn) // same as db.As[Order](conn.Select().From("orders"))
 func From[T any](db *DB) *Query[T] {
 	if db == nil {
-		return As[T](&Builder{err: ErrNotBound})
+		return As[T](&SelectBuilder{q: query{err: ErrNotBound}})
 	}
+	s := db.Select()
 	name, err := TableName[T]()
 	if err != nil {
-		b := db.NewQuery()
-		b.err = err
-		return As[T](b)
+		s.q.err = err
+		return As[T](s)
 	}
-	return As[T](db.Table(name))
+	return As[T](s.From(name))
 }

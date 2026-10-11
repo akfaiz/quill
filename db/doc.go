@@ -2,9 +2,9 @@
 // and, optionally, runs them through database/sql. It is not an ORM: there are
 // no models, relations, hooks or migrations.
 //
-// Build only (set the dialect first, then chain from Table):
+// Build only (set the dialect first, then chain from Select, Insert, Update or Delete):
 //
-//	sql, args, err := db.Use(db.Postgres).Table("users").
+//	sql, args, err := db.Use(db.Postgres).Select().From("users").
 //		Where("votes", ">", 100).
 //		OrderByDesc("created_at").
 //		Limit(10).
@@ -14,14 +14,16 @@
 //
 //	conn := db.New(sqlDB, db.Postgres)
 //	var users []User
-//	err := conn.Table("users").Where("active", true).Get(ctx, &users)
+//	err := conn.Select().From("users").Where("active", true).Get(ctx, &users)
 //
-// Typed queries take the table from the row type's TableName method:
+// Typed reads take the table from the row type's TableName method (writes use
+// the Insert, Update and Delete builders):
 //
 //	users, err := db.From[User](conn).Where("active", true).Get(ctx)
-//	id, err := db.From[User](conn).InsertGetID(ctx, User{Name: "Ann"})
 //
 // Values are always sent as bind arguments. Identifiers are always quoted.
 // The *Raw methods and Raw expressions take caller-trusted SQL: never build them
 // from user input.
 package db
+
+//go:generate go run ../internal/chaingen/cmd .

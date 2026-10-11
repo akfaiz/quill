@@ -12,7 +12,7 @@ import (
 )
 
 // run executes the compiled SELECT and hands the rows to fn, always closing them.
-func (b *Builder) run(ctx context.Context, fn func(rows *sql.Rows) error) error {
+func (b *query) run(ctx context.Context, fn func(rows *sql.Rows) error) error {
 	db, err := b.bound()
 	if err != nil {
 		return err
@@ -32,9 +32,9 @@ func (b *Builder) run(ctx context.Context, fn func(rows *sql.Rows) error) error 
 // Example:
 //
 //	var users []User // or []map[string]any, or []string for one column
-//	err := conn.Table("users").Where("active", true).OrderBy("id").Get(ctx, &users)
+//	err := conn.Select().From("users").Where("active", true).OrderBy("id").Get(ctx, &users)
 //	// SELECT * FROM "users" WHERE "active" = $1 ORDER BY "id" ASC   args: [true]
-func (b *Builder) Get(ctx context.Context, dest any) error {
+func (b *query) Get(ctx context.Context, dest any) error {
 	return b.run(ctx, func(rows *sql.Rows) error { return rowmap.Slice(rows, dest) })
 }
 
@@ -44,10 +44,10 @@ func (b *Builder) Get(ctx context.Context, dest any) error {
 // Example:
 //
 //	var u User
-//	err := conn.Table("users").OrderBy("id").First(ctx, &u)
+//	err := conn.Select().From("users").OrderBy("id").First(ctx, &u)
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 1
 //	// no row: errors.Is(err, db.ErrNotFound) is true
-func (b *Builder) First(ctx context.Context, dest any) error {
+func (b *query) First(ctx context.Context, dest any) error {
 	q := b.withLimit(1)
 	return q.run(ctx, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
 }
@@ -55,7 +55,7 @@ func (b *Builder) First(ctx context.Context, dest any) error {
 // withLimit returns a shallow copy of b limited to n rows. Unlike Clone it shares the
 // clause slices, which is safe because a copy is only compiled and run, never extended,
 // and Limit replaces a pointer instead of writing through it.
-func (b *Builder) withLimit(n int) *Builder {
+func (b *query) withLimit(n int) *query {
 	q := *b
 	return q.Limit(n)
 }
@@ -65,9 +65,9 @@ func (b *Builder) withLimit(n int) *Builder {
 // Example:
 //
 //	var u User
-//	err := conn.Table("users").Find(ctx, 2, &u)
+//	err := conn.Select().From("users").Find(ctx, 2, &u)
 //	// SELECT * FROM "users" WHERE "id" = $1 LIMIT 1   args: [2]
-func (b *Builder) Find(ctx context.Context, id any, dest any) error {
+func (b *query) Find(ctx context.Context, id any, dest any) error {
 	q := *b
 	// clipped, so appending the id predicate copies instead of writing into b's spare capacity
 	q.wheres = slices.Clip(isolated(b.wheres))
@@ -79,10 +79,10 @@ func (b *Builder) Find(ctx context.Context, id any, dest any) error {
 // Example:
 //
 //	var u User
-//	err := conn.Table("users").Where("name", "ann").Sole(ctx, &u)
+//	err := conn.Select().From("users").Where("name", "ann").Sole(ctx, &u)
 //	// SELECT * FROM "users" WHERE "name" = $1 LIMIT 2   args: ["ann"]
 //	// two or more rows: err is db.ErrMultipleRecords
-func (b *Builder) Sole(ctx context.Context, dest any) error {
+func (b *query) Sole(ctx context.Context, dest any) error {
 	return b.withLimit(2).run(ctx, func(rows *sql.Rows) error {
 		if err := rowmap.First(rows, dest); err != nil {
 			return err
@@ -99,10 +99,10 @@ func (b *Builder) Sole(ctx context.Context, dest any) error {
 // Example:
 //
 //	var name string
-//	err := conn.Table("users").Where("id", 1).Value(ctx, "name", &name)
+//	err := conn.Select().From("users").Where("id", 1).Value(ctx, "name", &name)
 //	// SELECT "name" FROM "users" WHERE "id" = $1 LIMIT 1   args: [1]
 //	// name = "ann"
-func (b *Builder) Value(ctx context.Context, column string, dest any) error {
+func (b *query) Value(ctx context.Context, column string, dest any) error {
 	return b.Clone().Select(column).Limit(1).run(ctx, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
 }
 
@@ -111,10 +111,10 @@ func (b *Builder) Value(ctx context.Context, column string, dest any) error {
 // Example:
 //
 //	var names []string
-//	err := conn.Table("users").OrderBy("id").Pluck(ctx, "name", &names)
+//	err := conn.Select().From("users").OrderBy("id").Pluck(ctx, "name", &names)
 //	// SELECT "name" FROM "users" ORDER BY "id" ASC
 //	// names = ["ann", "bob"]
-func (b *Builder) Pluck(ctx context.Context, column string, dest any) error {
+func (b *query) Pluck(ctx context.Context, column string, dest any) error {
 	return b.Clone().Select(column).Get(ctx, dest)
 }
 
@@ -123,10 +123,10 @@ func (b *Builder) Pluck(ctx context.Context, column string, dest any) error {
 // Example:
 //
 //	var byID map[int64]string
-//	err := conn.Table("users").PluckMap(ctx, "name", "id", &byID)
+//	err := conn.Select().From("users").PluckMap(ctx, "name", "id", &byID)
 //	// SELECT "name", "id" FROM "users"
 //	// byID = map[1:"ann" 2:"bob"]
-func (b *Builder) PluckMap(ctx context.Context, column, key string, dest any) error {
+func (b *query) PluckMap(ctx context.Context, column, key string, dest any) error {
 	rv := reflect.ValueOf(dest)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() || rv.Elem().Kind() != reflect.Map {
 		return fmt.Errorf("%w: PluckMap destination must be a pointer to a map, got %T", ErrInvalidArgs, dest)
@@ -160,9 +160,9 @@ func (b *Builder) PluckMap(ctx context.Context, column, key string, dest any) er
 //
 // Example:
 //
-//	sqlText, args, err := conn.Table("users").Where("name", "ann").ExistsSQL()
+//	sqlText, args, err := conn.Select().From("users").Where("name", "ann").ExistsSQL()
 //	// SELECT EXISTS(SELECT * FROM "users" WHERE "name" = $1) AS "exists"   args: ["ann"]
-func (b *Builder) ExistsSQL() (string, []any, error) {
+func (b *query) ExistsSQL() (string, []any, error) {
 	c, err := b.newCompiler()
 	if err != nil {
 		return "", nil, err
@@ -179,10 +179,10 @@ func (b *Builder) ExistsSQL() (string, []any, error) {
 //
 // Example:
 //
-//	ok, err := conn.Table("users").Where("name", "ann").Exists(ctx)
+//	ok, err := conn.Select().From("users").Where("name", "ann").Exists(ctx)
 //	// SELECT EXISTS(SELECT * FROM "users" WHERE "name" = $1) AS "exists"   args: ["ann"]
 //	// ok = true
-func (b *Builder) Exists(ctx context.Context) (bool, error) {
+func (b *query) Exists(ctx context.Context) (bool, error) {
 	db, err := b.bound()
 	if err != nil {
 		return false, err
@@ -200,10 +200,10 @@ func (b *Builder) Exists(ctx context.Context) (bool, error) {
 //
 // Example:
 //
-//	missing, err := conn.Table("users").Where("name", "zed").DoesntExist(ctx)
+//	missing, err := conn.Select().From("users").Where("name", "zed").DoesntExist(ctx)
 //	// SELECT EXISTS(SELECT * FROM "users" WHERE "name" = $1) AS "exists"   args: ["zed"]
 //	// missing = true when no row matches
-func (b *Builder) DoesntExist(ctx context.Context) (bool, error) {
+func (b *query) DoesntExist(ctx context.Context) (bool, error) {
 	ok, err := b.Exists(ctx)
 	return !ok, err
 }
@@ -215,9 +215,9 @@ func (b *Builder) DoesntExist(ctx context.Context) (bool, error) {
 //
 // Example:
 //
-//	sqlText, args, err := conn.Table("orders").Where("status", "paid").AggregateSQL("sum", "total")
+//	sqlText, args, err := conn.Select().From("orders").Where("status", "paid").AggregateSQL("sum", "total")
 //	// SELECT SUM("total") AS "aggregate" FROM "orders" WHERE "status" = $1   args: ["paid"]
-func (b *Builder) AggregateSQL(fn, column string) (string, []any, error) {
+func (b *query) AggregateSQL(fn, column string) (string, []any, error) {
 	c, err := b.newCompiler()
 	if err != nil {
 		return "", nil, err
@@ -258,10 +258,10 @@ func (b *Builder) AggregateSQL(fn, column string) (string, []any, error) {
 // Example:
 //
 //	var total int64
-//	err := conn.Table("orders").Aggregate(ctx, "sum", "total", &total)
+//	err := conn.Select().From("orders").Aggregate(ctx, "sum", "total", &total)
 //	// SELECT SUM("total") AS "aggregate" FROM "orders"
 //	// total = 250
-func (b *Builder) Aggregate(ctx context.Context, fn, column string, dest any) error {
+func (b *query) Aggregate(ctx context.Context, fn, column string, dest any) error {
 	db, err := b.bound()
 	if err != nil {
 		return err
@@ -277,12 +277,12 @@ func (b *Builder) Aggregate(ctx context.Context, fn, column string, dest any) er
 //
 // Example:
 //
-//	n, err := conn.Table("users").Where("active", true).Count(ctx)
+//	n, err := conn.Select().From("users").Where("active", true).Count(ctx)
 //	// SELECT COUNT(*) AS "aggregate" FROM "users" WHERE "active" = $1   args: [true]
 //	// n = 3
-//	n, err = conn.Table("users").Count(ctx, "email_verified_at")
+//	n, err = conn.Select().From("users").Count(ctx, "email_verified_at")
 //	// SELECT COUNT("email_verified_at") AS "aggregate" FROM "users"
-func (b *Builder) Count(ctx context.Context, column ...string) (int64, error) {
+func (b *query) Count(ctx context.Context, column ...string) (int64, error) {
 	col := "*"
 	if len(column) > 0 && column[0] != "" {
 		col = column[0]
@@ -297,10 +297,10 @@ func (b *Builder) Count(ctx context.Context, column ...string) (int64, error) {
 // Example:
 //
 //	var lowest int64
-//	err := conn.Table("orders").Min(ctx, "total", &lowest)
+//	err := conn.Select().From("orders").Min(ctx, "total", &lowest)
 //	// SELECT MIN("total") AS "aggregate" FROM "orders"
 //	// lowest = 10
-func (b *Builder) Min(ctx context.Context, column string, dest any) error {
+func (b *query) Min(ctx context.Context, column string, dest any) error {
 	return b.Aggregate(ctx, "min", column, dest)
 }
 
@@ -309,10 +309,10 @@ func (b *Builder) Min(ctx context.Context, column string, dest any) error {
 // Example:
 //
 //	var highest int64
-//	err := conn.Table("orders").Max(ctx, "total", &highest)
+//	err := conn.Select().From("orders").Max(ctx, "total", &highest)
 //	// SELECT MAX("total") AS "aggregate" FROM "orders"
 //	// highest = 90
-func (b *Builder) Max(ctx context.Context, column string, dest any) error {
+func (b *query) Max(ctx context.Context, column string, dest any) error {
 	return b.Aggregate(ctx, "max", column, dest)
 }
 
@@ -320,10 +320,10 @@ func (b *Builder) Max(ctx context.Context, column string, dest any) error {
 //
 // Example:
 //
-//	sum, err := conn.Table("orders").Sum(ctx, "total")
+//	sum, err := conn.Select().From("orders").Sum(ctx, "total")
 //	// SELECT SUM("total") AS "aggregate" FROM "orders"
 //	// sum = 250.5
-func (b *Builder) Sum(ctx context.Context, column string) (float64, error) {
+func (b *query) Sum(ctx context.Context, column string) (float64, error) {
 	var v float64
 	err := b.Aggregate(ctx, "sum", column, &v)
 	return v, err
@@ -333,10 +333,10 @@ func (b *Builder) Sum(ctx context.Context, column string) (float64, error) {
 //
 // Example:
 //
-//	avg, err := conn.Table("orders").Avg(ctx, "total")
+//	avg, err := conn.Select().From("orders").Avg(ctx, "total")
 //	// SELECT AVG("total") AS "aggregate" FROM "orders"
 //	// avg = 50.1
-func (b *Builder) Avg(ctx context.Context, column string) (float64, error) {
+func (b *query) Avg(ctx context.Context, column string) (float64, error) {
 	var v float64
 	err := b.Aggregate(ctx, "avg", column, &v)
 	return v, err

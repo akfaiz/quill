@@ -8,7 +8,7 @@ import (
 type joinClause struct {
 	typ     string // inner, left, right, cross, straight_join
 	table   string
-	sub     *Builder // subquery source; alias is required
+	sub     *query // subquery source; alias is required
 	alias   string
 	lateral bool
 	on      []clause
@@ -31,13 +31,13 @@ func cloneJoins(js []joinClause) []joinClause {
 
 // JoinClause builds the ON conditions of one join. Column-to-column
 // comparisons use On/OrOn; value comparisons use Where/OrWhere.
-type JoinClause struct{ q *Builder }
+type JoinClause struct{ q *query }
 
 // On adds "first = second" or "first op second" (column to column).
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").On("p.created_at", ">=", "u.created_at")
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -51,7 +51,7 @@ func (j *JoinClause) On(first string, args ...any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrOn("p.editor_id", "u.id")
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" OR
@@ -65,7 +65,7 @@ func (j *JoinClause) OrOn(first string, args ...any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OnGroup(func(g *db.JoinClause) {
 //			g.Where("p.status", "published").OrWhere("p.status", "draft")
 //		})
@@ -74,7 +74,7 @@ func (j *JoinClause) OrOn(first string, args ...any) *JoinClause {
 //	//     ("p"."status" = $1 OR "p"."status" = $2)
 //	// args: [published draft]
 func (j *JoinClause) OnGroup(fn func(*JoinClause)) *JoinClause {
-	j.q.WhereGroup(func(q *Builder) { fn(&JoinClause{q}) })
+	j.q.WhereGroup(func(q *query) { fn(&JoinClause{q}) })
 	return j
 }
 
@@ -82,7 +82,7 @@ func (j *JoinClause) OnGroup(fn func(*JoinClause)) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrOnGroup(func(g *db.JoinClause) {
 //			g.On("p.editor_id", "u.id").Where("p.score", ">", 10)
 //		})
@@ -91,7 +91,7 @@ func (j *JoinClause) OnGroup(fn func(*JoinClause)) *JoinClause {
 //	//     ("p"."editor_id" = "u"."id" AND "p"."score" > $1)
 //	// args: [10]
 func (j *JoinClause) OrOnGroup(fn func(*JoinClause)) *JoinClause {
-	j.q.OrWhereGroup(func(q *Builder) { fn(&JoinClause{q}) })
+	j.q.OrWhereGroup(func(q *query) { fn(&JoinClause{q}) })
 	return j
 }
 
@@ -99,7 +99,7 @@ func (j *JoinClause) OrOnGroup(fn func(*JoinClause)) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").Where("p.status", "published").Where("p.score", ">", 10)
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -114,7 +114,7 @@ func (j *JoinClause) Where(column string, args ...any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").Where("p.status", "published").OrWhere("p.pinned", true)
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -129,7 +129,7 @@ func (j *JoinClause) OrWhere(column string, args ...any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereIn("p.status", []string{"published", "draft"})
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -144,7 +144,7 @@ func (j *JoinClause) WhereIn(column string, values any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereNotIn("p.status", []string{"spam"})
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -159,7 +159,7 @@ func (j *JoinClause) WhereNotIn(column string, values any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereNull("p.deleted_at")
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -173,7 +173,7 @@ func (j *JoinClause) WhereNull(column string) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereNotNull("p.published_at")
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -187,7 +187,7 @@ func (j *JoinClause) WhereNotNull(column string) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereRaw("p.score > ?", 10)
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
@@ -202,7 +202,7 @@ func (j *JoinClause) WhereRaw(sql string, args ...any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrWhereRaw("p.score > ?", 10)
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" OR
@@ -215,13 +215,13 @@ func (j *JoinClause) OrWhereRaw(sql string, args ...any) *JoinClause {
 
 // addJoin resolves the ON conditions from fn, or from (first, args) as a column
 // comparison (where=false) or a value comparison (where=true).
-func (b *Builder) addJoin(j joinClause, first string, args []any, where bool, fn func(*JoinClause)) *Builder {
+func (b *query) addJoin(j joinClause, first string, args []any, where bool, fn func(*JoinClause)) *query {
 	if fn != nil {
 		return b.addJoinFunc(j, fn)
 	}
 	// A single ON condition needs no real builder: collect it in a scratch value
-	// that stays on the stack instead of allocating a full Builder per join.
-	var q Builder
+	// that stays on the stack instead of allocating a full query per join.
+	var q query
 	q.dialect, q.prefix, q.err = b.dialect, b.prefix, b.err
 	if first != "" || len(args) > 0 {
 		if where {
@@ -235,13 +235,13 @@ func (b *Builder) addJoin(j joinClause, first string, args []any, where bool, fn
 
 // addJoinFunc resolves the ON conditions from a JoinClause callback, which gets
 // a real builder because it may add any number of conditions and groups.
-func (b *Builder) addJoinFunc(j joinClause, fn func(*JoinClause)) *Builder {
-	q := b.NewQuery()
+func (b *query) addJoinFunc(j joinClause, fn func(*JoinClause)) *query {
+	q := b.fresh()
 	fn(&JoinClause{q})
 	return b.finishJoin(j, q.wheres, q.err)
 }
 
-func (b *Builder) finishJoin(j joinClause, on []clause, err error) *Builder {
+func (b *query) finishJoin(j joinClause, on []clause, err error) *query {
 	if err != nil {
 		return b.fail(err)
 	}
@@ -255,7 +255,7 @@ func (b *Builder) finishJoin(j joinClause, on []clause, err error) *Builder {
 
 func tbl(typ, table string) joinClause { return joinClause{typ: typ, table: table} }
 
-func subJoin(typ string, sub *Builder, as string) joinClause {
+func subJoin(typ string, sub *query, as string) joinClause {
 	if sub != nil {
 		sub = sub.Clone() // snapshot, see snapshot() in where.go
 	}
@@ -266,9 +266,9 @@ func subJoin(typ string, sub *Builder, as string) joinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").Join("posts as p", "p.user_id", "u.id")
+//	conn.Select().From("users as u").Join("posts as p", "p.user_id", "u.id")
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id"
-func (b *Builder) Join(table, first string, args ...any) *Builder {
+func (b *query) Join(table, first string, args ...any) *query {
 	return b.addJoin(tbl("inner", table), first, args, false, nil)
 }
 
@@ -276,9 +276,9 @@ func (b *Builder) Join(table, first string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").LeftJoin("posts as p", "p.user_id", "u.id")
+//	conn.Select().From("users as u").LeftJoin("posts as p", "p.user_id", "u.id")
 //	// SELECT * FROM "users" AS "u" LEFT JOIN "posts" AS "p" ON "p"."user_id" = "u"."id"
-func (b *Builder) LeftJoin(table, first string, args ...any) *Builder {
+func (b *query) LeftJoin(table, first string, args ...any) *query {
 	return b.addJoin(tbl("left", table), first, args, false, nil)
 }
 
@@ -286,9 +286,9 @@ func (b *Builder) LeftJoin(table, first string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").RightJoin("posts as p", "p.user_id", "u.id")
+//	conn.Select().From("users as u").RightJoin("posts as p", "p.user_id", "u.id")
 //	// SELECT * FROM "users" AS "u" RIGHT JOIN "posts" AS "p" ON "p"."user_id" = "u"."id"
-func (b *Builder) RightJoin(table, first string, args ...any) *Builder {
+func (b *query) RightJoin(table, first string, args ...any) *query {
 	return b.addJoin(tbl("right", table), first, args, false, nil)
 }
 
@@ -296,9 +296,9 @@ func (b *Builder) RightJoin(table, first string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").CrossJoin("roles")
+//	conn.Select().From("users").CrossJoin("roles")
 //	// SELECT * FROM "users" CROSS JOIN "roles"
-func (b *Builder) CrossJoin(table string) *Builder {
+func (b *query) CrossJoin(table string) *query {
 	return b.addJoin(tbl("cross", table), "", nil, false, nil)
 }
 
@@ -306,10 +306,10 @@ func (b *Builder) CrossJoin(table string) *Builder {
 //
 // Example:
 //
-//	connMy.Table("users as u").StraightJoin("posts as p", "p.user_id", "u.id")
+//	connMy.Select().From("users as u").StraightJoin("posts as p", "p.user_id", "u.id")
 //	// SELECT * FROM `users` AS `u` STRAIGHT_JOIN `posts` AS `p` ON `p`.`user_id` = `u`.`id`
 //	// connMy is db.Use(db.MySQL); other dialects return ErrUnsupported
-func (b *Builder) StraightJoin(table, first string, args ...any) *Builder {
+func (b *query) StraightJoin(table, first string, args ...any) *query {
 	return b.addJoin(tbl("straight_join", table), first, args, false, nil)
 }
 
@@ -317,13 +317,13 @@ func (b *Builder) StraightJoin(table, first string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").Where("p.published", true)
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
 //	//     "p"."published" = $1
 //	// args: [true]
-func (b *Builder) JoinFunc(table string, fn func(*JoinClause)) *Builder {
+func (b *query) JoinFunc(table string, fn func(*JoinClause)) *query {
 	return b.addJoin(tbl("inner", table), "", nil, false, fn)
 }
 
@@ -331,12 +331,12 @@ func (b *Builder) JoinFunc(table string, fn func(*JoinClause)) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").LeftJoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").LeftJoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereNull("p.deleted_at")
 //	})
 //	// SELECT * FROM "users" AS "u" LEFT JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
 //	//     "p"."deleted_at" IS NULL
-func (b *Builder) LeftJoinFunc(table string, fn func(*JoinClause)) *Builder {
+func (b *query) LeftJoinFunc(table string, fn func(*JoinClause)) *query {
 	return b.addJoin(tbl("left", table), "", nil, false, fn)
 }
 
@@ -344,13 +344,13 @@ func (b *Builder) LeftJoinFunc(table string, fn func(*JoinClause)) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").RightJoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").RightJoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").Where("p.score", ">", 10)
 //	})
 //	// SELECT * FROM "users" AS "u" RIGHT JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" AND
 //	//     "p"."score" > $1
 //	// args: [10]
-func (b *Builder) RightJoinFunc(table string, fn func(*JoinClause)) *Builder {
+func (b *query) RightJoinFunc(table string, fn func(*JoinClause)) *query {
 	return b.addJoin(tbl("right", table), "", nil, false, fn)
 }
 
@@ -358,10 +358,10 @@ func (b *Builder) RightJoinFunc(table string, fn func(*JoinClause)) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinWhere("posts as p", "p.status", "published")
+//	conn.Select().From("users as u").JoinWhere("posts as p", "p.status", "published")
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."status" = $1
 //	// args: [published]
-func (b *Builder) JoinWhere(table, column string, args ...any) *Builder {
+func (b *query) JoinWhere(table, column string, args ...any) *query {
 	return b.addJoin(tbl("inner", table), column, args, true, nil)
 }
 
@@ -369,10 +369,10 @@ func (b *Builder) JoinWhere(table, column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").LeftJoinWhere("posts as p", "p.score", ">", 10)
+//	conn.Select().From("users as u").LeftJoinWhere("posts as p", "p.score", ">", 10)
 //	// SELECT * FROM "users" AS "u" LEFT JOIN "posts" AS "p" ON "p"."score" > $1
 //	// args: [10]
-func (b *Builder) LeftJoinWhere(table, column string, args ...any) *Builder {
+func (b *query) LeftJoinWhere(table, column string, args ...any) *query {
 	return b.addJoin(tbl("left", table), column, args, true, nil)
 }
 
@@ -380,10 +380,10 @@ func (b *Builder) LeftJoinWhere(table, column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").RightJoinWhere("posts as p", "p.status", "published")
+//	conn.Select().From("users as u").RightJoinWhere("posts as p", "p.status", "published")
 //	// SELECT * FROM "users" AS "u" RIGHT JOIN "posts" AS "p" ON "p"."status" = $1
 //	// args: [published]
-func (b *Builder) RightJoinWhere(table, column string, args ...any) *Builder {
+func (b *query) RightJoinWhere(table, column string, args ...any) *query {
 	return b.addJoin(tbl("right", table), column, args, true, nil)
 }
 
@@ -391,12 +391,12 @@ func (b *Builder) RightJoinWhere(table, column string, args ...any) *Builder {
 //
 // Example:
 //
-//	sub := conn.Table("posts").Select("user_id").Where("score", ">", 10)
-//	conn.Table("users as u").JoinSub(sub, "t", "t.user_id", "u.id")
+//	sub := conn.Select().From("posts").Select("user_id").Where("score", ">", 10)
+//	conn.Select().From("users as u").JoinSub(sub, "t", "t.user_id", "u.id")
 //	// SELECT * FROM "users" AS "u" INNER JOIN (SELECT "user_id" FROM "posts" WHERE "score" > $1)
 //	//     AS "t" ON "t"."user_id" = "u"."id"
 //	// args: [10]
-func (b *Builder) JoinSub(sub *Builder, as, first string, args ...any) *Builder {
+func (b *query) JoinSub(sub *query, as, first string, args ...any) *query {
 	return b.addJoin(subJoin("inner", sub, as), first, args, false, nil)
 }
 
@@ -404,12 +404,12 @@ func (b *Builder) JoinSub(sub *Builder, as, first string, args ...any) *Builder 
 //
 // Example:
 //
-//	sub := conn.Table("posts").Select("user_id").Where("score", ">", 10)
-//	conn.Table("users as u").LeftJoinSub(sub, "t", "t.user_id", "u.id")
+//	sub := conn.Select().From("posts").Select("user_id").Where("score", ">", 10)
+//	conn.Select().From("users as u").LeftJoinSub(sub, "t", "t.user_id", "u.id")
 //	// SELECT * FROM "users" AS "u" LEFT JOIN (SELECT "user_id" FROM "posts" WHERE "score" > $1) AS
 //	//     "t" ON "t"."user_id" = "u"."id"
 //	// args: [10]
-func (b *Builder) LeftJoinSub(sub *Builder, as, first string, args ...any) *Builder {
+func (b *query) LeftJoinSub(sub *query, as, first string, args ...any) *query {
 	return b.addJoin(subJoin("left", sub, as), first, args, false, nil)
 }
 
@@ -417,12 +417,12 @@ func (b *Builder) LeftJoinSub(sub *Builder, as, first string, args ...any) *Buil
 //
 // Example:
 //
-//	sub := conn.Table("posts").Select("user_id").Where("score", ">", 10)
-//	conn.Table("users as u").RightJoinSub(sub, "t", "t.user_id", "u.id")
+//	sub := conn.Select().From("posts").Select("user_id").Where("score", ">", 10)
+//	conn.Select().From("users as u").RightJoinSub(sub, "t", "t.user_id", "u.id")
 //	// SELECT * FROM "users" AS "u" RIGHT JOIN (SELECT "user_id" FROM "posts" WHERE "score" > $1)
 //	//     AS "t" ON "t"."user_id" = "u"."id"
 //	// args: [10]
-func (b *Builder) RightJoinSub(sub *Builder, as, first string, args ...any) *Builder {
+func (b *query) RightJoinSub(sub *query, as, first string, args ...any) *query {
 	return b.addJoin(subJoin("right", sub, as), first, args, false, nil)
 }
 
@@ -430,11 +430,11 @@ func (b *Builder) RightJoinSub(sub *Builder, as, first string, args ...any) *Bui
 //
 // Example:
 //
-//	sub := conn.Table("roles").Select("name").Where("active", true)
-//	conn.Table("users").CrossJoinSub(sub, "r")
+//	sub := conn.Select().From("roles").Select("name").Where("active", true)
+//	conn.Select().From("users").CrossJoinSub(sub, "r")
 //	// SELECT * FROM "users" CROSS JOIN (SELECT "name" FROM "roles" WHERE "active" = $1) AS "r"
 //	// args: [true]
-func (b *Builder) CrossJoinSub(sub *Builder, as string) *Builder {
+func (b *query) CrossJoinSub(sub *query, as string) *query {
 	return b.addJoin(subJoin("cross", sub, as), "", nil, false, nil)
 }
 
@@ -442,14 +442,14 @@ func (b *Builder) CrossJoinSub(sub *Builder, as string) *Builder {
 //
 // Example:
 //
-//	sub := conn.Table("posts").Select("user_id", "score")
-//	conn.Table("users as u").JoinSubFunc(sub, "p", func(j *db.JoinClause) {
+//	sub := conn.Select().From("posts").Select("user_id", "score")
+//	conn.Select().From("users as u").JoinSubFunc(sub, "p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").Where("p.score", ">", 10)
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN (SELECT "user_id", "score" FROM "posts") AS "p" ON
 //	//     "p"."user_id" = "u"."id" AND "p"."score" > $1
 //	// args: [10]
-func (b *Builder) JoinSubFunc(sub *Builder, as string, fn func(*JoinClause)) *Builder {
+func (b *query) JoinSubFunc(sub *query, as string, fn func(*JoinClause)) *query {
 	return b.addJoin(subJoin("inner", sub, as), "", nil, false, fn)
 }
 
@@ -457,13 +457,13 @@ func (b *Builder) JoinSubFunc(sub *Builder, as string, fn func(*JoinClause)) *Bu
 //
 // Example:
 //
-//	sub := conn.Table("posts").Select("user_id", "score")
-//	conn.Table("users as u").LeftJoinSubFunc(sub, "p", func(j *db.JoinClause) {
+//	sub := conn.Select().From("posts").Select("user_id", "score")
+//	conn.Select().From("users as u").LeftJoinSubFunc(sub, "p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").WhereNotNull("p.score")
 //	})
 //	// SELECT * FROM "users" AS "u" LEFT JOIN (SELECT "user_id", "score" FROM "posts") AS "p" ON
 //	//     "p"."user_id" = "u"."id" AND "p"."score" IS NOT NULL
-func (b *Builder) LeftJoinSubFunc(sub *Builder, as string, fn func(*JoinClause)) *Builder {
+func (b *query) LeftJoinSubFunc(sub *query, as string, fn func(*JoinClause)) *query {
 	return b.addJoin(subJoin("left", sub, as), "", nil, false, fn)
 }
 
@@ -471,13 +471,13 @@ func (b *Builder) LeftJoinSubFunc(sub *Builder, as string, fn func(*JoinClause))
 //
 // Example:
 //
-//	sub := conn.Table("posts").Select("user_id", "score")
-//	conn.Table("users as u").RightJoinSubFunc(sub, "p", func(j *db.JoinClause) {
+//	sub := conn.Select().From("posts").Select("user_id", "score")
+//	conn.Select().From("users as u").RightJoinSubFunc(sub, "p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id")
 //	})
 //	// SELECT * FROM "users" AS "u" RIGHT JOIN (SELECT "user_id", "score" FROM "posts") AS "p" ON
 //	//     "p"."user_id" = "u"."id"
-func (b *Builder) RightJoinSubFunc(sub *Builder, as string, fn func(*JoinClause)) *Builder {
+func (b *query) RightJoinSubFunc(sub *query, as string, fn func(*JoinClause)) *query {
 	return b.addJoin(subJoin("right", sub, as), "", nil, false, fn)
 }
 
@@ -485,13 +485,13 @@ func (b *Builder) RightJoinSubFunc(sub *Builder, as string, fn func(*JoinClause)
 //
 // Example:
 //
-//	recent := conn.Table("posts").Select("id", "title").
+//	recent := conn.Select().From("posts").Select("id", "title").
 //		WhereColumn("posts.user_id", "u.id").Limit(1)
-//	conn.Table("users as u").JoinLateral(recent, "rp")
+//	conn.Select().From("users as u").JoinLateral(recent, "rp")
 //	// SELECT * FROM "users" AS "u" INNER JOIN LATERAL (SELECT "id", "title" FROM "posts" WHERE
 //	//     "posts"."user_id" = "u"."id" LIMIT 1) AS "rp" ON TRUE
 //	// MariaDB returns ErrUnsupported
-func (b *Builder) JoinLateral(sub *Builder, as string) *Builder {
+func (b *query) JoinLateral(sub *query, as string) *query {
 	j := subJoin("inner", sub, as)
 	j.lateral = true
 	return b.addJoin(j, "", nil, false, nil)
@@ -501,12 +501,12 @@ func (b *Builder) JoinLateral(sub *Builder, as string) *Builder {
 //
 // Example:
 //
-//	recent := conn.Table("posts").Select("id", "title").
+//	recent := conn.Select().From("posts").Select("id", "title").
 //		WhereColumn("posts.user_id", "u.id").Limit(1)
-//	conn.Table("users as u").LeftJoinLateral(recent, "rp")
+//	conn.Select().From("users as u").LeftJoinLateral(recent, "rp")
 //	// SELECT * FROM "users" AS "u" LEFT JOIN LATERAL (SELECT "id", "title" FROM "posts" WHERE
 //	//     "posts"."user_id" = "u"."id" LIMIT 1) AS "rp" ON TRUE
-func (b *Builder) LeftJoinLateral(sub *Builder, as string) *Builder {
+func (b *query) LeftJoinLateral(sub *query, as string) *query {
 	j := subJoin("left", sub, as)
 	j.lateral = true
 	return b.addJoin(j, "", nil, false, nil)
@@ -572,7 +572,7 @@ func (c *compiler) join(j joinClause) error {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrWhereIn("p.status", []string{"draft"})
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" OR
@@ -587,7 +587,7 @@ func (j *JoinClause) OrWhereIn(column string, values any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrWhereNotIn("p.status", []string{"spam"})
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" OR
@@ -602,7 +602,7 @@ func (j *JoinClause) OrWhereNotIn(column string, values any) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrWhereNull("p.deleted_at")
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" OR
@@ -616,7 +616,7 @@ func (j *JoinClause) OrWhereNull(column string) *JoinClause {
 //
 // Example:
 //
-//	conn.Table("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
+//	conn.Select().From("users as u").JoinFunc("posts as p", func(j *db.JoinClause) {
 //		j.On("p.user_id", "u.id").OrWhereNotNull("p.published_at")
 //	})
 //	// SELECT * FROM "users" AS "u" INNER JOIN "posts" AS "p" ON "p"."user_id" = "u"."id" OR

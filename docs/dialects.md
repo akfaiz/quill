@@ -51,13 +51,13 @@ zero-padded for every dialect.
 
 | | PostgreSQL | MySQL | SQLite |
 | --- | --- | --- | --- |
-| `InsertOrIgnore` | `ON CONFLICT DO NOTHING` | `INSERT IGNORE` | `INSERT OR IGNORE` |
-| `Upsert` | `ON CONFLICT (...) DO UPDATE SET x = "excluded"."x"` | `ON DUPLICATE KEY UPDATE x = VALUES(x)` | as PostgreSQL |
-| `RETURNING` | yes | `ErrUnsupported` | yes, SQLite 3.35+ |
+| `Insert(...).Ignore()` | `ON CONFLICT DO NOTHING` | `INSERT IGNORE` | `INSERT OR IGNORE` |
+| `Insert(...).Upsert(...)` | `ON CONFLICT (...) DO UPDATE SET x = "excluded"."x"` | `ON DUPLICATE KEY UPDATE x = VALUES(x)` | as PostgreSQL |
+| `Returning(...)` on insert, update, delete | yes | `ErrUnsupported` | yes, SQLite 3.35+ |
 | Update/delete with a join or limit | `ctid` subquery | native; join plus order/limit is `ErrUnsupported` | `rowid` subquery |
-| `UpdateFrom` | yes | `ErrUnsupported` | `ErrUnsupported` |
-| `Truncate` | `TRUNCATE ... RESTART IDENTITY` | `TRUNCATE TABLE` | `DELETE` + reset `sqlite_sequence` (one transaction; the reset is skipped when no table uses `AUTOINCREMENT`) |
-| `InsertGetID` | `RETURNING "id"` | last insert id | last insert id |
+| `Update(...).FromJoins()` | yes | `ErrUnsupported` | `ErrUnsupported` |
+| `DB.Truncate` | `TRUNCATE ... RESTART IDENTITY` | `TRUNCATE TABLE` | `DELETE` + reset `sqlite_sequence` (one transaction; the reset is skipped when no table uses `AUTOINCREMENT`) |
+| `Insert(...).ExecGetID` | `RETURNING "id"` | last insert id | last insert id |
 | Rows affected by an update | matched rows | **changed** rows only | matched rows |
 | Upsert rows affected | per row | 2 per updated row | per row |
 

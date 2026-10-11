@@ -64,12 +64,12 @@ type QueryEvent struct {
 //	conn := db.New(sqlDB, db.Postgres, db.WithPrefix("app_"), db.WithLogArgs())
 type Option func(*DB)
 
-// WithPrefix sets a table prefix applied to every builder from DB.Table.
+// WithPrefix sets a table prefix applied to every statement builder created from the DB.
 //
 // Example:
 //
 //	conn := db.New(sqlDB, db.Postgres, db.WithPrefix("app_"))
-//	conn.Table("users")
+//	conn.Select().From("users")
 //	// SELECT * FROM "app_users"
 func WithPrefix(prefix string) Option { return func(db *DB) { db.prefix = prefix } }
 
@@ -80,7 +80,7 @@ func WithPrefix(prefix string) Option { return func(db *DB) { db.prefix = prefix
 //
 //	hook := func(_ context.Context, ev db.QueryEvent) { log.Println(ev.SQL, ev.NumArgs) }
 //	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
-//	conn.Table("users").Where("name", "ann").Count(ctx)
+//	conn.Select().From("users").Where("name", "ann").Count(ctx)
 //	// hook sees: SELECT COUNT(*) AS "aggregate" FROM "users" WHERE "name" = $1, 1
 func WithHook(fn func(context.Context, QueryEvent)) Option { return func(db *DB) { db.hook = fn } }
 
@@ -94,13 +94,13 @@ func WithHook(fn func(context.Context, QueryEvent)) Option { return func(db *DB)
 //	// ev.Args = ["ann"] for Where("name", "ann")
 func WithLogArgs() Option { return func(db *DB) { db.logArgs = true } }
 
-// DB executes builders against a connection. It is safe for concurrent use when
+// DB executes statements against a connection. It is safe for concurrent use when
 // the underlying Conn is (as *sql.DB is); a DB made by Transaction is not.
 //
 // Example:
 //
 //	conn := db.New(sqlDB, db.Postgres)
-//	n, err := conn.Table("users").Count(ctx)
+//	n, err := conn.Select().From("users").Count(ctx)
 type DB struct {
 	conn    Conn
 	dialect Dialect
@@ -116,7 +116,7 @@ type DB struct {
 // Example:
 //
 //	conn := db.New(sqlDB, db.Postgres, db.WithPrefix("app_")) // sqlDB is a *sql.DB
-//	n, err := conn.Table("users").Count(ctx)
+//	n, err := conn.Select().From("users").Count(ctx)
 //	// SELECT COUNT(*) AS "aggregate" FROM "app_users"
 func New(conn Conn, d Dialect, opts ...Option) *DB {
 	db := &DB{conn: conn, dialect: d}
@@ -130,9 +130,9 @@ func New(conn Conn, d Dialect, opts ...Option) *DB {
 }
 
 // Use starts a connection-less DB for building SQL: set the dialect first, then
-// chain from Table:
+// chain from Select, Insert, Update or Delete:
 //
-//	sql, args, err := db.Use(db.Postgres).Table("users").Where("id", 7).ToSQL()
+//	sql, args, err := db.Use(db.Postgres).Select().From("users").Where("id", 7).ToSQL()
 //
 // The same options as New apply (WithPrefix). Running a query on it returns
 // ErrNotBound; create the DB with New to execute.
@@ -146,27 +146,67 @@ func Use(d Dialect, opts ...Option) *DB { return New(nil, d, opts...) }
 //	conn.Dialect() == db.MySQL // true
 func (db *DB) Dialect() Dialect { return db.dialect }
 
-// NewQuery returns an empty builder bound to this DB, for sources that are not a
-// plain table (FromSub, FromRaw).
-//
-// Example:
-//
-//	sub := conn.Table("orders").Select("user_id").Where("total", ">", 100)
-//	sqlText, args, err := conn.NewQuery().FromSub(sub, "big").ToSQL()
-//	// SELECT * FROM (SELECT "user_id" FROM "orders" WHERE "total" > $1) AS "big"   args: [100]
-func (db *DB) NewQuery() *Builder {
-	b := NewBuilder(db.dialect)
-	b.prefix, b.db = db.prefix, db
-	return b
+// initQuery readies q to compile for this DB's dialect and prefix and to run on its connection.
+func (db *DB) initQuery(q *query) {
+	q.dialect, q.prefix, q.db = db.dialect, db.prefix, db
+	if _, err := db.dialect.grammar(); err != nil {
+		q.err = err
+	}
 }
 
-// Table starts a builder bound to this DB.
+// Select starts a SELECT builder; columns are optional (default *).
 //
 // Example:
 //
-//	sqlText, args, err := conn.Table("users").Where("id", 7).ToSQL()
-//	// SELECT * FROM "users" WHERE "id" = $1   args: [7]
-func (db *DB) Table(name string) *Builder { return db.NewQuery().From(name) }
+//	sqlText, args, err := conn.Select("id", "name").From("users").Where("id", 7).ToSQL()
+//	// SELECT "id", "name" FROM "users" WHERE "id" = $1   args: [7]
+func (db *DB) Select(columns ...string) *SelectBuilder {
+	s := &SelectBuilder{}
+	db.initQuery(&s.q)
+	if len(columns) > 0 {
+		s.q.Select(columns...)
+	}
+	return s
+}
+
+// Insert starts an INSERT builder for table.
+//
+// Example:
+//
+//	sqlText, args, err := conn.Insert("users").Values(map[string]any{"name": "Ann"}).ToSQL()
+//	// INSERT INTO "users" ("name") VALUES ($1)   args: [Ann]
+func (db *DB) Insert(table string) *InsertBuilder {
+	i := &InsertBuilder{}
+	db.initQuery(&i.q)
+	i.q.From(table)
+	return i
+}
+
+// Update starts an UPDATE builder for table.
+//
+// Example:
+//
+//	sqlText, args, err := conn.Update("users").Set("name", "Ann").Where("id", 7).ToSQL()
+//	// UPDATE "users" SET "name" = $1 WHERE "id" = $2   args: [Ann 7]
+func (db *DB) Update(table string) *UpdateBuilder {
+	u := &UpdateBuilder{}
+	db.initQuery(&u.q)
+	u.q.From(table)
+	return u
+}
+
+// Delete starts a DELETE builder for table.
+//
+// Example:
+//
+//	sqlText, args, err := conn.Delete("users").Where("id", 7).ToSQL()
+//	// DELETE FROM "users" WHERE "id" = $1   args: [7]
+func (db *DB) Delete(table string) *DeleteBuilder {
+	d := &DeleteBuilder{}
+	db.initQuery(&d.q)
+	d.q.From(table)
+	return d
+}
 
 func (db *DB) query(ctx context.Context, sqlText string, args []any) (*sql.Rows, error) {
 	if db.conn == nil {
@@ -262,7 +302,7 @@ func (db *DB) Transaction(ctx context.Context, fn func(tx *DB) error) error {
 //
 //	opts := &sql.TxOptions{Isolation: sql.LevelSerializable, ReadOnly: true}
 //	err := conn.TransactionOpts(ctx, opts, func(tx *db.DB) error {
-//		_, err := tx.Table("users").Count(ctx)
+//		_, err := tx.Select().From("users").Count(ctx)
 //		return err
 //	})
 func (db *DB) TransactionOpts(ctx context.Context, opts *sql.TxOptions, fn func(tx *DB) error) (err error) {
@@ -321,7 +361,7 @@ func finishTx(tx *DB, fn func(*DB) error, commit, rollback func() error) (err er
 	return commit()
 }
 
-func (b *Builder) bound() (*DB, error) {
+func (b *query) bound() (*DB, error) {
 	if b.err != nil {
 		return nil, b.err
 	}

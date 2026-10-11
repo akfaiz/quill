@@ -9,17 +9,21 @@ first, honour cancellation, and always close their rows.
 
 ## Reading rows
 
+These readers live on `*db.SelectBuilder` (`conn.Select(...).From(...)`). The write builders have
+their own executors: `Exec(ctx)` for the affected-row count, and `Get(ctx, &dest)` to scan a
+`RETURNING` clause (see [Writing data](writing-data.md)).
+
 The destination is a pointer; its type decides how rows are read (see
 [scanning](#how-rows-are-scanned)).
 
 ```go
 var users []User
-err := conn.Table("users").Where("active", true).OrderBy("id").Get(ctx, &users)   // every row
+err := conn.Select().From("users").Where("active", true).OrderBy("id").Get(ctx, &users)   // every row
 
 var u User
-err = conn.Table("users").Where("email", e).First(ctx, &u)   // first row; db.ErrNotFound when none
-err = conn.Table("users").Find(ctx, 7, &u)                   // WHERE "id" = 7, then First
-err = conn.Table("users").Where("email", e).Sole(ctx, &u)    // exactly one: ErrNotFound or ErrMultipleRecords
+err = conn.Select().From("users").Where("email", e).First(ctx, &u)   // first row; db.ErrNotFound when none
+err = conn.Select().From("users").Find(ctx, 7, &u)                   // WHERE "id" = 7, then First
+err = conn.Select().From("users").Where("email", e).Sole(ctx, &u)    // exactly one: ErrNotFound or ErrMultipleRecords
 ```
 
 | Method | Destination | Result |
@@ -35,13 +39,13 @@ err = conn.Table("users").Where("email", e).Sole(ctx, &u)    // exactly one: Err
 
 ```go
 var name string
-err := conn.Table("users").Where("id", 2).Value(ctx, "name", &name)
+err := conn.Select().From("users").Where("id", 2).Value(ctx, "name", &name)
 
 var names []string
-err = conn.Table("users").OrderBy("name").Pluck(ctx, "name", &names)
+err = conn.Select().From("users").OrderBy("name").Pluck(ctx, "name", &names)
 
 var byID map[int64]string
-err = conn.Table("users").PluckMap(ctx, "name", "id", &byID)
+err = conn.Select().From("users").PluckMap(ctx, "name", "id", &byID)
 ```
 
 `First`, `Find`, `Sole` and `Value` add `LIMIT 1` (or 2 for `Sole`) on a copy; your builder is
@@ -87,14 +91,14 @@ type User struct {
 ## Aggregates
 
 ```go
-n, err   := conn.Table("users").Count(ctx)                     // count(*)
-n, err    = conn.Table("users").Count(ctx, "age")               // count("age"): skips NULLs
-sum, err := conn.Table("orders").Sum(ctx, "total")              // float64, 0 when no rows
-avg, err := conn.Table("orders").Avg(ctx, "total")
+n, err   := conn.Select().From("users").Count(ctx)                     // count(*)
+n, err    = conn.Select().From("users").Count(ctx, "age")               // count("age"): skips NULLs
+sum, err := conn.Select().From("orders").Sum(ctx, "total")              // float64, 0 when no rows
+avg, err := conn.Select().From("orders").Avg(ctx, "total")
 
 var oldest time.Time
-err = conn.Table("users").Min(ctx, "created_at", &oldest)       // Max likewise
-err = conn.Table("orders").Aggregate(ctx, "sum", "total", &f)   // any function
+err = conn.Select().From("users").Min(ctx, "created_at", &oldest)       // Max likewise
+err = conn.Select().From("orders").Aggregate(ctx, "sum", "total", &f)   // any function
 ```
 
 Ordering is dropped from the aggregate. Queries with `GROUP BY`, `HAVING`, `UNION`, `DISTINCT`,
@@ -105,7 +109,7 @@ SELECT count(*) AS "aggregate" FROM (SELECT "user_id" FROM "posts" GROUP BY "use
 ```
 
 Strict servers (PostgreSQL, MySQL with `ONLY_FULL_GROUP_BY`) need the grouped column selected:
-`Select("user_id").GroupBy("user_id").Count(ctx)`. `Min`, `Max` and `Sum` over no rows give `NULL`,
+`conn.Select("user_id").From("posts").GroupBy("user_id").Count(ctx)`. `Min`, `Max` and `Sum` over no rows give `NULL`,
 which leaves a plain destination at its zero value.
 
 ## Pagination
@@ -114,7 +118,7 @@ which leaves a plain destination at its zero value.
 
 ```go
 var users []User
-page, err := conn.Table("users").OrderBy("id").Paginate(ctx, 2, 15, &users)
+page, err := conn.Select().From("users").OrderBy("id").Paginate(ctx, 2, 15, &users)
 // page.Total, page.PerPage, page.CurrentPage, page.LastPage, page.From, page.To
 ```
 
@@ -125,7 +129,7 @@ table gives `Total: 0, LastPage: 1` and an empty slice.
 ### Without a count
 
 ```go
-p, err := conn.Table("users").OrderBy("id").SimplePaginate(ctx, 1, 15, &users)
+p, err := conn.Select().From("users").OrderBy("id").SimplePaginate(ctx, 1, 15, &users)
 // p.HasMore, p.CurrentPage, p.PerPage
 ```
 
@@ -135,11 +139,11 @@ Fetches one extra row to learn whether another page exists, and skips the count 
 
 ```go
 var users []User
-p, err := conn.Table("users").CursorPaginate(ctx, 15, "", &users)             // first page
-p, err  = conn.Table("users").CursorPaginate(ctx, 15, p.NextCursor, &users)   // next page
+p, err := conn.Select().From("users").CursorPaginate(ctx, 15, "", &users)             // first page
+p, err  = conn.Select().From("users").CursorPaginate(ctx, 15, p.NextCursor, &users)   // next page
 // p.HasMore, p.NextCursor ("" when there is no next page)
 
-conn.Table("events").CursorPaginate(ctx, 50, token, &events, db.CursorOptions{Column: "created_at", Desc: true})
+conn.Select().From("events").CursorPaginate(ctx, 50, token, &events, db.CursorOptions{Column: "created_at", Desc: true})
 ```
 
 - Pages by `WHERE key > last ORDER BY key LIMIT n`, so it stays fast on deep pages and is stable
@@ -157,7 +161,7 @@ conn.Table("events").CursorPaginate(ctx, 50, token, &events, db.CursorOptions{Co
 
 ```go
 var batch []User
-err := conn.Table("users").OrderBy("id").Chunk(ctx, 500, &batch, func() (bool, error) {
+err := conn.Select().From("users").OrderBy("id").Chunk(ctx, 500, &batch, func() (bool, error) {
     for _, u := range batch {
         // process u
     }
@@ -171,7 +175,7 @@ changes the rows that match the filter, offset paging can skip or repeat rows: u
 ### ChunkByID
 
 ```go
-err := conn.Table("jobs").Where("state", "new").ChunkByID(ctx, 100, &batch, func() (bool, error) {
+err := conn.Select().From("jobs").Where("state", "new").ChunkByID(ctx, 100, &batch, func() (bool, error) {
     // safe to update or delete the rows in batch
     return true, nil
 }) // keyset on "id"; pass a column name last to use another unique column
@@ -184,12 +188,12 @@ filter or truncate `batch` without changing which rows come next.
 
 ```go
 var row User
-err := conn.Table("users").OrderBy("id").Each(ctx, &row, func() error {
+err := conn.Select().From("users").OrderBy("id").Each(ctx, &row, func() error {
     // row holds the current row, reset before every scan
     return nil
 })
 
-for u, err := range db.Stream[User](ctx, conn.Table("users").OrderBy("id")) {
+for u, err := range db.Stream[User](ctx, conn.Select().From("users").OrderBy("id")) {
     if err != nil { return err }
     if u.Name == "stop" { break } // breaking closes the cursor
 }
@@ -205,10 +209,10 @@ the sequence after being yielded once.
 
 ```go
 err := conn.Transaction(ctx, func(tx *db.DB) error {
-    if _, err := tx.Table("accounts").Where("id", 1).Decrement(ctx, "balance", 50, nil); err != nil {
+    if _, err := tx.Update("accounts").Decrement("balance", 50).Where("id", 1).Exec(ctx); err != nil {
         return err // rolls back
     }
-    _, err := tx.Table("accounts").Where("id", 2).Increment(ctx, "balance", 50, nil)
+    _, err := tx.Update("accounts").Increment("balance", 50).Where("id", 2).Exec(ctx)
     return err // nil commits
 })
 ```

@@ -4,7 +4,7 @@
 - [Method index](#method-index)
 
 For signatures and doc comments use `go doc github.com/akfaiz/quill/db` (add a name, for example
-`go doc github.com/akfaiz/quill/db Builder.Where`).
+`go doc github.com/akfaiz/quill/db SelectBuilder.Where`).
 
 ## Errors
 
@@ -25,27 +25,32 @@ All are sentinel values; test them with `errors.Is`. Errors from deeper layers w
 | `db.ErrInvalidArgs` | Arguments the library cannot use: wrong argument count, a non-struct passed to a struct write, an unsafe index name, a missing `TableName()`, a malformed cursor, ... |
 | `db.ErrUnsupported` | The feature does not exist on this dialect (`RETURNING` on MySQL, lateral joins on SQLite, ...) |
 | `db.ErrJoinNeedsOn` | A join (other than a cross join) has no `ON` condition |
-| `db.ErrNoValues` | A write had nothing to write (all fields omitted, an empty map) |
-| `db.ErrNoWhere` | `Update`, `Delete` or `Increment*` without a `WHERE` or `LIMIT` and without `AllRows()` |
+| `db.ErrNoValues` | A write had nothing to write (an insert with no rows, an update with nothing to set, all fields omitted) |
+| `db.ErrNoWhere` | An update or delete builder (including `Increment*`) without a `WHERE` or `LIMIT` and without `AllRows()` |
 
-Builder errors are collected while you chain and returned by the terminal call; `Err()` shows the
-first one early.
+Builder errors are collected while you chain and returned by the terminal call; `Err()` (on every
+builder) shows the first one early.
 
 ## Types
 
 | Type | Purpose |
 | --- | --- |
 | `db.Dialect` | `Postgres`, `MySQL`, `MariaDB`, `SQLite` |
-| `db.DB` | A dialect plus an optional connection. `db.New` or `db.Use` creates it |
+| `db.DB` | A dialect plus an optional connection. `db.New` or `db.Use` creates it. Starts statements with `Select`, `Insert`, `Update` and `Delete` |
 | `db.Conn` | `QueryContext` and `ExecContext`: satisfied by `*sql.DB`, `*sql.Tx`, `*sql.Conn` |
-| `db.Builder` | The fluent query builder |
+| `db.SelectBuilder` | A SELECT statement (`DB.Select(...).From(...)`): where, joins, grouping, unions, CTEs, locks, readers |
+| `db.InsertBuilder` | An INSERT statement (`DB.Insert(table)`): `Values`, `Rows`, `Ignore`, `Using`, `Upsert`, `Returning` |
+| `db.UpdateBuilder` | An UPDATE statement (`DB.Update(table)`): `Set*`, `Increment*`, `FromJoins`, where, joins, order, limit |
+| `db.DeleteBuilder` | A DELETE statement (`DB.Delete(table)`): where, joins, order, limit |
+| `db.WhereClause` | The conditions of a `WhereGroup` callback |
+| `db.HavingClause` | The conditions of a `HavingGroup` callback |
 | `db.JoinClause` | Conditions of one join, inside `JoinFunc` and friends |
 | `db.Expression` | Raw SQL plus arguments; create it with `db.Raw` |
-| `db.Query[T]` | The typed query (`db.From[T]`, `db.As[T]`) |
+| `db.Query[T]` | The typed, select-only query (`db.From[T]`, `db.As[T]`) |
 | `db.Tabler` | `TableName() string`, implemented by row types |
 | `db.Option` | A `db.New` / `db.Use` option |
 | `db.QueryEvent` | `SQL`, `NumArgs`, `Args`, `Duration`, `Err`: passed to hooks |
-| `db.Stmt` | `SQL` and `Args` of one statement (`TruncateSQL`) |
+| `db.Stmt` | `SQL` and `Args` of one statement (`DB.TruncateSQL`) |
 | `db.Page` | `Total int64`, `PerPage`, `CurrentPage`, `LastPage`, `From`, `To` |
 | `db.SimplePage` | `PerPage`, `CurrentPage`, `HasMore` |
 | `db.CursorPage` | `PerPage`, `HasMore`, `NextCursor` |
@@ -62,41 +67,38 @@ first one early.
 
 ## Package functions
 
-`AggregateAs`, `As`, `From`, `MaxAs`, `MinAs`, `New`, `NewBuilder`, `PluckAs`, `Raw`, `Row`, `Rows`,
-`Stream`, `TableName`, `Use`, `ValueAs`, `WithHook`, `WithLogArgs`, `WithPrefix`
+`As`, `From`, `New`, `PluckAs`, `Raw`, `Row`, `Stream`,
+`TableName`, `Use`, `ValueAs`, `WithHook`, `WithLogArgs`, `WithPrefix`
 
-`db.NewBuilder(dialect)` returns a blank builder with no `DB`, for low-level use; prefer
-`db.Use(dialect).NewQuery()`.
+There is no builder constructor besides the `DB` methods: start with `db.Use(dialect).Select()` (or
+`Insert`, `Update`, `Delete`) when you only need SQL.
 
 ## Method index
 
-Every exported method, grouped by purpose. The guides explain each group.
+Every exported method, grouped by type and purpose. The guides explain each group. The select, update
+and delete builders and the two clause types share the same `Where*` family; the old single
+builder type no longer exists.
 
-## `db.Builder`
+### `db.DB` (12)
 
-### Build SQL (6)
+`Delete`, `Dialect`, `Exec`, `Insert`, `Query`, `Select`, `Transaction`, `TransactionOpts`,
+`Truncate`, `TruncateSQL`, `Update`, `UpdateOrInsert`
+
+`Select`, `Insert`, `Update` and `Delete` start a statement; `Truncate`, `TruncateSQL` and `UpdateOrInsert` are statement-level helpers that need no builder.
+
+### `db.SelectBuilder` (183)
+
+Started with `DB.Select(columns...)`. Chain methods return `*db.SelectBuilder`; the build and read methods end the chain.
+
+**Build SQL** (6)
 
 `AggregateSQL`, `ExistsSQL`, `MustRawSQL`, `MustSQL`, `ToRawSQL`, `ToSQL`
 
-### Write SQL (build only) (14)
+**Select and source** (9)
 
-`DecrementEachSQL`, `DecrementSQL`, `DeleteSQL`, `IncrementEachSQL`, `IncrementSQL`,
-`InsertGetIDSQL`, `InsertOrIgnoreSQL`, `InsertOrIgnoreUsingSQL`, `InsertSQL`, `InsertUsingSQL`,
-`TruncateSQL`, `UpdateFromSQL`, `UpdateSQL`, `UpsertSQL`
+`AddSelect`, `Distinct`, `From`, `FromRaw`, `FromSub`, `Prefix`, `Select`, `SelectRaw`, `SelectSub`
 
-### Select and source (12)
-
-`AddSelect`, `Clone`, `Distinct`, `Err`, `From`, `FromRaw`, `FromSub`, `NewQuery`, `Prefix`,
-`Select`, `SelectRaw`, `SelectSub`
-
-### JSON conditions (14)
-
-`OrWhereJsonContains`, `OrWhereJsonContainsKey`, `OrWhereJsonDoesntContain`,
-`OrWhereJsonDoesntContainKey`, `OrWhereJsonDoesntOverlap`, `OrWhereJsonLength`,
-`OrWhereJsonOverlaps`, `WhereJsonContains`, `WhereJsonContainsKey`, `WhereJsonDoesntContain`,
-`WhereJsonDoesntContainKey`, `WhereJsonDoesntOverlap`, `WhereJsonLength`, `WhereJsonOverlaps`
-
-### Where (64)
+**Where** (64)
 
 `OrWhere`, `OrWhereAll`, `OrWhereAny`, `OrWhereBetween`, `OrWhereBetweenColumns`, `OrWhereColumn`,
 `OrWhereDate`, `OrWhereDay`, `OrWhereExists`, `OrWhereGroup`, `OrWhereIn`, `OrWhereIntegerInRaw`,
@@ -111,51 +113,150 @@ Every exported method, grouped by purpose. The guides explain each group.
 `WhereNull`, `WhereNullSafeEquals`, `WhereRaw`, `WhereRowValues`, `WhereTime`, `WhereValueBetween`,
 `WhereValueNotBetween`, `WhereYear`
 
-### Group and having (16)
+**JSON conditions** (14)
+
+`OrWhereJsonContains`, `OrWhereJsonContainsKey`, `OrWhereJsonDoesntContain`,
+`OrWhereJsonDoesntContainKey`, `OrWhereJsonDoesntOverlap`, `OrWhereJsonLength`,
+`OrWhereJsonOverlaps`, `WhereJsonContains`, `WhereJsonContainsKey`, `WhereJsonDoesntContain`,
+`WhereJsonDoesntContainKey`, `WhereJsonDoesntOverlap`, `WhereJsonLength`, `WhereJsonOverlaps`
+
+**Group and having** (16)
 
 `GroupBy`, `GroupByRaw`, `Having`, `HavingBetween`, `HavingGroup`, `HavingNotBetween`,
 `HavingNotNull`, `HavingNull`, `HavingRaw`, `OrHaving`, `OrHavingBetween`, `OrHavingGroup`,
 `OrHavingNotBetween`, `OrHavingNotNull`, `OrHavingNull`, `OrHavingRaw`
 
-### Joins (20)
+**Joins** (20)
 
 `CrossJoin`, `CrossJoinSub`, `Join`, `JoinFunc`, `JoinLateral`, `JoinSub`, `JoinSubFunc`,
 `JoinWhere`, `LeftJoin`, `LeftJoinFunc`, `LeftJoinLateral`, `LeftJoinSub`, `LeftJoinSubFunc`,
 `LeftJoinWhere`, `RightJoin`, `RightJoinFunc`, `RightJoinSub`, `RightJoinSubFunc`, `RightJoinWhere`,
 `StraightJoin`
 
-### Ordering and paging (15)
+**Ordering and paging** (15)
 
 `ForPage`, `ForPageAfterID`, `ForPageBeforeID`, `InRandomOrder`, `Latest`, `Limit`, `Offset`,
 `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`, `ReorderBy`, `Skip`, `Take`
 
-### Common table expressions (5)
+**Common table expressions** (5)
 
 `With`, `WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
 
-### Unions, locks, index hints (8)
+**Unions, locks, index hints** (8)
 
 `ForceIndex`, `IgnoreIndex`, `Lock`, `LockForUpdate`, `SharedLock`, `Union`, `UnionAll`, `UseIndex`
 
-### Control flow (5)
+**Control flow** (5)
 
-`AllRows`, `Returning`, `Tap`, `Unless`, `When`
+`Clone`, `Err`, `Tap`, `Unless`, `When`
 
-### Read (21)
+**Read** (21)
 
 `Aggregate`, `Avg`, `Chunk`, `ChunkByID`, `Count`, `CursorPaginate`, `DoesntExist`, `Each`,
 `Exists`, `Find`, `First`, `Get`, `Max`, `Min`, `Paginate`, `Pluck`, `PluckMap`, `SimplePaginate`,
 `Sole`, `Sum`, `Value`
 
-### Write (18)
+### `db.InsertBuilder` (14)
 
-`Decrement`, `DecrementEach`, `Delete`, `DeleteReturning`, `Increment`, `IncrementEach`, `Insert`,
-`InsertGetID`, `InsertOrIgnore`, `InsertOrIgnoreUsing`, `InsertReturning`, `InsertUsing`,
-`Truncate`, `Update`, `UpdateFrom`, `UpdateOrInsert`, `UpdateReturning`, `Upsert`
+Started with `DB.Insert(table)`. An insert has no `Where`, `Join`, `OrderBy` or `Limit`.
 
-### `db.DB` (7)
+**Build SQL** (2)
 
-`Dialect`, `Exec`, `NewQuery`, `Query`, `Table`, `Transaction`, `TransactionOpts`
+`IDSQL`, `ToSQL`
+
+**Select and source** (1)
+
+`Prefix`
+
+**Control flow** (3)
+
+`Clone`, `Err`, `Returning`
+
+**Write** (8)
+
+`Exec`, `ExecGetID`, `Get`, `Ignore`, `Rows`, `Upsert`, `Using`, `Values`
+
+### `db.UpdateBuilder` (124)
+
+Started with `DB.Update(table)`. Without a `WHERE` or `LIMIT`, `Exec`, `Get` and `ToSQL` return `ErrNoWhere` unless `AllRows` was called. No grouping, `Offset`, unions, locks or CTEs.
+
+**Build SQL** (1)
+
+`ToSQL`
+
+**Select and source** (1)
+
+`Prefix`
+
+**Where**: the same `Where*` / `OrWhere*` methods as `SelectBuilder` (64), including `WhereGroup` and `WhereExists`.
+
+**JSON conditions**: the same `WhereJson*` / `OrWhereJson*` methods as `SelectBuilder` (14).
+
+**Joins** (21)
+
+`CrossJoin`, `CrossJoinSub`, `FromJoins`, `Join`, `JoinFunc`, `JoinLateral`, `JoinSub`,
+`JoinSubFunc`, `JoinWhere`, `LeftJoin`, `LeftJoinFunc`, `LeftJoinLateral`, `LeftJoinSub`,
+`LeftJoinSubFunc`, `LeftJoinWhere`, `RightJoin`, `RightJoinFunc`, `RightJoinSub`,
+`RightJoinSubFunc`, `RightJoinWhere`, `StraightJoin`
+
+**Ordering and paging** (10)
+
+`InRandomOrder`, `Latest`, `Limit`, `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`,
+`ReorderBy`, `Take`
+
+**Control flow** (4)
+
+`AllRows`, `Clone`, `Err`, `Returning`
+
+**Write** (9)
+
+`Decrement`, `DecrementEach`, `Exec`, `Get`, `Increment`, `IncrementEach`, `Set`, `SetMap`, `SetRow`
+
+### `db.DeleteBuilder` (116)
+
+Started with `DB.Delete(table)`. Guarded like `UpdateBuilder`. No grouping, `Offset`, unions, locks or CTEs.
+
+**Build SQL** (1)
+
+`ToSQL`
+
+**Select and source** (1)
+
+`Prefix`
+
+**Where**: the same `Where*` / `OrWhere*` methods as `SelectBuilder` (64), including `WhereGroup` and `WhereExists`.
+
+**JSON conditions**: the same `WhereJson*` / `OrWhereJson*` methods as `SelectBuilder` (14).
+
+**Joins** (20)
+
+`CrossJoin`, `CrossJoinSub`, `Join`, `JoinFunc`, `JoinLateral`, `JoinSub`, `JoinSubFunc`,
+`JoinWhere`, `LeftJoin`, `LeftJoinFunc`, `LeftJoinLateral`, `LeftJoinSub`, `LeftJoinSubFunc`,
+`LeftJoinWhere`, `RightJoin`, `RightJoinFunc`, `RightJoinSub`, `RightJoinSubFunc`, `RightJoinWhere`,
+`StraightJoin`
+
+**Ordering and paging** (10)
+
+`InRandomOrder`, `Latest`, `Limit`, `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`,
+`ReorderBy`, `Take`
+
+**Control flow** (4)
+
+`AllRows`, `Clone`, `Err`, `Returning`
+
+**Write** (2)
+
+`Exec`, `Get`
+
+### `db.WhereClause` (78)
+
+Every `Where*` and `OrWhere*` method of the select builder, including `WhereGroup`, `OrWhereGroup`, `WhereExists` and the JSON conditions. A group callback receives this type.
+
+### `db.HavingClause` (14)
+
+`Having`, `HavingBetween`, `HavingGroup`, `HavingNotBetween`, `HavingNotNull`, `HavingNull`,
+`HavingRaw`, `OrHaving`, `OrHavingBetween`, `OrHavingGroup`, `OrHavingNotBetween`,
+`OrHavingNotNull`, `OrHavingNull`, `OrHavingRaw`
 
 ### `db.JoinClause` (16)
 
@@ -163,19 +264,50 @@ Every exported method, grouped by purpose. The guides explain each group.
 `OrWhereNull`, `OrWhereRaw`, `Where`, `WhereIn`, `WhereNotIn`, `WhereNotNull`, `WhereNull`,
 `WhereRaw`
 
-### `db.Query[T]` (80)
+### `db.Query[T]` (171)
 
-`AddSelect`, `AllRows`, `Apply`, `Avg`, `Builder`, `Chunk`, `ChunkByID`, `Clone`, `Count`,
-`CursorPaginate`, `Delete`, `DeleteReturning`, `Distinct`, `DoesntExist`, `Each`, `Exists`, `Find`,
-`First`, `ForPage`, `Get`, `GroupBy`, `Having`, `HavingRaw`, `Insert`, `InsertGetID`,
-`InsertOrIgnore`, `InsertReturning`, `Join`, `JoinFunc`, `Latest`, `LeftJoin`, `LeftJoinFunc`,
-`Limit`, `LockForUpdate`, `Offset`, `Oldest`, `OrWhere`, `OrWhereGroup`, `OrWhereIn`, `OrWhereNull`,
-`OrWhereRaw`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Paginate`, `Returning`, `RightJoin`,
-`Select`, `SelectRaw`, `SharedLock`, `SimplePaginate`, `Sole`, `Stream`, `Sum`, `Truncate`,
-`Unless`, `Update`, `UpdateMap`, `UpdateReturning`, `Upsert`, `When`, `Where`, `WhereBetween`,
-`WhereColumn`, `WhereExists`, `WhereGroup`, `WhereIn`, `WhereLike`, `WhereNot`, `WhereNotBetween`,
-`WhereNotExists`, `WhereNotIn`, `WhereNotNull`, `WhereNull`, `WhereRaw`, `With`,
-`WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
+Select-only. Every `SelectBuilder` chain method is mirrored and returns `*db.Query[T]`, so `T` survives the chain; the readers return `T` values (see [Typed API](typed-api.md)). `Apply` and `Builder` give access to the underlying `*db.SelectBuilder`. `Min`, `Max`, `Value`, `Pluck` and `Aggregate` are not mirrored: use `db.ValueAs` and `db.PluckAs`, or the `SelectBuilder` readers.
 
-The typed chain methods forward to the builder method of the same name; see
-[Typed API](typed-api.md#the-typed-chain).
+**Select and source** (8)
+
+`AddSelect`, `Distinct`, `From`, `FromRaw`, `FromSub`, `Select`, `SelectRaw`, `SelectSub`
+
+**Where**: the same `Where*` / `OrWhere*` methods as `SelectBuilder` (64), including `WhereGroup` and `WhereExists`.
+
+**JSON conditions**: the same `WhereJson*` / `OrWhereJson*` methods as `SelectBuilder` (14).
+
+**Group and having** (16)
+
+`GroupBy`, `GroupByRaw`, `Having`, `HavingBetween`, `HavingGroup`, `HavingNotBetween`,
+`HavingNotNull`, `HavingNull`, `HavingRaw`, `OrHaving`, `OrHavingBetween`, `OrHavingGroup`,
+`OrHavingNotBetween`, `OrHavingNotNull`, `OrHavingNull`, `OrHavingRaw`
+
+**Joins** (20)
+
+`CrossJoin`, `CrossJoinSub`, `Join`, `JoinFunc`, `JoinLateral`, `JoinSub`, `JoinSubFunc`,
+`JoinWhere`, `LeftJoin`, `LeftJoinFunc`, `LeftJoinLateral`, `LeftJoinSub`, `LeftJoinSubFunc`,
+`LeftJoinWhere`, `RightJoin`, `RightJoinFunc`, `RightJoinSub`, `RightJoinSubFunc`, `RightJoinWhere`,
+`StraightJoin`
+
+**Ordering and paging** (15)
+
+`ForPage`, `ForPageAfterID`, `ForPageBeforeID`, `InRandomOrder`, `Latest`, `Limit`, `Offset`,
+`Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`, `ReorderBy`, `Skip`, `Take`
+
+**Common table expressions** (5)
+
+`With`, `WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
+
+**Unions, locks, index hints** (8)
+
+`ForceIndex`, `IgnoreIndex`, `Lock`, `LockForUpdate`, `SharedLock`, `Union`, `UnionAll`, `UseIndex`
+
+**Control flow** (5)
+
+`Apply`, `Builder`, `Clone`, `Unless`, `When`
+
+**Read** (16)
+
+`Avg`, `Chunk`, `ChunkByID`, `Count`, `CursorPaginate`, `DoesntExist`, `Each`, `Exists`, `Find`,
+`First`, `Get`, `Paginate`, `SimplePaginate`, `Sole`, `Stream`, `Sum`
+

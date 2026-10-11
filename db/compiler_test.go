@@ -27,7 +27,7 @@ func FuzzIdentifierQuoting(f *testing.F) {
 			d db.Dialect
 			q string
 		}{{db.Postgres, `"`}, {db.SQLite, `"`}, {db.MySQL, "`"}} {
-			sql, _, err := db.Use(tc.d).Table("t").Select(col).ToSQL()
+			sql, _, err := db.Use(tc.d).Select().From("t").Select(col).ToSQL()
 			require.NoError(t, err)
 			want := "SELECT " + tc.q + strings.ReplaceAll(col, tc.q, tc.q+tc.q) + tc.q + " FROM " + tc.q + "t" + tc.q
 			assert.Equal(t, want, sql)
@@ -42,7 +42,7 @@ func FuzzRawPlaceholders(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
-		sql, args, err := db.Use(db.Postgres).Table("t").WhereRaw(raw, 1, 2).Where("z", 3).ToSQL()
+		sql, args, err := db.Use(db.Postgres).Select().From("t").WhereRaw(raw, 1, 2).Where("z", 3).ToSQL()
 		require.NoError(t, err)
 		if len(args) < 1 || len(args) > 3 {
 			t.Fatalf("got %d args for %q", len(args), raw)

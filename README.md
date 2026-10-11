@@ -26,6 +26,7 @@ are no models, relations, model lifecycle hooks or migrations.
 
 **Building queries**
 
+- One builder per statement (`Select`, `Insert`, `Update`, `Delete`), each exposing only the methods valid for it
 - `SELECT` with aliases, `DISTINCT`, aggregates, `GROUP BY` / `HAVING`, ordering, limit and offset
 - Rich `WHERE`: comparisons, `IN`, `BETWEEN`, `LIKE`, `NULL`, column and date-part comparisons,
   nested groups, `EXISTS`, row values, and `WhereAll` / `WhereAny` / `WhereNone`
@@ -37,16 +38,16 @@ are no models, relations, model lifecycle hooks or migrations.
 
 **Writing data**
 
-- Insert, insert-or-ignore, insert from a subquery, upsert, update, increment / decrement, delete,
-  truncate and `RETURNING`
-- Struct writes with `Row` / `Rows` and `db:"name,omitempty"` tags
+- `Insert` (with `Ignore`, `Using` for insert-from-select and `Upsert`), `Update` (with `Set`,
+  `Increment` / `Decrement` and `FromJoins`), `Delete`, truncate and `RETURNING`
+- Struct writes with `Rows` / `SetRow` and `db:"name,omitempty"` tags
 
 **Running queries** (optional: build-only use needs no connection)
 
 - Scan into structs, maps and scalars; `First`, `Find`, `Sole`, `Value`, `Pluck`, `Exists`
 - Offset, simple and cursor (keyset) pagination; `Chunk` and `Each` for large result sets
 - Transactions, a query hook for logging, metrics and tracing, and a table prefix option
-- Typed API with `From[T]`, so you get `[]T` back without a destination variable
+- Typed, select-only API with `From[T]`, so you get `[]T` back without a destination variable
 
 ## Why quill
 
@@ -74,17 +75,23 @@ import "github.com/akfaiz/quill/db"
 
 ## Quick start
 
-Build SQL without a database (set the dialect first, then chain from `Table`):
+Build SQL without a database (set the dialect first, then start a statement with `Select`, `Insert`,
+`Update` or `Delete`):
 
 ```go
-sql, args, err := db.Use(db.Postgres).Table("users").
+sql, args, err := db.Use(db.Postgres).
     Select("id", "name").
+    From("users").
     Where("votes", ">", 100).
     OrderByDesc("created_at").
     Limit(10).
     ToSQL()
 // SELECT "id", "name" FROM "users" WHERE "votes" > $1 ORDER BY "created_at" DESC LIMIT 10
 // args: [100]
+
+sql, args, err = db.Use(db.Postgres).Update("users").Set("name", "Anna").Where("id", 7).ToSQL()
+// UPDATE "users" SET "name" = $1 WHERE "id" = $2
+// args: [Anna 7]
 ```
 
 Run queries (wrap any `*sql.DB`, `*sql.Tx` or `*sql.Conn`). `db.Use` only builds SQL: running a
@@ -94,13 +101,17 @@ query on it returns `ErrNotBound`. `db.New` also executes:
 conn := db.New(sqlDB, db.Postgres)
 
 var users []User
-err := conn.Table("users").Where("active", true).OrderBy("id").Get(ctx, &users)
+err := conn.Select().From("users").Where("active", true).OrderBy("id").Get(ctx, &users)
+
+id, err := conn.Insert("users").Values(map[string]any{"name": "Ann"}).ExecGetID(ctx)
+n, err  := conn.Update("users").Set("name", "Anna").Where("id", id).Exec(ctx)
 ```
 
 > Name the variable `conn` (or anything but `db`): a local variable called `db` hides the
 > package inside its scope.
 
-Let a struct name its own table, and skip the destination variable:
+Let a struct name its own table, and skip the destination variable (`db.From[T]` is select-only;
+write structs with `Rows` and `SetRow`):
 
 ```go
 type User struct {
@@ -112,18 +123,18 @@ type User struct {
 func (User) TableName() string { return "users" }
 
 users, err := db.From[User](conn).Where("active", true).OrderBy("id").Get(ctx) // []User
-id, err    := db.From[User](conn).InsertGetID(ctx, User{Name: "Ann"})
-_, err      = db.From[User](conn).Where("id", id).Update(ctx, User{Name: "Anna"})
+id, err    := conn.Insert("users").Rows(User{Name: "Ann"}).ExecGetID(ctx)
+_, err      = conn.Update("users").SetRow(User{Name: "Anna"}).Where("id", id).Exec(ctx)
 ```
 
 Run several statements atomically:
 
 ```go
 err := conn.Transaction(ctx, func(tx *db.DB) error {
-    if _, err := tx.Table("accounts").Where("id", 1).Decrement(ctx, "balance", 50, nil); err != nil {
+    if _, err := tx.Update("accounts").Decrement("balance", 50).Where("id", 1).Exec(ctx); err != nil {
         return err
     }
-    _, err := tx.Table("accounts").Where("id", 2).Increment(ctx, "balance", 50, nil)
+    _, err := tx.Update("accounts").Increment("balance", 50).Where("id", 2).Exec(ctx)
     return err
 })
 ```
@@ -136,7 +147,7 @@ err := conn.Transaction(ctx, func(tx *db.DB) error {
 | [Building queries](docs/building-queries.md) | Select, where, joins, grouping, ordering, unions, subqueries, JSON, raw SQL |
 | [Writing data](docs/writing-data.md) | Insert, upsert, update, increment, delete, truncate, `RETURNING`, the safety guard |
 | [Running queries](docs/running-queries.md) | Reading and scanning, aggregates, pagination, chunking, streaming, transactions, hooks |
-| [Typed API](docs/typed-api.md) | `TableName()`, `From[T]`, `As[T]`, struct writes, scalar helpers |
+| [Typed API](docs/typed-api.md) | `TableName()`, `From[T]`, `As[T]`, struct writes with `Rows` / `SetRow`, scalar helpers |
 | [Dialects](docs/dialects.md) | What differs between PostgreSQL, MySQL, MariaDB and SQLite, with versions |
 | [Security](docs/security.md) | Injection, raw SQL, logging and personal data, untrusted cursors |
 | [Reference](docs/reference.md) | Errors, types, options and an index of every method |

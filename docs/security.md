@@ -15,7 +15,7 @@ What the library does for you:
 
 | Input | Protection |
 | --- | --- |
-| Values (`Where`, `Insert`, `Update`, ...) | Always sent as bind arguments, never put in the SQL text |
+| Values (`Where`, `Values`, `Set`, ...) | Always sent as bind arguments, never put in the SQL text |
 | Identifiers (tables, columns, aliases) | Always quoted; an embedded quote character is doubled, so a name cannot close its own quotes |
 | Operators | Allow-listed; anything else is `db.ErrInvalidOperator` |
 | Order direction | Only `asc` or `desc`; anything else is `db.ErrInvalidDirection` |
@@ -37,7 +37,7 @@ These methods insert SQL text exactly as written. **Never build their text from 
 `DB.Exec`.
 
 ```go
-q := conn.Table("users")
+q := conn.Select().From("users")
 
 // wrong: user input becomes SQL
 q.WhereRaw("name = '" + name + "'")
@@ -59,7 +59,7 @@ injection but a caller could still pick a column you did not mean to expose, suc
 `password_hash`. Allow-list the names:
 
 ```go
-q := conn.Table("users")
+q := conn.Select().From("users")
 var sortable = map[string]string{"created": "created_at", "name": "name"}
 
 col, ok := sortable[r.URL.Query().Get("sort")]
@@ -73,12 +73,12 @@ The same goes for column names passed to `Where`, `Select`, `Pluck` and the curs
 
 *Risk area: data integrity.*
 
-An unbounded `UPDATE` or `DELETE` is refused with `db.ErrNoWhere` unless the query has a `WHERE`
-or `LIMIT`, or you call `AllRows()` to say you mean every row. `Truncate` is the explicit way to
-empty a table, and on PostgreSQL it does not cascade to referencing tables.
-[Details](writing-data.md#the-where-guard).
+An unbounded `UPDATE` or `DELETE` (from `conn.Update(...)` or `conn.Delete(...)`) is refused with
+`db.ErrNoWhere` unless the query has a `WHERE` or `LIMIT`, or you call `AllRows()` to say you mean
+every row. `conn.Truncate(ctx, table)` is the explicit way to empty a table, and on PostgreSQL it does not cascade to
+referencing tables. [Details](writing-data.md#the-where-guard).
 
-`UpdateOrInsert` is not atomic. If concurrent writers could create duplicates, use a transaction
+`DB.UpdateOrInsert` is not atomic. If concurrent writers could create duplicates, use a transaction
 and a unique index (or `Upsert`).
 
 ## Logging and personal data
@@ -92,7 +92,7 @@ numbers).
   values.
 - `db.WithLogArgs()` adds the values to `QueryEvent.Args`. Enable it only where that data may be
   logged, stored and access-controlled accordingly.
-- `ToRawSQL()` and `MustRawSQL()` interpolate values into the text. They exist for debugging only:
+- `ToRawSQL()` and `MustRawSQL()` (select builder only) interpolate values into the text. They exist for debugging only:
   **never execute or log their output in production**, because it is not injection-safe and it
   contains the data.
 - Driver and database errors can echo values back; treat `QueryEvent.Err` as sensitive too.

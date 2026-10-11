@@ -26,7 +26,7 @@ func (c *compiler) write(s string) { c.sb.WriteString(s) }
 // reserve sizes the output buffer and the args slice from the root query's shape,
 // so a typical query grows each at most once instead of doubling repeatedly.
 // The numbers are estimates: undershooting only costs a regrow, never correctness.
-func (c *compiler) reserve(b *Builder) {
+func (c *compiler) reserve(b *query) {
 	onCount := 0
 	for _, j := range b.joins {
 		onCount += len(j.on)

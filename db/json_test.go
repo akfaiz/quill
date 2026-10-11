@@ -24,7 +24,7 @@ type perCase struct {
 	maria        want // zero value: same as my
 }
 
-func selectOf(f func(d db.Dialect) *db.Builder) func(db.Dialect) (string, []any, error) {
+func selectOf(f func(d db.Dialect) *db.SelectBuilder) func(db.Dialect) (string, []any, error) {
 	return func(d db.Dialect) (string, []any, error) { return f(d).ToSQL() }
 }
 
@@ -60,13 +60,13 @@ func runPer(t *testing.T, cases []perCase) {
 	}
 }
 
-func jt(d db.Dialect) *db.Builder { return db.Use(d).Table("t") }
+func jt(d db.Dialect) *db.SelectBuilder { return db.Use(d).Select().From("t") }
 
 func TestJSONSelectorsAndWheres(t *testing.T) {
 	runPer(t, []perCase{
 		{
 			name: "selectors in select list with alias and array index",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).Select("options->theme", "opts->a->b as v", "u.meta->x[0]->y")
 			}),
 			pg: want{sql: `SELECT "options"->>'theme', "opts"->'a'->>'b' AS "v", "u"."meta"->'x'->0->>'y' FROM "t"`},
@@ -79,7 +79,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "text comparison on selector",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).Where("opts->theme", "dark").OrderBy("opts->rank")
 			}),
 			pg: want{
@@ -97,7 +97,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "boolean comparison compares as json",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).Where("opts->on", true).OrWhere("opts->off", "!=", false)
 			}),
 			pg: want{
@@ -112,7 +112,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "contains scalar and not contains list",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(
 					d,
 				).WhereJsonContains("opts->tags", "go").
@@ -133,7 +133,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "contains encodes html chars unescaped",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).WhereJsonContains("opts", map[string]any{"q": "a<b&c"})
 			}),
 			pg: want{sql: `SELECT * FROM "t" WHERE ("opts")::JSONB @> $1`, args: []any{`{"q":"a<b&c"}`}},
@@ -145,7 +145,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "contains key",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).WhereJsonContainsKey("opts->k").OrWhereJsonDoesntContainKey("opts->a->b")
 			}),
 			pg: want{
@@ -160,7 +160,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "contains key with array index on postgres",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).WhereJsonContainsKey("opts->tags->2").WhereJsonContainsKey("opts->tags[-2]")
 			}),
 			pg: want{
@@ -175,7 +175,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "length",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).WhereJsonLength("opts->tags", ">", 2).OrWhereJsonLength("opts->tags", "3")
 			}),
 			pg: want{
@@ -193,7 +193,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "overlaps mysql only",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).WhereJsonOverlaps("opts", []int{1, 2}).OrWhereJsonDoesntOverlap("opts->ids", []int{3})
 			}),
 			pg: want{err: db.ErrUnsupported},
@@ -205,7 +205,7 @@ func TestJSONSelectorsAndWheres(t *testing.T) {
 		},
 		{
 			name: "single quote in path cannot break out of the literal",
-			build: selectOf(func(d db.Dialect) *db.Builder {
+			build: selectOf(func(d db.Dialect) *db.SelectBuilder {
 				return jt(d).Select(`opts->a\'b`)
 			}),
 			pg:   want{sql: `SELECT "opts"->>'a\''b' FROM "t"`},
@@ -220,7 +220,7 @@ func TestJSONUpdates(t *testing.T) {
 		{
 			name: "single path with plain column",
 			build: func(d db.Dialect) (string, []any, error) {
-				return jt(d).Where("id", 1).UpdateSQL(m("opts->theme", "dark", "name", "x"))
+				return db.Use(d).Update("t").Where("id", 1).SetMap(m("opts->theme", "dark", "name", "x")).ToSQL()
 			},
 			pg: want{
 				sql:  `UPDATE "t" SET "name" = $1, "opts" = JSONB_SET("opts"::JSONB, '{"theme"}', $2) WHERE "id" = $3`,
@@ -238,7 +238,11 @@ func TestJSONUpdates(t *testing.T) {
 		{
 			name: "bool and container values",
 			build: func(d db.Dialect) (string, []any, error) {
-				return jt(d).Where("id", 1).UpdateSQL(m("opts->on", true, "opts->tags", []string{"a"}))
+				return db.Use(d).
+					Update("t").
+					Where("id", 1).
+					SetMap(m("opts->on", true, "opts->tags", []string{"a"})).
+					ToSQL()
 			},
 			pg: want{
 				sql:  `UPDATE "t" SET "opts" = JSONB_SET(JSONB_SET("opts"::JSONB, '{"on"}', $1), '{"tags"}', $2) WHERE "id" = $3`,
@@ -260,7 +264,11 @@ func TestJSONUpdates(t *testing.T) {
 		{
 			name: "nested paths and array index",
 			build: func(d db.Dialect) (string, []any, error) {
-				return jt(d).Where("id", 1).UpdateSQL(m("opts->a->b", 1, "opts->a->c", 2, "opts->d", 3))
+				return db.Use(d).
+					Update("t").
+					Where("id", 1).
+					SetMap(m("opts->a->b", 1, "opts->a->c", 2, "opts->d", 3)).
+					ToSQL()
 			},
 			pg: want{
 				sql:  `UPDATE "t" SET "opts" = JSONB_SET(JSONB_SET(JSONB_SET("opts"::JSONB, '{"a","b"}', $1), '{"a","c"}', $2), '{"d"}', $3) WHERE "id" = $4`,
@@ -278,7 +286,7 @@ func TestJSONUpdates(t *testing.T) {
 		{
 			name: "array index path and qualified column",
 			build: func(d db.Dialect) (string, []any, error) {
-				return jt(d).Where("id", 1).UpdateSQL(m("t.opts->tags[0]", "x"))
+				return db.Use(d).Update("t").Where("id", 1).SetMap(m("t.opts->tags[0]", "x")).ToSQL()
 			},
 			pg: want{
 				sql:  `UPDATE "t" SET "opts" = JSONB_SET("opts"::JSONB, '{"tags",0}', $1) WHERE "id" = $2`,
@@ -296,7 +304,11 @@ func TestJSONUpdates(t *testing.T) {
 		{
 			name: "nil and map values are set, not merged or deleted",
 			build: func(d db.Dialect) (string, []any, error) {
-				return jt(d).Where("id", 1).UpdateSQL(m("opts->gone", nil, "opts->meta", map[string]any{"x": 1}))
+				return db.Use(d).
+					Update("t").
+					Where("id", 1).
+					SetMap(m("opts->gone", nil, "opts->meta", map[string]any{"x": 1})).
+					ToSQL()
 			},
 			pg: want{
 				sql:  `UPDATE "t" SET "opts" = JSONB_SET(JSONB_SET("opts"::JSONB, '{"gone"}', $1), '{"meta"}', $2) WHERE "id" = $3`,
@@ -318,7 +330,7 @@ func TestJSONUpdates(t *testing.T) {
 		{
 			name: "raw expression value",
 			build: func(d db.Dialect) (string, []any, error) {
-				return jt(d).Where("id", 1).UpdateSQL(m("opts->n", db.Raw("1 + 1")))
+				return db.Use(d).Update("t").Where("id", 1).SetMap(m("opts->n", db.Raw("1 + 1"))).ToSQL()
 			},
 			pg: want{
 				sql:  `UPDATE "t" SET "opts" = JSONB_SET("opts"::JSONB, '{"n"}', 1 + 1) WHERE "id" = $1`,
@@ -337,7 +349,7 @@ func TestJSONErrors(t *testing.T) {
 	d := db.Postgres
 	tests := []struct {
 		name  string
-		build *db.Builder
+		build *db.SelectBuilder
 		want  error
 	}{
 		{"length not integer", jt(d).WhereJsonLength("opts->a", "many"), db.ErrInvalidArgs},
@@ -354,7 +366,7 @@ func TestJSONErrors(t *testing.T) {
 }
 
 func TestJSONNegatedAndOrVariantsPostgres(t *testing.T) {
-	sql, args, err := db.Use(db.Postgres).Table("t").
+	sql, args, err := db.Use(db.Postgres).Select().From("t").
 		OrWhereJsonContains("o->a", 1).
 		WhereJsonDoesntContainKey("o->b").
 		OrWhereJsonContainsKey("o->c").
@@ -367,7 +379,7 @@ func TestJSONNegatedAndOrVariantsPostgres(t *testing.T) {
 }
 
 func TestJSONOverlapVariantsMySQL(t *testing.T) {
-	sql, args, err := db.Use(db.MySQL).Table("t").
+	sql, args, err := db.Use(db.MySQL).Select().From("t").
 		OrWhereJsonOverlaps("o", []int{1}).
 		WhereJsonDoesntOverlap("o->x", []int{2}).
 		OrWhereJsonDoesntOverlap("o->y", []int{3}).

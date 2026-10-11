@@ -5,11 +5,11 @@ package db
 //
 // Example:
 //
-//	n := conn.Table("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id")
-//	conn.Table("users").Select("name").SelectSub(n, "post_count")
+//	n := conn.Select().From("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id")
+//	conn.Select().From("users").Select("name").SelectSub(n, "post_count")
 //	// SELECT "name", (SELECT count(*) FROM "posts" WHERE "posts"."user_id" = "users"."id") AS
 //	//     "post_count" FROM "users"
-func (b *Builder) SelectSub(sub *Builder, as string) *Builder {
+func (b *query) SelectSub(sub *query, as string) *query {
 	if sub == nil {
 		return b.fail(errNilSubquery)
 	}
@@ -21,12 +21,12 @@ func (b *Builder) SelectSub(sub *Builder, as string) *Builder {
 //
 // Example:
 //
-//	top := conn.Table("orders").SelectRaw("user_id, sum(total) as spent").GroupBy("user_id")
-//	conn.Table("").FromSub(top, "t").Where("spent", ">", 100)
+//	top := conn.Select().From("orders").SelectRaw("user_id, sum(total) as spent").GroupBy("user_id")
+//	conn.Select().FromSub(top, "t").Where("spent", ">", 100)
 //	// SELECT * FROM (SELECT user_id, sum(total) as spent FROM "orders" GROUP BY "user_id") AS
 //	//     "t" WHERE "spent" > $1
 //	//     args: [100]
-func (b *Builder) FromSub(sub *Builder, as string) *Builder {
+func (b *query) FromSub(sub *query, as string) *query {
 	if sub == nil {
 		return b.fail(errNilSubquery)
 	}
@@ -39,9 +39,9 @@ func (b *Builder) FromSub(sub *Builder, as string) *Builder {
 //
 // Example:
 //
-//	conn.Table("").FromRaw("generate_series(?, ?) as g", 1, 3)
+//	conn.Select().FromRaw("generate_series(?, ?) as g", 1, 3)
 //	// SELECT * FROM generate_series($1, $2) as g   args: [1 3]
-func (b *Builder) FromRaw(sql string, args ...any) *Builder {
+func (b *query) FromRaw(sql string, args ...any) *query {
 	e := Raw(sql, args...)
 	b.table, b.fromSub = "", nil
 	b.fromRaw = &e
@@ -53,13 +53,13 @@ func (b *Builder) FromRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	a := conn.Table("users").Select("name").Where("active", true)
-//	b := conn.Table("admins").Select("name")
+//	a := conn.Select().From("users").Select("name").Where("active", true)
+//	b := conn.Select().From("admins").Select("name")
 //	a.Union(b).OrderBy("name").Limit(10)
 //	// (SELECT "name" FROM "users" WHERE "active" = $1) UNION (SELECT "name" FROM "admins") ORDER
 //	//     BY "name" ASC LIMIT 10
 //	//     args: [true]
-func (b *Builder) Union(q *Builder) *Builder {
+func (b *query) Union(q *query) *query {
 	if q == nil {
 		return b.fail(errNilSubquery)
 	}
@@ -71,13 +71,13 @@ func (b *Builder) Union(q *Builder) *Builder {
 //
 // Example:
 //
-//	a := conn.Table("users").Select("name").Where("active", true)
-//	b := conn.Table("admins").Select("name")
+//	a := conn.Select().From("users").Select("name").Where("active", true)
+//	b := conn.Select().From("admins").Select("name")
 //	a.UnionAll(b).OrderBy("name").Limit(10)
 //	// (SELECT "name" FROM "users" WHERE "active" = $1) UNION ALL (SELECT "name" FROM "admins")
 //	//     ORDER BY "name" ASC LIMIT 10
 //	//     args: [true]
-func (b *Builder) UnionAll(q *Builder) *Builder {
+func (b *query) UnionAll(q *query) *query {
 	if q == nil {
 		return b.fail(errNilSubquery)
 	}
