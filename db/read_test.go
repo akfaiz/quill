@@ -49,6 +49,43 @@ func TestGetFirstFindSole(t *testing.T) {
 	require.NoError(t, conn.Table("people").Where("age", ">", 3).OrWhere("vip", true).Find(ctx, 9, &one))
 }
 
+// First, Find and Sole run on a shallow copy: the builder they were called on must stay
+// reusable and unchanged, even when its clause slices have spare capacity.
+func TestFirstFindSoleDoNotChangeTheBuilder(t *testing.T) {
+	ctx := context.Background()
+	sqlDB, mock := newMock(t)
+	conn := db.New(sqlDB, db.Postgres)
+
+	q := conn.Table("people").Where("a", 1).Where("b", 2).Where("c", 3) // cap(wheres) > len
+	var one person
+	for range 2 { // twice: a leaked id predicate would show up on the second run
+		mock.ExpectQuery(`SELECT * FROM "people" WHERE "a" = $1 AND "b" = $2 AND "c" = $3 AND "id" = $4 LIMIT 1`).
+			WithArgs(1, 2, 3, 9).WillReturnRows(people(1))
+		require.NoError(t, q.Find(ctx, 9, &one))
+	}
+	mock.ExpectQuery(`SELECT * FROM "people" WHERE "a" = $1 AND "b" = $2 AND "c" = $3 LIMIT 1`).
+		WithArgs(1, 2, 3).WillReturnRows(people(1))
+	require.NoError(t, q.First(ctx, &one))
+	mock.ExpectQuery(`SELECT * FROM "people" WHERE "a" = $1 AND "b" = $2 AND "c" = $3 LIMIT 2`).
+		WithArgs(1, 2, 3).WillReturnRows(people(1))
+	require.NoError(t, q.Sole(ctx, &one))
+
+	sql, args, err := q.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, `SELECT * FROM "people" WHERE "a" = $1 AND "b" = $2 AND "c" = $3`, sql)
+	assert.Equal(t, []any{1, 2, 3}, args)
+
+	// a branch built from the same prefix is not affected by a Find on a sibling
+	base := conn.Table("people").Where("a", 1).Where("b", 2).Where("c", 3)
+	left := base.Clone().Where("l", true)
+	mock.ExpectQuery(`SELECT * FROM "people" WHERE "a" = $1 AND "b" = $2 AND "c" = $3 AND "id" = $4 LIMIT 1`).
+		WithArgs(1, 2, 3, 9).WillReturnRows(people(1))
+	require.NoError(t, base.Find(ctx, 9, &one))
+	sql, _, err = left.ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, `SELECT * FROM "people" WHERE "a" = $1 AND "b" = $2 AND "c" = $3 AND "l" = $4`, sql)
+}
+
 func TestGetPropagatesBuildAndDriverErrors(t *testing.T) {
 	ctx := context.Background()
 	sqlDB, mock := newMock(t)

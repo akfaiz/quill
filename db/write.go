@@ -68,6 +68,15 @@ func (b *Builder) requireWhere() error {
 	return nil
 }
 
+// reserveWrite sizes the buffer and the args for an UPDATE/DELETE with nSets assignments,
+// as reserve does for SELECT. The numbers are estimates: undershooting only costs a regrow.
+func (c *compiler) reserveWrite(b *Builder, nSets int) {
+	c.sb.Grow(48 + 20*nSets + 24*len(b.wheres))
+	if n := nSets + len(b.wheres); n > 0 && c.args == nil {
+		c.args = make([]any, 0, n)
+	}
+}
+
 func (c *compiler) result(err error) (string, []any, error) {
 	if err != nil {
 		return "", nil, err
@@ -123,6 +132,16 @@ func (c *compiler) wrapColumns(cols []string) string {
 	return strings.Join(out, ", ")
 }
 
+// writeColumnList writes quoted, comma separated columns straight into the output buffer.
+func (c *compiler) writeColumnList(cols []string) {
+	for i, col := range cols {
+		if i > 0 {
+			c.write(", ")
+		}
+		c.writeColumn(col)
+	}
+}
+
 func (c *compiler) returningClause(cols []string) error {
 	if len(cols) == 0 {
 		return nil
@@ -139,7 +158,9 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 	if err != nil {
 		return err
 	}
-	c.write(c.insertVerb(ignore) + c.wrapTable(b.table))
+	c.sb.Grow(48 + len(cols)*12 + len(rows)*len(cols)*6)
+	c.write(c.insertVerb(ignore))
+	c.writeTable(b.table)
 	if len(cols) == 0 {
 		if c.d.mysqlFamily() {
 			c.write(" () VALUES ()")
@@ -147,7 +168,9 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 			c.write(" DEFAULT VALUES")
 		}
 	} else {
-		c.write(" (" + c.wrapColumns(cols) + ") VALUES ")
+		c.write(" (")
+		c.writeColumnList(cols)
+		c.write(") VALUES ")
 		if c.args == nil {
 			c.args = make([]any, 0, len(rows)*len(cols))
 		}
@@ -345,30 +368,33 @@ func sortedSets(values map[string]any) []setItem {
 	for k, v := range values {
 		items = append(items, setItem{k, v})
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].column < items[j].column })
+	slices.SortFunc(items, func(a, b setItem) int { return strings.Compare(a.column, b.column) })
 	return items
 }
 
 // setColumn wraps an update target. Postgres/SQLite reject qualified SET
 // targets, so only the last segment is kept; MySQL keeps the qualifier
 // (needed for multi-table updates).
-func (c *compiler) setColumn(key string) string {
+func (c *compiler) setColumnTo(sb *strings.Builder, key string) {
 	if !c.d.mysqlFamily() {
 		if i := strings.LastIndex(key, "."); i >= 0 {
 			key = key[i+1:]
 		}
 	}
-	return c.wrapColumn(key)
+	c.columnTo(sb, key)
 }
 
 func (c *compiler) setList(sets []setItem) error {
 	written := false
-	done := map[string]bool{}
+	var done map[string]bool // only needed for JSON selectors
 	for _, s := range sets {
 		if jsonpath.IsSelector(s.column) {
 			key := c.jsonColumnKey(s.column)
 			if done[key] {
 				continue
+			}
+			if done == nil {
+				done = map[string]bool{}
 			}
 			done[key] = true
 			var group []setItem
@@ -389,7 +415,8 @@ func (c *compiler) setList(sets []setItem) error {
 		if written {
 			c.write(", ")
 		}
-		c.write(c.setColumn(s.column) + " = ")
+		c.setColumnTo(&c.sb, s.column)
+		c.write(" = ")
 		if err := c.value(s.value); err != nil {
 			return err
 		}
@@ -446,7 +473,8 @@ func (c *compiler) update(b *Builder, sets []setItem) error {
 	if err := c.joinedOrderLimit(b, "update"); err != nil {
 		return err
 	}
-	c.write("UPDATE " + c.wrapTable(b.table))
+	c.write("UPDATE ")
+	c.writeTable(b.table)
 	viaRowID := !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil)
 	if c.d.mysqlFamily() {
 		for _, j := range b.joins {
@@ -497,7 +525,9 @@ func (b *Builder) UpdateSQL(values map[string]any) (string, []any, error) {
 	if err := b.requireWhere(); err != nil {
 		return "", nil, err
 	}
-	return c.result(c.update(b, sortedSets(values)))
+	sets := sortedSets(values)
+	c.reserveWrite(b, len(sets))
+	return c.result(c.update(b, sets))
 }
 
 // UpdateFromSQL builds a Postgres "UPDATE t SET ... FROM j1, j2 WHERE <join conditions> AND <wheres>",
@@ -524,7 +554,9 @@ func (b *Builder) UpdateFromSQL(values map[string]any) (string, []any, error) {
 	if len(b.wheres) == 0 && len(b.joins) == 0 && !b.allRows {
 		return "", nil, ErrNoWhere
 	}
-	c.write("UPDATE " + c.wrapTable(b.table) + " SET ")
+	c.write("UPDATE ")
+	c.writeTable(b.table)
+	c.write(" SET ")
 	if err := c.setList(sortedSets(values)); err != nil {
 		return "", nil, err
 	}
@@ -640,7 +672,8 @@ func (c *compiler) delete(b *Builder) error {
 	}
 	switch {
 	case !c.d.mysqlFamily() && (len(b.joins) > 0 || b.limit != nil):
-		c.write("DELETE FROM " + c.wrapTable(b.table))
+		c.write("DELETE FROM ")
+		c.writeTable(b.table)
 		if err := c.rowIDSubquery(b); err != nil {
 			return err
 		}
@@ -660,7 +693,8 @@ func (c *compiler) delete(b *Builder) error {
 			return err
 		}
 	default:
-		c.write("DELETE FROM " + c.wrapTable(b.table))
+		c.write("DELETE FROM ")
+		c.writeTable(b.table)
 		if err := c.whereSuffix(b); err != nil {
 			return err
 		}
@@ -690,6 +724,7 @@ func (b *Builder) DeleteSQL() (string, []any, error) {
 	if err := b.requireWhere(); err != nil {
 		return "", nil, err
 	}
+	c.reserveWrite(b, 0)
 	return c.result(c.delete(b))
 }
 

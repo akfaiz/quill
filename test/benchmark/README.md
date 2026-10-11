@@ -36,30 +36,30 @@ better; the last column is time relative to quill.
 
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
 | --- | --- | ---: | ---: | ---: | ---: |
-| SimpleSelect | quill | 681 | 864 | 8 | 1.0x |
-| | sqlbuilder | 1,376 | 1,488 | 37 | 2.0x |
-| | goqu | 2,973 | 3,832 | 77 | 4.4x |
-| | squirrel | 4,646 | 3,882 | 69 | 6.8x |
-| ComplexSelect | quill | 3,090 | 2,968 | 20 | 1.0x |
-| | sqlbuilder | 3,176 | 3,866 | 60 | 1.0x |
-| | goqu | 10,653 | 11,328 | 329 | 3.4x |
-| | squirrel | 12,543 | 10,904 | 180 | 4.1x |
-| WideWhere (12 predicates) | quill | 2,631 | 4,920 | 13 | 1.0x |
-| | sqlbuilder | 3,585 | 3,794 | 57 | 1.4x |
-| | goqu | 7,235 | 7,024 | 214 | 2.7x |
-| | squirrel | 15,625 | 12,993 | 230 | 5.9x |
-| Insert3Rows | quill | 1,014 | 1,072 | 14 | 1.0x |
-| | sqlbuilder | 2,373 | 2,169 | 41 | 2.3x |
-| | goqu | 3,479 | 3,944 | 105 | 3.4x |
-| | squirrel | 5,578 | 4,507 | 93 | 5.5x |
-| Update | quill | 993 | 1,040 | 16 | 1.0x |
-| | sqlbuilder | 1,587 | 1,400 | 41 | 1.6x |
-| | goqu | 2,556 | 2,616 | 71 | 2.6x |
-| | squirrel | 4,077 | 3,218 | 65 | 4.1x |
-| Delete | quill | 430 | 720 | 7 | 1.0x |
-| | sqlbuilder | 883 | 936 | 28 | 2.1x |
-| | goqu | 1,192 | 1,284 | 37 | 2.8x |
-| | squirrel | 2,070 | 1,809 | 34 | 4.8x |
+| SimpleSelect | quill | 645 | 864 | 8 | 1.0x |
+| | sqlbuilder | 1,337 | 1,488 | 37 | 2.1x |
+| | goqu | 2,887 | 3,832 | 77 | 4.5x |
+| | squirrel | 4,625 | 3,882 | 69 | 7.2x |
+| ComplexSelect | quill | 2,970 | 2,968 | 20 | 1.0x |
+| | sqlbuilder | 3,196 | 3,866 | 60 | 1.1x |
+| | goqu | 10,710 | 11,328 | 329 | 3.6x |
+| | squirrel | 12,649 | 10,904 | 180 | 4.3x |
+| WideWhere (12 predicates) | quill | 2,650 | 4,920 | 13 | 1.0x |
+| | sqlbuilder | 3,555 | 3,794 | 57 | 1.3x |
+| | goqu | 7,130 | 7,024 | 214 | 2.7x |
+| | squirrel | 15,507 | 12,993 | 230 | 5.9x |
+| Insert3Rows | quill | 759 | 848 | 5 | 1.0x |
+| | sqlbuilder | 2,364 | 2,169 | 41 | 3.1x |
+| | goqu | 3,493 | 3,944 | 105 | 4.6x |
+| | squirrel | 5,639 | 4,507 | 93 | 7.4x |
+| Update | quill | 627 | 848 | 6 | 1.0x |
+| | sqlbuilder | 1,584 | 1,400 | 41 | 2.5x |
+| | goqu | 2,488 | 2,616 | 71 | 4.0x |
+| | squirrel | 3,867 | 3,218 | 65 | 6.2x |
+| Delete | quill | 368 | 720 | 5 | 1.0x |
+| | sqlbuilder | 881 | 936 | 28 | 2.4x |
+| | goqu | 1,188 | 1,284 | 37 | 3.2x |
+| | squirrel | 2,053 | 1,809 | 34 | 5.6x |
 <!-- bench:end -->
 
 sqlbuilder is the closest competitor. On ComplexSelect it is level with quill (about 1.0x;
@@ -91,32 +91,34 @@ better; the last column is time relative to quill.
 
 | Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |
 | --- | --- | ---: | ---: | ---: | ---: |
-| SelectOne | quill | 9,193 | 3,576 | 52 | 1.0x |
-| | sqlx | 6,220 | 864 | 28 | 0.7x |
-| | gorm | 10,742 | 4,905 | 72 | 1.2x |
-| | stdlib | 5,794 | 624 | 23 | 0.6x |
-| SelectMany | quill | 147,237 | 71,601 | 2,135 | 1.0x |
-| | sqlx | 93,649 | 30,910 | 827 | 0.6x |
-| | gorm | 116,121 | 39,727 | 1,271 | 0.8x |
-| | stdlib | 73,289 | 12,517 | 714 | 0.5x |
-| Count | quill | 62,520 | 1,872 | 27 | 1.0x |
-| | sqlx | 60,241 | 480 | 16 | 1.0x |
-| | gorm | 64,421 | 3,872 | 47 | 1.0x |
-| | stdlib | 60,329 | 400 | 13 | 1.0x |
-| Insert | quill | 7,014 | 1,104 | 22 | 1.0x |
-| | sqlx | 5,282 | 256 | 9 | 0.8x |
-| | gorm | 20,700 | 7,261 | 87 | 3.0x |
-| | stdlib | 5,277 | 256 | 9 | 0.8x |
-| Update | quill | 4,442 | 1,016 | 18 | 1.0x |
-| | sqlx | 3,297 | 160 | 6 | 0.7x |
-| | gorm | 12,449 | 6,820 | 69 | 2.8x |
-| | stdlib | 3,281 | 160 | 6 | 0.7x |
+| SelectOne | quill | 7,433 | 2,232 | 35 | 1.0x |
+| | sqlx | 6,147 | 864 | 28 | 0.8x |
+| | gorm | 10,369 | 4,905 | 72 | 1.4x |
+| | stdlib | 5,704 | 624 | 23 | 0.8x |
+| SelectMany | quill | 75,714 | 24,808 | 637 | 1.0x |
+| | sqlx | 96,293 | 30,910 | 827 | 1.3x |
+| | gorm | 119,621 | 39,723 | 1,271 | 1.6x |
+| | stdlib | 74,221 | 12,517 | 714 | 1.0x |
+| Count | quill | 62,283 | 1,984 | 27 | 1.0x |
+| | sqlx | 60,364 | 480 | 16 | 1.0x |
+| | gorm | 64,058 | 3,872 | 47 | 1.0x |
+| | stdlib | 60,193 | 400 | 13 | 1.0x |
+| Insert | quill | 6,604 | 976 | 14 | 1.0x |
+| | sqlx | 5,366 | 256 | 9 | 0.8x |
+| | gorm | 20,827 | 7,261 | 87 | 3.2x |
+| | stdlib | 5,346 | 256 | 9 | 0.8x |
+| Update | quill | 4,222 | 944 | 12 | 1.0x |
+| | sqlx | 3,268 | 160 | 6 | 0.8x |
+| | gorm | 12,246 | 6,820 | 69 | 2.9x |
+| | stdlib | 3,363 | 160 | 6 | 0.8x |
 <!-- bench-run:end -->
 
 
-In the run benchmark quill is 1.4-1.6x slower than sqlx on selects and 1.3-1.4x on writes, and well ahead
-of GORM on writes (about 3x). It allocates more than sqlx on selects (struct mapping through `internal/rowmap`),
-so there is room to improve there. Count is dominated by SQLite itself, so every library ties.
+In the run benchmark quill scans many rows as fast as a hand-written `database/sql` loop (SelectMany) and
+about 1.3x faster than sqlx, because it reuses its scan targets across rows. Single-row reads are about 1.2x
+slower than sqlx and writes 1.2-1.3x slower: the gap is the fixed cost of building the query (clone, clauses,
+compiler) that raw SQL strings skip. quill is about 3x faster than GORM on writes. Count is dominated by SQLite
+itself, so every library ties.
 
 ## Reading the numbers fairly
 

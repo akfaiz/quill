@@ -9,8 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `BenchmarkRun` in `test/benchmark`: build + execute + scan on in-memory SQLite, compared with sqlx, GORM and plain
-  `database/sql`.
+- `BenchmarkRun` in `test/benchmark`: executing and scanning queries on SQLite vs sqlx, GORM and `database/sql`.
+
+### Changed
+
+- Scanning into structs and scalars is about 4x faster (100 rows, 4 fields: ~1,500 to ~20 allocations) by reusing
+  scan targets across rows.
+- Fewer allocations when running queries: `Find`, `First` and `Sole` no longer deep-clone the builder, and
+  `InsertSQL`, `UpdateSQL` and `DeleteSQL` pre-size their buffers and args (3-row insert: 24 to 14 allocs/op).
+- More tests; CI, Makefile and benchmark docs updated (library order: quill, sqlbuilder, goqu, squirrel).
 
 ### Fixed
 
@@ -28,13 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLite `Truncate` works on tables without `AUTOINCREMENT`.
 - SQLite columns prefix the table segment correctly.
 - SQLite JSON path updates use `JSON_SET`, matching the other dialects.
-
-### Changed
-
-- Multi-row inserts pre-size the bind-args slice, cutting allocations (3-row insert: 24 to 14 allocs/op).
-- Increased test coverage; CI and Makefile updated.
-- Documentation wording and benchmark docs updated; benchmark library order is now quill, sqlbuilder, goqu,
-  squirrel.
 
 ## [0.1.0] - 2026-10-10
 

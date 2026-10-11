@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/akfaiz/quill/internal/rowmap"
@@ -47,7 +48,16 @@ func (b *Builder) Get(ctx context.Context, dest any) error {
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 1
 //	// no row: errors.Is(err, db.ErrNotFound) is true
 func (b *Builder) First(ctx context.Context, dest any) error {
-	return b.Clone().Limit(1).run(ctx, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
+	q := b.withLimit(1)
+	return q.run(ctx, func(rows *sql.Rows) error { return rowmap.First(rows, dest) })
+}
+
+// withLimit returns a shallow copy of b limited to n rows. Unlike Clone it shares the
+// clause slices, which is safe because a copy is only compiled and run, never extended,
+// and Limit replaces a pointer instead of writing through it.
+func (b *Builder) withLimit(n int) *Builder {
+	q := *b
+	return q.Limit(n)
 }
 
 // Find is Where("id", id).First.
@@ -58,8 +68,9 @@ func (b *Builder) First(ctx context.Context, dest any) error {
 //	err := conn.Table("users").Find(ctx, 2, &u)
 //	// SELECT * FROM "users" WHERE "id" = $1 LIMIT 1   args: [2]
 func (b *Builder) Find(ctx context.Context, id any, dest any) error {
-	q := b.Clone()
-	q.wheres = isolated(q.wheres)
+	q := *b
+	// clipped, so appending the id predicate copies instead of writing into b's spare capacity
+	q.wheres = slices.Clip(isolated(b.wheres))
 	return q.Where("id", id).First(ctx, dest)
 }
 
@@ -72,7 +83,7 @@ func (b *Builder) Find(ctx context.Context, id any, dest any) error {
 //	// SELECT * FROM "users" WHERE "name" = $1 LIMIT 2   args: ["ann"]
 //	// two or more rows: err is db.ErrMultipleRecords
 func (b *Builder) Sole(ctx context.Context, dest any) error {
-	return b.Clone().Limit(2).run(ctx, func(rows *sql.Rows) error {
+	return b.withLimit(2).run(ctx, func(rows *sql.Rows) error {
 		if err := rowmap.First(rows, dest); err != nil {
 			return err
 		}
