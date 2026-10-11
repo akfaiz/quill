@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Multi-row inserts pre-size the bind-args slice, cutting allocations (3-row insert: 24 to 14 allocs/op).
 - Increased test coverage; CI and Makefile updated.
 - Documentation wording and benchmark docs updated; benchmark library order is now quill, sqlbuilder, goqu,
   squirrel.

@@ -148,6 +148,9 @@ func (c *compiler) insert(b *Builder, rows []map[string]any, ignore bool) error 
 		}
 	} else {
 		c.write(" (" + c.wrapColumns(cols) + ") VALUES ")
+		if c.args == nil {
+			c.args = make([]any, 0, len(rows)*len(cols))
+		}
 		for i, r := range rows {
 			if i > 0 {
 				c.write(", ")

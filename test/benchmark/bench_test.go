@@ -37,6 +37,11 @@ var (
 	ids     = []int{1, 2, 3, 4, 5}
 	idsAny  = []any{1, 2, 3, 4, 5}
 	insRows = [][3]any{{"ann", 30, "a@x"}, {"bob", 25, "b@x"}, {"cy", 41, "c@x"}}
+	insMaps = []map[string]any{
+		{"name": "ann", "age": 30, "email": "a@x"},
+		{"name": "bob", "age": 25, "email": "b@x"},
+		{"name": "cy", "age": 41, "email": "c@x"},
+	}
 )
 
 var scenarios = []scenario{
@@ -172,11 +177,7 @@ var scenarios = []scenario{
 	{
 		name: "Insert3Rows",
 		quill: func() (string, []any, error) {
-			rows := make([]map[string]any, len(insRows))
-			for i, r := range insRows {
-				rows[i] = map[string]any{"name": r[0], "age": r[1], "email": r[2]}
-			}
-			return pg.Table("users").InsertSQL(rows...)
+			return pg.Table("users").InsertSQL(insMaps...)
 		},
 		squirr: func() (string, []any, error) {
 			q := sqPG.Insert("users").Columns("name", "age", "email")
