@@ -185,7 +185,9 @@ func (e *runEnv) scenarios() []runScenario {
 		{name: "Insert", libs: []runLib{
 			{"quill", func(ctx context.Context) (int64, error) {
 				u := newUser()
-				return e.q.Insert("users").Values(map[string]any{"name": u.Name, "age": u.Age, "email": u.Email}).Exec(ctx)
+				return e.q.Insert("users").
+					Values(map[string]any{"name": u.Name, "age": u.Age, "email": u.Email}).
+					Exec(ctx)
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
 				u := newUser()

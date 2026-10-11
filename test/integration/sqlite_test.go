@@ -201,7 +201,11 @@ func TestSQLiteReads(t *testing.T) {
 		n, err = conn.Select().From("users").OrderBy("id").Limit(2).Count(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Select().From("posts").Join("users", "users.id", "posts.user_id").Where("posts.views", ">", 0).Count(ctx)
+		n, err = conn.Select().
+			From("posts").
+			Join("users", "users.id", "posts.user_id").
+			Where("posts.views", ">", 0).
+			Count(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), n)
 		total, err := conn.Select().From("posts").
@@ -253,7 +257,8 @@ func TestSQLiteQueryShapesExecute(t *testing.T) {
 		{"null safe equals on NULL", users().WhereNullSafeEquals("age", nil), []string{"Di"}},
 		{
 			"group",
-			users().Where("active", 1).WhereGroup(func(q *db.WhereClause) { q.Where("age", ">", 35).OrWhereNull("age") }),
+			users().Where("active", 1).
+				WhereGroup(func(q *db.WhereClause) { q.Where("age", ">", 35).OrWhereNull("age") }),
 			[]string{"Cy", "Di"},
 		},
 		{"not", users().WhereNot("active", 1), []string{"Bob"}},
@@ -285,7 +290,11 @@ func TestSQLiteQueryShapesExecute(t *testing.T) {
 		},
 		{"row values", users().WhereRowValues([]string{"id", "age"}, "=", []any{1, 30}), []string{"Ann"}},
 		{"raw", users().WhereRaw("length(name) = ?", 2), []string{"Cy", "Di"}},
-		{"order latest limit offset", conn.Select().From("users").Latest("id").Limit(2).Offset(1), []string{"Cy", "Bob"}},
+		{
+			"order latest limit offset",
+			conn.Select().From("users").Latest("id").Limit(2).Offset(1),
+			[]string{"Cy", "Bob"},
+		},
 		{
 			"left join with value",
 			users().LeftJoinFunc("posts", func(j *db.JoinClause) { j.On("posts.user_id", "users.id").Where("posts.views", ">", 8) }).
@@ -471,7 +480,9 @@ func TestSQLiteJSONUpdateSemantics(t *testing.T) {
 func TestSQLiteWrites(t *testing.T) {
 	t.Run("insert variants", func(t *testing.T) {
 		conn := newDB(t)
-		n, err := conn.Insert("users").Values(map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"}).Exec(ctx)
+		n, err := conn.Insert("users").
+			Values(map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"}).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = conn.Insert("users").Exec(ctx) // no rows: no-op
@@ -483,11 +494,16 @@ func TestSQLiteWrites(t *testing.T) {
 		n, err = conn.Insert("users").Values(map[string]any{"name": "Dup", "email": "ann@x"}).Ignore().Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n) // conflicts on unique email
-		n, err = conn.Insert("posts").Using([]string{"user_id", "title"}, conn.Select("id").From("users").SelectRaw("'from ' || name").Where("id", "<=", 2)).Exec(ctx)
+		n, err = conn.Insert("posts").
+			Using([]string{"user_id", "title"}, conn.Select("id").From("users").SelectRaw("'from ' || name").Where("id", "<=", 2)).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		var t1 string
-		require.NoError(t, conn.Select().From("posts").Where("title", "like", "from%").OrderBy("id").Value(ctx, "title", &t1))
+		require.NoError(
+			t,
+			conn.Select().From("posts").Where("title", "like", "from%").OrderBy("id").Value(ctx, "title", &t1),
+		)
 		assert.Equal(t, "from Ann", t1)
 		_, err = conn.Insert("users").Values(map[string]any{"name": "Ann2", "email": "ann@x"}).Exec(ctx)
 		require.Error(t, err)
@@ -521,7 +537,11 @@ func TestSQLiteWrites(t *testing.T) {
 		n, err := conn.Update("users").Where("active", 1).SetMap(map[string]any{"bio": "on"}).Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), n)
-		n, err = conn.Update("posts").Where("user_id", 1).Increment("views", 5).SetMap(map[string]any{"title": "bumped"}).Exec(ctx)
+		n, err = conn.Update("posts").
+			Where("user_id", 1).
+			Increment("views", 5).
+			SetMap(map[string]any{"title": "bumped"}).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = conn.Update("posts").Where("id", 1).DecrementEach(map[string]any{"views": 1, "published": 1}).Exec(ctx)
@@ -551,7 +571,10 @@ func TestSQLiteWrites(t *testing.T) {
 		require.NoError(t, conn.Select().From("posts").Where("id", 1).Value(ctx, "views", &v))
 		assert.Equal(t, 8, v) // 10 - 3 + 1
 
-		n, err = conn.Insert("users").Using([]string{"name", "email"}, conn.Select("name").From("users").SelectRaw("email || 'x'").Where("id", "<=", 2)).Ignore().Exec(ctx)
+		n, err = conn.Insert("users").
+			Using([]string{"name", "email"}, conn.Select("name").From("users").SelectRaw("email || 'x'").Where("id", "<=", 2)).
+			Ignore().
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = conn.Insert("users").Using([]string{"name", "email"}, // same emails again: ignored
@@ -701,7 +724,9 @@ func TestSQLitePagination(t *testing.T) {
 	})
 	t.Run("cursor descending on maps", func(t *testing.T) {
 		var rows []map[string]any
-		p, err := conn.Select().From("users").CursorPaginate(ctx, 2, "", &rows, db.CursorOptions{Column: "id", Desc: true})
+		p, err := conn.Select().
+			From("users").
+			CursorPaginate(ctx, 2, "", &rows, db.CursorOptions{Column: "id", Desc: true})
 		require.NoError(t, err)
 		assert.Equal(t, int64(4), rows[0]["id"])
 		assert.True(t, p.HasMore)
@@ -714,7 +739,12 @@ func TestSQLitePagination(t *testing.T) {
 	t.Run("malformed cursor", func(t *testing.T) {
 		var us []User
 		for _, c := range []string{"!!!", "bm90LWpzb24"} {
-			if _, err := conn.Select().From("users").CursorPaginate(ctx, 2, c, &us); !errors.Is(err, db.ErrInvalidArgs) {
+			if _, err := conn.Select().
+				From("users").
+				CursorPaginate(ctx, 2, c, &us); !errors.Is(
+				err,
+				db.ErrInvalidArgs,
+			) {
 				t.Errorf("cursor %q: %v", c, err)
 			}
 		}
@@ -759,7 +789,9 @@ func TestSQLiteChunkingAndStreaming(t *testing.T) {
 		var total int
 		require.NoError(
 			t,
-			db.As[map[string]any](conn.Select().From("posts")).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
+			db.As[map[string]any](
+				conn.Select().From("posts"),
+			).ChunkByID(ctx, 2, func(rows []map[string]any) (bool, error) {
 				total += len(rows)
 				for _, r := range rows {
 					if _, err := conn.Delete("posts").Where("id", r["id"]).Exec(ctx); err != nil {
@@ -775,10 +807,13 @@ func TestSQLiteChunkingAndStreaming(t *testing.T) {
 	})
 	t.Run("typed chunk", func(t *testing.T) {
 		var got []string
-		require.NoError(t, db.As[User](conn.Select().From("users").OrderBy("id")).Chunk(ctx, 3, func(us []User) (bool, error) {
-			got = append(got, names(us)...)
-			return true, nil
-		}))
+		require.NoError(
+			t,
+			db.As[User](conn.Select().From("users").OrderBy("id")).Chunk(ctx, 3, func(us []User) (bool, error) {
+				got = append(got, names(us)...)
+				return true, nil
+			}),
+		)
 		assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, got)
 	})
 	t.Run("each", func(t *testing.T) {
@@ -786,7 +821,10 @@ func TestSQLiteChunkingAndStreaming(t *testing.T) {
 		var got []string
 		require.NoError(
 			t,
-			conn.Select().From("users").OrderBy("id").Each(ctx, &u, func() error { got = append(got, u.Name); return nil }),
+			conn.Select().
+				From("users").
+				OrderBy("id").
+				Each(ctx, &u, func() error { got = append(got, u.Name); return nil }),
 		)
 		assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, got)
 		stop := errors.New("stop")
@@ -861,11 +899,15 @@ func TestSQLiteTransactions(t *testing.T) {
 		conn := newDB(t)
 		boom := errors.New("inner")
 		require.NoError(t, conn.Transaction(ctx, func(tx *db.DB) error {
-			if _, err := tx.Insert("users").Values(map[string]any{"name": "Outer", "email": "o@x"}).Exec(ctx); err != nil {
+			if _, err := tx.Insert("users").
+				Values(map[string]any{"name": "Outer", "email": "o@x"}).
+				Exec(ctx); err != nil {
 				return err
 			}
 			err := tx.Transaction(ctx, func(inner *db.DB) error {
-				if _, err := inner.Insert("users").Values(map[string]any{"name": "Inner", "email": "i@x"}).Exec(ctx); err != nil {
+				if _, err := inner.Insert("users").
+					Values(map[string]any{"name": "Inner", "email": "i@x"}).
+					Exec(ctx); err != nil {
 					return err
 				}
 				return boom
@@ -1083,7 +1125,9 @@ func TestSQLiteTypedQueries(t *testing.T) {
 func TestSQLiteStructWrites(t *testing.T) {
 	t.Run("insert variants", func(t *testing.T) {
 		conn := newDB(t)
-		n, err := conn.Insert("users").Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).Exec(ctx)
+		n, err := conn.Insert("users").
+			Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = conn.Insert("users").Rows().Exec(ctx) // nothing to insert
@@ -1186,7 +1230,9 @@ func TestSQLiteFromTakesTheTableFromTheType(t *testing.T) {
 		assert.Equal(t, []string{"Ann"}, names(us))
 	})
 	t.Run("writes need no table name or builder", func(t *testing.T) {
-		n, err := conn.Insert("users").Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).Exec(ctx)
+		n, err := conn.Insert("users").
+			Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		id, err := conn.Insert("users").Rows(Member{Name: "Gus", Email: ptr("gus@x")}).ExecGetID(ctx)
@@ -1195,7 +1241,10 @@ func TestSQLiteFromTakesTheTableFromTheType(t *testing.T) {
 		n, err = conn.Insert("users").Rows(Member{Name: "Dup", Email: ptr("ann@x")}).Ignore().Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
-		_, err = conn.Insert("users").Rows([]Member{{Name: "Ann!", Email: ptr("ann@x")}}).Upsert([]string{"email"}, []string{"name"}).Exec(ctx)
+		_, err = conn.Insert("users").
+			Rows([]Member{{Name: "Ann!", Email: ptr("ann@x")}}).
+			Upsert([]string{"email"}, []string{"name"}).
+			Exec(ctx)
 		require.NoError(t, err)
 
 		n, err = conn.Update("users").Where("id", 1).SetRow(Member{Bio: "set"}).Exec(ctx)
@@ -1259,14 +1308,21 @@ func TestSQLiteCTE(t *testing.T) {
 		var got []int64
 		require.NoError(
 			t,
-			conn.Select().From("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got),
+			conn.Select().
+				From("seq").
+				WithRecursive("seq", anchor.UnionAll(step), "n").
+				OrderBy("n").
+				Pluck(ctx, "n", &got),
 		)
 		assert.Equal(t, []int64{1, 2, 3, 4, 5}, got)
 	})
 	t.Run("inside where in", func(t *testing.T) {
 		var got []string
 		sub := conn.Select("id").From("au").With("au", active())
-		require.NoError(t, conn.Select().From("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got))
+		require.NoError(
+			t,
+			conn.Select().From("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got),
+		)
 		assert.Equal(t, []string{"p1", "p2", "p4"}, got)
 	})
 	t.Run("with an outer union", func(t *testing.T) {

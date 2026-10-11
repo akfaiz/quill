@@ -152,7 +152,11 @@ func TestPostgresAggregates(t *testing.T) {
 	n, err = conn.Select().From("users").OrderBy("id").Limit(2).Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
-	n, err = conn.Select().From("posts").Join("users", "users.id", "posts.user_id").Where("posts.views", ">", 0).Count(ctx)
+	n, err = conn.Select().
+		From("posts").
+		Join("users", "users.id", "posts.user_id").
+		Where("posts.views", ">", 0).
+		Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(4), n)
 	total, err := conn.Select().From("posts").OrderBy("id").Limit(3).Sum(ctx, "posts.views")
@@ -204,7 +208,11 @@ func TestPostgresWhereFamily(t *testing.T) {
 			users().WhereIn("id", posts().Select("user_id").Where("published", true)),
 			[]string{"Ann", "Bob", "Cy"},
 		},
-		{"scalar subquery", users().Where("age", ">", conn.Select().From("users").SelectRaw("avg(age)")), []string{"Cy"}},
+		{
+			"scalar subquery",
+			users().Where("age", ">", conn.Select().From("users").SelectRaw("avg(age)")),
+			[]string{"Cy"},
+		},
 		{"any", users().WhereAny([]string{"name", "email"}, "like", "b%"), []string{"Bob"}},
 		{"all", users().WhereAll([]string{"name", "email"}, "like", "%i%"), []string{"Di"}},
 		{"none", users().WhereNone([]string{"name", "email"}, "like", "%o%"), []string{"Ann", "Cy", "Di"}},
@@ -396,7 +404,9 @@ func TestPostgresWrites(t *testing.T) {
 	s := startPostgres(t)
 	t.Run("insert variants", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Insert("users").Values(map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"}).Exec(ctx)
+		n, err := conn.Insert("users").
+			Values(map[string]any{"name": "Eve", "email": "eve@x"}, map[string]any{"name": "Fay", "email": "fay@x"}).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		id, err := conn.Insert("users").Values(map[string]any{"name": "Gus", "email": "gus@x"}).ExecGetID(ctx)
@@ -405,10 +415,15 @@ func TestPostgresWrites(t *testing.T) {
 		n, err = conn.Insert("users").Values(map[string]any{"name": "Dup", "email": "ann@x"}).Ignore().Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
-		n, err = conn.Insert("posts").Using([]string{"user_id", "title"}, conn.Select("id", "name").From("users").Where("id", "<=", 2)).Exec(ctx)
+		n, err = conn.Insert("posts").
+			Using([]string{"user_id", "title"}, conn.Select("id", "name").From("users").Where("id", "<=", 2)).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
-		n, err = conn.Insert("users").Using([]string{"name", "email"}, conn.Select("name", "email").From("users").Where("id", 1)).Ignore().Exec(ctx)
+		n, err = conn.Insert("users").
+			Using([]string{"name", "email"}, conn.Select("name", "email").From("users").Where("id", 1)).
+			Ignore().
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), n)
 		_, err = conn.Insert("users").Values(map[string]any{"name": "Ann2", "email": "ann@x"}).Exec(ctx)
@@ -436,7 +451,11 @@ func TestPostgresWrites(t *testing.T) {
 	})
 	t.Run("update increment guard", func(t *testing.T) {
 		conn := s.reset(t)
-		n, err := conn.Update("posts").Where("user_id", 1).Increment("views", 5).SetMap(map[string]any{"title": "bumped"}).Exec(ctx)
+		n, err := conn.Update("posts").
+			Where("user_id", 1).
+			Increment("views", 5).
+			SetMap(map[string]any{"title": "bumped"}).
+			Exec(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 		n, err = conn.Update("posts").Where("id", 1).Decrement("views", 3).Exec(ctx)
@@ -687,7 +706,9 @@ func TestPostgresTypedReadsAndStructWrites(t *testing.T) {
 	assert.Equal(t, []string{"Ann", "Bob", "Cy", "Di"}, seen)
 
 	// struct writes
-	n, err := conn.Insert("users").Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).Exec(ctx)
+	n, err := conn.Insert("users").
+		Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).
+		Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n)
 	id, err := conn.Insert("users").Rows(Member{Name: "Gus", Email: ptr("gus@x")}).ExecGetID(ctx)
@@ -696,7 +717,10 @@ func TestPostgresTypedReadsAndStructWrites(t *testing.T) {
 	n, err = conn.Insert("users").Rows(Member{Name: "Dup", Email: ptr("ann@x")}).Ignore().Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
-	_, err = conn.Insert("users").Rows([]Member{{Name: "Ann!", Email: ptr("ann@x"), Age: ptr(31)}}).Upsert([]string{"email"}, []string{"name", "age"}).Exec(ctx)
+	_, err = conn.Insert("users").
+		Rows([]Member{{Name: "Ann!", Email: ptr("ann@x"), Age: ptr(31)}}).
+		Upsert([]string{"email"}, []string{"name", "age"}).
+		Exec(ctx)
 	require.NoError(t, err)
 	_, err = conn.Update("users").Where("id", 2).SetRow(Member{Bio: "set"}).Exec(ctx)
 	require.NoError(t, err)
@@ -734,7 +758,9 @@ func TestPostgresFromTakesTheTableFromTheType(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, [2]any{int64(4), "Di"}, [2]any{p.Total, names(p.Items)[0]})
 
-	cnt, err := conn.Insert("users").Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).Exec(ctx)
+	cnt, err := conn.Insert("users").
+		Rows(Member{Name: "Eve", Email: ptr("eve@x")}, Member{Name: "Fay", Email: ptr("fay@x")}).
+		Exec(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), cnt)
 	id, err := conn.Insert("users").Rows(Member{Name: "Gus", Email: ptr("gus@x")}).ExecGetID(ctx)
@@ -775,14 +801,21 @@ func TestPostgresCTE(t *testing.T) {
 		var got []int64
 		require.NoError(
 			t,
-			conn.Select().From("seq").WithRecursive("seq", anchor.UnionAll(step), "n").OrderBy("n").Pluck(ctx, "n", &got),
+			conn.Select().
+				From("seq").
+				WithRecursive("seq", anchor.UnionAll(step), "n").
+				OrderBy("n").
+				Pluck(ctx, "n", &got),
 		)
 		assert.Equal(t, []int64{1, 2, 3, 4, 5}, got)
 	})
 	t.Run("inside where in", func(t *testing.T) {
 		var got []string
 		sub := conn.Select("id").From("au").With("au", active())
-		require.NoError(t, conn.Select().From("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got))
+		require.NoError(
+			t,
+			conn.Select().From("posts").WhereIn("user_id", sub).OrderBy("title").Pluck(ctx, "title", &got),
+		)
 		assert.Equal(t, []string{"p1", "p2", "p4"}, got)
 	})
 	t.Run("with an outer union", func(t *testing.T) {
