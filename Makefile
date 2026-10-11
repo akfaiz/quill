@@ -61,12 +61,12 @@ test-sqlite: ## Integration tests, SQLite only (no Docker)
 bench: ## Run benchmarks (BENCH=regexp, BENCHTIME=1s); no tests
 	$(GO) test -run=NONE -bench=$(BENCH) -benchmem -benchtime=$(BENCHTIME) ./...
 
-bench-libs: ## Compare quill with sqlbuilder, goqu and squirrel (6 runs); saves test/benchmark/results.txt
+bench-libs: ## Compare quill with sqlbuilder, goqu, squirrel (build) and sqlx, GORM (run) (6 runs); saves test/benchmark/results.txt
 	cd $(BENCHMARK_DIR) && $(GO) test -run Comparable .
 	cd $(BENCHMARK_DIR) && { echo "go: $$($(GO) env GOVERSION | sed 's/^go//')"; \
 		$(GO) test -run=NONE -bench=. -benchmem -count=6 .; } | tee results.txt
 
-bench-libs-update: ## Rewrite the Results table in test/benchmark/README.md from results.txt (run bench-libs first)
+bench-libs-update: ## Rewrite the Results tables in test/benchmark/README.md from results.txt (run bench-libs first)
 	cd $(BENCHMARK_DIR) && $(GO) run update_readme.go
 
 fuzz: ## Run every fuzz target for FUZZTIME (default 20s)

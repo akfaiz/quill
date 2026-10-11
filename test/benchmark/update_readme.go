@@ -20,19 +20,24 @@ import (
 	"strings"
 )
 
-const (
-	startMarker = "<!-- bench:start -->"
-	endMarker   = "<!-- bench:end -->"
-)
+// section is one results table: the benchmark it reads and the README markers around it.
+type section struct {
+	kind, start, end string
+}
+
+var sections = []section{
+	{"Build", "<!-- bench:start -->", "<!-- bench:end -->"},
+	{"Run", "<!-- bench-run:start -->", "<!-- bench-run:end -->"},
+}
 
 // libOrder is the row order within a scenario. A library not listed follows these in the
 // order it appears in the output. quill must stay first: the other rows are relative to it.
-var libOrder = []string{"quill", "sqlbuilder", "goqu", "squirrel"}
+var libOrder = []string{"quill", "sqlbuilder", "goqu", "squirrel", "sqlx", "gorm", "stdlib"}
 
 // labels override the scenario name shown in the table.
 var labels = map[string]string{"WideWhere": "WideWhere (12 predicates)"}
 
-var lineRe = regexp.MustCompile(`^BenchmarkBuild/([^/]+)/(\S+?)(?:-\d+)?\s+\d+\s+([\d.]+) ns/op\s+([\d.]+) B/op\s+([\d.]+) allocs/op`)
+var lineRe = regexp.MustCompile(`^Benchmark(Build|Run)/([^/]+)/(\S+?)(?:-\d+)?\s+\d+\s+([\d.]+) ns/op\s+([\d.]+) B/op\s+([\d.]+) allocs/op`)
 
 type samples struct{ ns, bytes, allocs []float64 }
 
@@ -46,21 +51,25 @@ func main() {
 	if err != nil {
 		fatal(fmt.Errorf("%w (run `make bench-libs` first)", err))
 	}
-	section, err := render(string(out))
-	if err != nil {
-		fatal(err)
+	for _, sec := range sections {
+		text, err := render(string(out), sec)
+		if err != nil {
+			fatal(err)
+		}
+		if *dry {
+			fmt.Println(text)
+			continue
+		}
+		if err := splice(*readme, sec, text); err != nil {
+			fatal(err)
+		}
 	}
-	if *dry {
-		fmt.Print(section)
-		return
+	if !*dry {
+		fmt.Println("updated", *readme)
 	}
-	if err := splice(*readme, section); err != nil {
-		fatal(err)
-	}
-	fmt.Println("updated", *readme)
 }
 
-func render(out string) (string, error) {
+func render(out string, sec section) (string, error) {
 	var (
 		scenarios, libs []string
 		data            = map[string]*samples{}
@@ -81,7 +90,10 @@ func render(out string) (string, error) {
 		if m == nil {
 			continue
 		}
-		scn, lib := m[1], m[2]
+		if m[1] != sec.kind {
+			continue
+		}
+		scn, lib := m[2], m[3]
 		if !slices.Contains(scenarios, scn) {
 			scenarios = append(scenarios, scn)
 		}
@@ -93,19 +105,19 @@ func render(out string) (string, error) {
 			s = &samples{}
 			data[scn+"/"+lib] = s
 		}
-		ns, _ := strconv.ParseFloat(m[3], 64)
-		b, _ := strconv.ParseFloat(m[4], 64)
-		a, _ := strconv.ParseFloat(m[5], 64)
+		ns, _ := strconv.ParseFloat(m[4], 64)
+		b, _ := strconv.ParseFloat(m[5], 64)
+		a, _ := strconv.ParseFloat(m[6], 64)
 		s.ns, s.bytes, s.allocs = append(s.ns, ns), append(s.bytes, b), append(s.allocs, a)
 	}
 	if len(scenarios) == 0 {
-		return "", fmt.Errorf("no benchmark lines parsed from output:\n%s", out)
+		return "", fmt.Errorf("no Benchmark%s lines parsed from output:\n%s", sec.kind, out)
 	}
 
 	slices.SortStableFunc(libs, func(a, b string) int { return libRank(a) - libRank(b) })
 	count := len(data[scenarios[0]+"/"+libs[0]].ns)
 	var w strings.Builder
-	fmt.Fprintf(&w, "%s\n", startMarker)
+	fmt.Fprintf(&w, "%s\n", sec.start)
 	fmt.Fprintf(&w, "%s, Go %s, median of %d runs (`make bench-libs`, then `make bench-libs-update`). Lower is\n", cpu, goVer, count)
 	w.WriteString("better; the last column is time relative to quill.\n\n")
 	w.WriteString("| Scenario | Library | ns/op | B/op | allocs/op | Time vs quill |\n")
@@ -128,7 +140,7 @@ func render(out string) (string, error) {
 				comma(ns), comma(median(s.bytes)), comma(median(s.allocs)), ns/base)
 		}
 	}
-	fmt.Fprintf(&w, "%s", endMarker)
+	fmt.Fprintf(&w, "%s", sec.end)
 	return w.String(), nil
 }
 
@@ -139,17 +151,17 @@ func libRank(lib string) int {
 	return len(libOrder)
 }
 
-func splice(path, section string) error {
+func splice(path string, sec section, text string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	s := string(b)
-	i, j := strings.Index(s, startMarker), strings.Index(s, endMarker)
+	i, j := strings.Index(s, sec.start), strings.Index(s, sec.end)
 	if i < 0 || j < i {
-		return fmt.Errorf("%s: %s / %s markers not found", path, startMarker, endMarker)
+		return fmt.Errorf("%s: %s / %s markers not found", path, sec.start, sec.end)
 	}
-	return os.WriteFile(path, []byte(s[:i]+section+s[j+len(endMarker):]), 0o644)
+	return os.WriteFile(path, []byte(s[:i]+text+s[j+len(sec.end):]), 0o644)
 }
 
 func median(v []float64) float64 {

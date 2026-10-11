@@ -177,13 +177,28 @@ func kindOf(t reflect.Type) elemKind {
 	return kindScalar
 }
 
-// Mapper scans successive rows into values of one element type.
+// column is how one result column is stored. Plain value types (which cannot hold NULL)
+// go through a reused fieldScanner, other plain types through a reused **T holder; both
+// leave the zero value for NULL and allocate nothing per row. Types that can hold NULL
+// themselves (pointers, Scanners, []byte, any) are scanned straight into the field.
+type column struct {
+	mapped bool
+	index  []int
+	typ    reflect.Type
+	scan   *fieldScanner
+	holder reflect.Value // **T temporary, valid when scan is nil and the type needs a guard
+	cur    reflect.Value // destination field of the current row, for holder
+}
+
+// Mapper scans successive rows into values of one element type. It keeps scratch
+// state between rows, so one Mapper must not be used from several goroutines.
 type Mapper struct {
-	typ  reflect.Type
-	kind elemKind
-	cols []string
-	// kindStruct: per column, the target field (nil index = discard).
-	fields []*fieldInfo
+	typ     reflect.Type
+	kind    elemKind
+	cols    []string
+	plan    []column
+	targets []any
+	discard any
 }
 
 // NewMapper returns a Mapper that scans result columns cols into values of type t: a
@@ -193,20 +208,47 @@ func NewMapper(t reflect.Type, cols []string) (*Mapper, error) {
 	switch m.kind {
 	case kindStruct:
 		sm := getStructMap(t)
-		m.fields = make([]*fieldInfo, len(cols))
+		m.plan = make([]column, len(cols))
 		for i, c := range cols {
-			if fi, ok := sm.exact[c]; ok {
-				m.fields[i] = &fi
-			} else if fi, ok := sm.fold[strings.ToLower(c)]; ok {
-				m.fields[i] = &fi
+			fi, ok := sm.exact[c]
+			if !ok {
+				fi, ok = sm.fold[strings.ToLower(c)]
+			}
+			if ok {
+				m.plan[i] = newColumn(fi.index, fi.typ)
 			}
 		}
 	case kindScalar:
 		if len(cols) != 1 {
 			return nil, fmt.Errorf("quill: scanning into %s needs exactly one column, got %d", t, len(cols))
 		}
+		m.plan = []column{newColumn(nil, t)}
+	}
+	m.targets = make([]any, len(m.plan))
+	for i := range m.plan {
+		c := &m.plan[i]
+		switch {
+		case !c.mapped:
+			m.targets[i] = &m.discard
+		case c.scan != nil:
+			m.targets[i] = c.scan
+		case c.holder.IsValid():
+			m.targets[i] = c.holder.Interface()
+		}
 	}
 	return m, nil
+}
+
+func newColumn(index []int, t reflect.Type) column {
+	c := column{mapped: true, index: index, typ: t}
+	switch {
+	case !needsNullGuard(t):
+	case fastKind(t):
+		c.scan = &fieldScanner{}
+	default:
+		c.holder = reflect.New(reflect.PointerTo(t))
+	}
+	return c
 }
 
 // fieldByIndexAlloc walks an index path, allocating nil embedded pointers.
@@ -226,58 +268,67 @@ func fieldByIndexAlloc(v reflect.Value, index []int) reflect.Value {
 // Scan scans the current row into dst (addressable, of m.typ). NULL in a
 // plain (non-pointer, non-Scanner) field leaves the zero value instead of failing.
 func (m *Mapper) Scan(rows *sql.Rows, dst reflect.Value) error {
-	switch m.kind {
-	case kindMap:
-		vals := make([]any, len(m.cols))
-		ptrs := make([]any, len(m.cols))
-		for i := range vals {
-			ptrs[i] = &vals[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
-			return err
-		}
-		if dst.IsNil() {
-			dst.Set(reflect.MakeMapWithSize(m.typ, len(m.cols)))
-		}
-		for i, c := range m.cols {
-			if b, ok := vals[i].([]byte); ok {
-				vals[i] = string(b)
-			}
-			dst.SetMapIndex(reflect.ValueOf(c), reflect.ValueOf(&vals[i]).Elem())
-		}
-		return nil
-	case kindScalar:
-		return scanScalar(rows, dst)
+	if m.kind == kindMap {
+		return m.scanMap(rows, dst)
 	}
-	targets := make([]any, len(m.cols))
-	var posts []func()
-	for i, fi := range m.fields {
-		if fi == nil {
-			targets[i] = new(any)
+	for i := range m.plan {
+		c := &m.plan[i]
+		if !c.mapped {
 			continue
 		}
-		t, post := Target(fieldByIndexAlloc(dst, fi.index))
-		targets[i] = t
-		if post != nil {
-			posts = append(posts, post)
+		fv := dst
+		if c.index != nil {
+			fv = fieldByIndexAlloc(dst, c.index)
+		}
+		switch {
+		case c.scan != nil:
+			c.scan.dst = fv
+		case c.holder.IsValid():
+			c.holder.Elem().SetZero()
+			c.cur = fv
+		default:
+			m.targets[i] = fv.Addr().Interface()
 		}
 	}
-	if err := rows.Scan(targets...); err != nil {
-		return err
+	err := rows.Scan(m.targets...)
+	for i := range m.plan {
+		c := &m.plan[i]
+		switch {
+		case c.scan != nil:
+			c.scan.dst = reflect.Value{} // do not keep the row alive
+		case c.holder.IsValid():
+			if err == nil {
+				if p := c.holder.Elem(); !p.IsNil() {
+					c.cur.Set(p.Elem())
+				} else {
+					c.cur.SetZero()
+				}
+			}
+			c.holder.Elem().SetZero()
+			c.cur = reflect.Value{}
+		}
 	}
-	for _, p := range posts {
-		p()
-	}
-	return nil
+	m.discard = nil
+	return err
 }
 
-func scanScalar(rows *sql.Rows, dst reflect.Value) error {
-	t, post := Target(dst)
-	if err := rows.Scan(t); err != nil {
+func (m *Mapper) scanMap(rows *sql.Rows, dst reflect.Value) error {
+	vals := make([]any, len(m.cols))
+	ptrs := make([]any, len(m.cols))
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
+	if err := rows.Scan(ptrs...); err != nil {
 		return err
 	}
-	if post != nil {
-		post()
+	if dst.IsNil() {
+		dst.Set(reflect.MakeMapWithSize(m.typ, len(m.cols)))
+	}
+	for i, c := range m.cols {
+		if b, ok := vals[i].([]byte); ok {
+			vals[i] = string(b)
+		}
+		dst.SetMapIndex(reflect.ValueOf(c), reflect.ValueOf(&vals[i]).Elem())
 	}
 	return nil
 }
@@ -331,18 +382,24 @@ func Slice(rows *sql.Rows, dest any) error {
 	if err != nil {
 		return err
 	}
-	out := reflect.MakeSlice(slice.Type(), 0, 8)
+	// built in a scratch slice (addressable, so elements can be scanned in place) and
+	// stored only on success, leaving dest untouched on error
+	out := reflect.New(slice.Type()).Elem()
+	out.Set(reflect.MakeSlice(slice.Type(), 0, 8))
 	for rows.Next() {
-		item := reflect.New(baseT).Elem()
+		// grow the slice and scan into the new element in place: no per-row temporary
+		n := out.Len()
+		out.Grow(1)
+		out.SetLen(n + 1)
+		item := out.Index(n)
+		if isPtr {
+			p := reflect.New(baseT)
+			item.Set(p)
+			item = p.Elem()
+		}
 		if err := m.Scan(rows, item); err != nil {
 			return err
 		}
-		if isPtr {
-			p := reflect.New(baseT)
-			p.Elem().Set(item)
-			item = p
-		}
-		out = reflect.Append(out, item)
 	}
 	if err := rows.Err(); err != nil {
 		return err
