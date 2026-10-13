@@ -110,3 +110,14 @@ func TestSliceLeavesDestOnError(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, []plain{{S: "keep"}}, got)
 }
+
+func TestAsString(t *testing.T) {
+	now := time.Date(2026, 10, 11, 1, 2, 3, 0, time.UTC)
+	assert.Equal(t, "x", asString("x"))
+	assert.Equal(t, "b", asString([]byte("b")))
+	assert.Equal(t, "2026-10-11T01:02:03Z", asString(now))
+	assert.Equal(t, "7", asString(int64(7)))
+	assert.Equal(t, "1.5", asString(1.5))
+	assert.Equal(t, "true", asString(true))
+	assert.Equal(t, "<nil>", asString(nil))
+}

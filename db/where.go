@@ -109,6 +109,9 @@ func toInt64(v any) (int64, error) {
 }
 
 func (b *query) group(dst *[]clause, boolean string, fn func(*query), having bool) *query {
+	if fn == nil {
+		return b.fail(fmt.Errorf("%w: nil group callback", ErrInvalidArgs))
+	}
 	q := b.fresh()
 	fn(q)
 	if q.err != nil {
