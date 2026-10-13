@@ -73,10 +73,12 @@ func TestGenerateErrors(t *testing.T) {
 	_, err := Generate(writeFixture(t, "package db\nfunc ("))
 	require.Error(t, err)
 
-	_, err = Generate(writeFixture(t, "package db\ntype query struct{}\nfunc (b *query) Foo(fn func(*query)) *query { return b }\n"))
+	const noCallback = "package db\ntype query struct{}\nfunc (b *query) Foo(fn func(*query)) *query { return b }\n"
+	_, err = Generate(writeFixture(t, noCallback))
 	require.ErrorContains(t, err, "no callback type")
 
-	_, err = Generate(writeFixture(t, "package db\ntype query struct{}\nfunc (b *query) Foo(m map[string]*query) *query { return b }\n"))
+	const badParam = "package db\ntype query struct{}\nfunc (b *query) Foo(m map[string]*query) *query { return b }\n"
+	_, err = Generate(writeFixture(t, badParam))
 	require.ErrorContains(t, err, "unsupported parameter type")
 }
 
