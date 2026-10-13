@@ -25,7 +25,7 @@ func benchSQL(b *testing.B, build func(d db.Dialect) (string, []any, error)) {
 func BenchmarkSelectSimple(b *testing.B) {
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
 		return db.Use(d).
-			Table("users").
+			Select().From("users").
 			Select("id", "name").
 			Where("votes", ">", 100).
 			OrderByDesc("id").
@@ -36,7 +36,7 @@ func BenchmarkSelectSimple(b *testing.B) {
 
 func BenchmarkSelectComplex(b *testing.B) {
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		return db.Use(d).Table("users as u").
+		return db.Use(d).Select().From("users as u").
 			Select("u.id", "u.name", "p.title").
 			Join("posts as p", "p.user_id", "u.id").
 			LeftJoin("profiles", "profiles.user_id", "=", "u.id").
@@ -53,15 +53,15 @@ func BenchmarkSelectComplex(b *testing.B) {
 
 func BenchmarkSelectSubquery(b *testing.B) {
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		sub := db.Use(d).Table("posts").Select("user_id").Where("views", ">", 10)
-		return db.Use(d).Table("users").WhereIn("id", sub).Where("age", ">=", 18).ToSQL()
+		sub := db.Use(d).Select().From("posts").Select("user_id").Where("views", ">", 10)
+		return db.Use(d).Select().From("users").WhereIn("id", sub).Where("age", ">=", 18).ToSQL()
 	})
 }
 
 func BenchmarkSelectCTE(b *testing.B) {
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		active := db.Use(d).Table("users").Where("active", true)
-		return db.Use(d).Table("au").With("au", active).Where("id", ">", 5).ToSQL()
+		active := db.Use(d).Select().From("users").Where("active", true)
+		return db.Use(d).Select().From("au").With("au", active).Where("id", ">", 5).ToSQL()
 	})
 }
 
@@ -72,33 +72,38 @@ func BenchmarkInsertSQL(b *testing.B) {
 		{"name": "cy", "age": 41, "email": "c@x"},
 	}
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		return db.Use(d).Table("users").InsertSQL(rows...)
+		return db.Use(d).Insert("users").Values(rows...).ToSQL()
 	})
 }
 
 func BenchmarkUpdateSQL(b *testing.B) {
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		return db.Use(d).Table("users").Where("id", 1).UpdateSQL(map[string]any{"name": "ann", "age": 31})
+		return db.Use(d).Update("users").Where("id", 1).SetMap(map[string]any{"name": "ann", "age": 31}).ToSQL()
 	})
 }
 
 func BenchmarkUpsertSQL(b *testing.B) {
 	rows := []map[string]any{{"email": "a@x", "name": "ann"}, {"email": "b@x", "name": "bob"}}
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		return db.Use(d).Table("users").UpsertSQL(rows, []string{"email"}, []string{"name"})
+		return db.Use(d).Insert("users").Values(rows...).Upsert([]string{"email"}, []string{"name"}).ToSQL()
 	})
 }
 
 func BenchmarkDeleteSQL(b *testing.B) {
 	benchSQL(b, func(d db.Dialect) (string, []any, error) {
-		return db.Use(d).Table("users").Where("id", 1).DeleteSQL()
+		return db.Use(d).Delete("users").Where("id", 1).ToSQL()
 	})
 }
 
 func BenchmarkToRawSQL(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := db.Use(db.Postgres).Table("users").Where("id", 1).Where("name", "ann").ToRawSQL(); err != nil {
+		if _, err := db.Use(db.Postgres).
+			Select().
+			From("users").
+			Where("id", 1).
+			Where("name", "ann").
+			ToRawSQL(); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -106,7 +111,7 @@ func BenchmarkToRawSQL(b *testing.B) {
 
 func BenchmarkClone(b *testing.B) {
 	base := db.Use(db.Postgres).
-		Table("users").
+		Select().From("users").
 		Where("a", 1).
 		Join("posts", "posts.user_id", "users.id").
 		OrderBy("id", "asc")
@@ -133,9 +138,9 @@ func BenchmarkRowFromStruct(b *testing.B) {
 
 // wideQuery is a realistic report-style query: many predicates, several joins,
 // a nested group, a CTE and a union. It shows how cost scales with query size.
-func wideQuery(d db.Dialect) *db.Builder {
-	recent := db.Use(d).Table("orders").Select("user_id").Where("created_at", ">", "2024-01-01")
-	q := db.Use(d).Table("users as u").
+func wideQuery(d db.Dialect) *db.SelectBuilder {
+	recent := db.Use(d).Select().From("orders").Select("user_id").Where("created_at", ">", "2024-01-01")
+	q := db.Use(d).Select().From("users as u").
 		With("recent", recent).
 		Select("u.id", "u.name", "u.email", "p.title", "t.name as team", "c.name as company").
 		Join("posts as p", "p.user_id", "u.id").
@@ -154,7 +159,7 @@ func wideQuery(d db.Dialect) *db.Builder {
 		WhereNotNull("u.email").
 		WhereBetween("u.created_at", "2023-01-01", "2023-12-31").
 		WhereLike("u.name", "a%").
-		WhereGroup(func(g *db.Builder) {
+		WhereGroup(func(g *db.WhereClause) {
 			g.Where("p.views", ">", 10).OrWhere("p.featured", true).OrWhereNull("p.archived_at")
 		}).
 		WhereColumn("u.team_id", "t.id").
@@ -165,7 +170,7 @@ func wideQuery(d db.Dialect) *db.Builder {
 		Limit(50).Offset(100)
 	return q.UnionAll(
 		db.Use(d).
-			Table("archived_users as u").
+			Select().From("archived_users as u").
 			Select("u.id", "u.name", "u.email", "u.title", "u.team", "u.company").
 			Where("u.active", false),
 	)
@@ -216,7 +221,7 @@ func BenchmarkJoinForms(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
 			_, _, _ = db.Use(db.Postgres).
-				Table("a").
+				Select().From("a").
 				Join("b", "b.a_id", "a.id").
 				Join("c", "c.a_id", "=", "a.id").
 				ToSQL()
@@ -225,7 +230,7 @@ func BenchmarkJoinForms(b *testing.B) {
 	b.Run("closure", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			_, _, _ = db.Use(db.Postgres).Table("a").
+			_, _, _ = db.Use(db.Postgres).Select().From("a").
 				JoinFunc("b", func(j *db.JoinClause) { j.On("b.a_id", "a.id") }).
 				JoinFunc("c", func(j *db.JoinClause) { j.On("c.a_id", "=", "a.id") }).ToSQL()
 		}

@@ -19,18 +19,20 @@ The library has no third-party dependencies. You bring your own `database/sql` d
 | Build only | `db.Use(dialect, opts...)` | no | produce `(sql, args)` for your own driver, tests, logging |
 | Build and run | `db.New(conn, dialect, opts...)` | yes | build and execute |
 
-Both return a `*db.DB` and both start a query with `Table("name")`.
+Both return a `*db.DB`. A statement starts from it: `Select(...).From("name")`, `Insert("name")`,
+`Update("name")` or `Delete("name")`. Each returns its own builder, so a builder only offers the methods
+that are valid for that statement.
 
 ### Build only
 
 ```go
 pg := db.Use(db.Postgres)          // set the dialect once, reuse it
 
-sql, args, err := pg.Table("users").Where("id", 7).ToSQL()
-sql, args, err  = pg.Table("posts").Limit(5).ToSQL()
+sql, args, err := pg.Select().From("users").Where("id", 7).ToSQL()
+sql, args, err  = pg.Select().From("posts").Limit(5).ToSQL()
 
 // one-liner
-sql, args, err = db.Use(db.MySQL).Table("users").Limit(5).ToSQL()
+sql, args, err = db.Use(db.MySQL).Select().From("users").Limit(5).ToSQL()
 ```
 
 Running a query on a build-only `DB` returns `db.ErrNotBound`; it never panics.
@@ -66,7 +68,7 @@ Both constructors take the same options.
 
 | Option | Effect |
 | --- | --- |
-| `db.WithPrefix("app_")` | Prefixes table names, aliases and qualified columns: `Table("users as u")` becomes `"app_users" as "app_u"` |
+| `db.WithPrefix("app_")` | Prefixes table names, aliases and qualified columns: `From("users as u")` becomes `"app_users" as "app_u"` |
 | `db.WithHook(fn)` | Calls `fn(ctx, db.QueryEvent)` after every statement (logging, metrics, tracing) |
 | `db.WithLogArgs()` | Includes bind values in `QueryEvent.Args`. Off by default, because arguments can be personal data |
 
@@ -93,15 +95,15 @@ type User struct {
 
 // read
 var users []User
-err := conn.Table("users").Where("active", true).OrderBy("id").Get(ctx, &users)
+err := conn.Select().From("users").Where("active", true).OrderBy("id").Get(ctx, &users)
 
 var u User
-err = conn.Table("users").Find(ctx, 7, &u) // errors.Is(err, db.ErrNotFound) when missing
+err = conn.Select().From("users").Find(ctx, 7, &u) // errors.Is(err, db.ErrNotFound) when missing
 
 // write
-id, err := conn.Table("users").InsertGetID(ctx, map[string]any{"name": "Ann"})
-n, err  := conn.Table("users").Where("id", id).Update(ctx, map[string]any{"name": "Anna"})
-n, err   = conn.Table("users").Where("id", id).Delete(ctx)
+id, err := conn.Insert("users").Values(map[string]any{"name": "Ann"}).ExecGetID(ctx)
+n, err  := conn.Update("users").Set("name", "Anna").Where("id", id).Exec(ctx)
+n, err   = conn.Delete("users").Where("id", id).Exec(ctx)
 ```
 
 Every method that touches the database takes a `context.Context` first and honours
@@ -109,10 +111,14 @@ cancellation.
 
 ## How a builder behaves
 
+- **One builder per statement.** `Select` returns a `*db.SelectBuilder`, `Insert` an
+  `*db.InsertBuilder`, `Update` an `*db.UpdateBuilder` and `Delete` a `*db.DeleteBuilder`. Select-only
+  clauses (`GroupBy`, `Having`, `Union`, locks, `With`, `Offset`, pagination) exist only on the
+  select builder; an insert has no `Where`.
 - **Fluent and mutable.** Each call changes the builder and returns it. Use `Clone()` to branch.
 - **Errors are collected.** A bad operator, direction or argument is recorded on the builder, the
   chain keeps working, and the first error comes back from the terminal call (`ToSQL`, `Get`,
-  `Insert`, ...). `Err()` shows it early.
+  `Exec`, ...). `Err()` shows it early.
 - **Subqueries are snapshots.** A builder you pass as a subquery is copied when it is added, so
   changing it later does not change the outer query.
 - **Not safe for concurrent use.** Build per request; `Clone()` to share a base query.
@@ -122,8 +128,8 @@ cancellation.
 For fixed queries (tests, package-level variables) where a failure is a programming mistake:
 
 ```go
-sql, args := db.Use(db.Postgres).Table("users").Where("id", 7).MustSQL()
-raw       := db.Use(db.Postgres).Table("users").Where("name", "ann").MustRawSQL() // debug only
+sql, args := db.Use(db.Postgres).Select().From("users").Where("id", 7).MustSQL()
+raw       := db.Use(db.Postgres).Select().From("users").Where("name", "ann").MustRawSQL() // debug only
 ```
 
 They panic with the original error, wrapped, so `errors.Is` still works on the recovered value.
@@ -137,7 +143,7 @@ All errors are sentinel values you can test with `errors.Is`. The full list is i
 | Error | Meaning |
 | --- | --- |
 | `db.ErrNotFound` | `First`, `Find`, `Sole` or `Value` matched no row (it is `sql.ErrNoRows`) |
-| `db.ErrNoWhere` | An update or delete had no `WHERE`; see [the guard](writing-data.md#the-where-guard) |
+| `db.ErrNoWhere` | An update or delete had no `WHERE` or `LIMIT`; see [the guard](writing-data.md#the-where-guard) |
 | `db.ErrInvalidOperator` | An operator outside the allow-list |
 | `db.ErrNotBound` | You ran a query on a build-only `DB` |
 | `db.ErrUnsupported` | The feature does not exist on this dialect |

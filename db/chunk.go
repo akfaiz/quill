@@ -18,12 +18,12 @@ import (
 // Example:
 //
 //	var batch []User
-//	err := conn.Table("users").OrderBy("id").Chunk(ctx, 2, &batch, func() (bool, error) {
+//	err := conn.Select().From("users").OrderBy("id").Chunk(ctx, 2, &batch, func() (bool, error) {
 //		return true, nil // false stops early
 //	})
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 2 OFFSET 0
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 2 OFFSET 2   (until a short batch)
-func (b *Builder) Chunk(ctx context.Context, size int, dest any, fn func() (bool, error)) error {
+func (b *query) Chunk(ctx context.Context, size int, dest any, fn func() (bool, error)) error {
 	if _, err := checkPaging(1, size); err != nil {
 		return err
 	}
@@ -55,13 +55,13 @@ func (b *Builder) Chunk(ctx context.Context, size int, dest any, fn func() (bool
 // Example:
 //
 //	var batch []User
-//	err := conn.Table("users").ChunkByID(ctx, 2, &batch, func() (bool, error) {
+//	err := conn.Select().From("users").ChunkByID(ctx, 2, &batch, func() (bool, error) {
 //		return true, nil
 //	})
 //	// SELECT * FROM "users" WHERE "id" IS NOT NULL ORDER BY "id" ASC LIMIT 2
 //	// SELECT * FROM "users" WHERE "id" > $1 ORDER BY "id" ASC LIMIT 2   args: [2]
 //	// another key column: ChunkByID(ctx, 5, &batch, fn, "order_no")
-func (b *Builder) ChunkByID(ctx context.Context, size int, dest any, fn func() (bool, error), column ...string) error {
+func (b *query) ChunkByID(ctx context.Context, size int, dest any, fn func() (bool, error), column ...string) error {
 	if _, err := checkPaging(1, size); err != nil {
 		return err
 	}
@@ -127,12 +127,12 @@ func isNilValue(v any) bool {
 // Example:
 //
 //	var u User
-//	err := conn.Table("users").OrderBy("id").Each(ctx, &u, func() error {
+//	err := conn.Select().From("users").OrderBy("id").Each(ctx, &u, func() error {
 //		fmt.Println(u.ID, u.Name) // u is refilled for every row
 //		return nil
 //	})
 //	// SELECT * FROM "users" ORDER BY "id" ASC
-func (b *Builder) Each(ctx context.Context, dest any, fn func() error) error {
+func (b *query) Each(ctx context.Context, dest any, fn func() error) error {
 	rv := reflect.ValueOf(dest)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("%w: Each destination must be a non-nil pointer, got %T", ErrInvalidArgs, dest)
@@ -166,7 +166,7 @@ func (b *Builder) Each(ctx context.Context, dest any, fn func() error) error {
 //
 // Example:
 //
-//	q := conn.Table("users").OrderBy("id")
+//	q := conn.Select().From("users").OrderBy("id")
 //	for u, err := range db.Stream[User](ctx, q) {
 //		if err != nil {
 //			break
@@ -174,13 +174,13 @@ func (b *Builder) Each(ctx context.Context, dest any, fn func() error) error {
 //		fmt.Println(u.ID, u.Name)
 //	}
 //	// SELECT * FROM "users" ORDER BY "id" ASC
-//	// scalar rows: db.Stream[string](ctx, conn.Table("users").Select("name"))
-func Stream[T any](ctx context.Context, b *Builder) iter.Seq2[T, error] {
+//	// scalar rows: db.Stream[string](ctx, conn.Select().From("users").Select("name"))
+func Stream[T any](ctx context.Context, s *SelectBuilder) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		var zero T
 		stopped := false
 		var cur T
-		err := b.Each(ctx, &cur, func() error {
+		err := s.q.Each(ctx, &cur, func() error {
 			if !yield(cur, nil) {
 				stopped = true
 				return errStopStream

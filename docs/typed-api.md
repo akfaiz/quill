@@ -1,11 +1,12 @@
 # Typed API
 
-The core API fills a destination you pass in (`Get(ctx, &users)`) and takes maps for writes. The
-typed API returns typed values and takes structs, and can find the table from the struct itself.
+The core API fills a destination you pass in (`Get(ctx, &users)`). The typed API (`db.Query[T]`)
+returns typed values and can find the table from the struct itself. It is **select-only**: writes
+with structs go through the write builders (`Insert(...).Rows(...)`, `Update(...).SetRow(...)`).
 
 - [Naming the table](#naming-the-table) · [From and As](#from-and-as) · [Reading](#reading)
-- [The typed chain](#the-typed-chain) · [Writing structs](#writing-structs) · [Returning typed rows](#returning-typed-rows)
-- [Scalar helpers](#scalar-helpers) · [Row and Rows](#row-and-rows)
+- [The typed chain](#the-typed-chain) · [Struct writes](#struct-writes) · [Returning rows](#returning-rows)
+- [Scalar helpers](#scalar-helpers) · [Row](#row)
 
 ## Naming the table
 
@@ -37,14 +38,14 @@ func (User) TableName() string { return "users" }
 | Entry point | Table comes from | Use it for |
 | --- | --- | --- |
 | `db.From[T](conn)` | `T.TableName()` | the common case |
-| `db.As[T](builder)` | the builder you pass | maps, scalars, ad-hoc or dynamic tables, a builder you already built |
+| `db.As[T](sel)` | the `*db.SelectBuilder` you pass | maps, scalars, ad-hoc or dynamic tables, a builder you already built |
 
 ```go
 users, err := db.From[User](conn).Where("active", true).Get(ctx)          // []User
 
-ids, err   := db.As[int64](conn.Table("users").Select("id")).Get(ctx)      // []int64
-rows, err  := db.As[map[string]any](conn.Table("users")).Get(ctx)          // []map[string]any
-tenantUsers, err := db.As[User](conn.Table("tenant_" + tenantID + "_users")).Get(ctx) // dynamic table
+ids, err   := db.As[int64](conn.Select("id").From("users")).Get(ctx)         // []int64
+rows, err  := db.As[map[string]any](conn.Select().From("users")).Get(ctx)     // []map[string]any
+tenantUsers, err := db.As[User](conn.Select().From("tenant_" + tenantID + "_users")).Get(ctx) // dynamic table
 ```
 
 A problem with `T` (no `TableName`) does not break the chain; it is reported by the first
@@ -68,7 +69,7 @@ terminal call, like any builder error. Both work with `db.Use(...)` to build SQL
 | `ChunkByID(ctx, size, fn, column...)` | |
 | `Each(ctx, fn func(T) error)` | |
 | `Stream(ctx)` | `iter.Seq2[T, error]` |
-| `Count`, `Exists`, `DoesntExist`, `Sum`, `Avg` | as on the builder |
+| `Count`, `Exists`, `DoesntExist`, `Sum`, `Avg` | as on the select builder |
 
 The paged types embed the page description and add the rows:
 
@@ -84,46 +85,43 @@ for _, u := range page.Items { /* use u */ }                // Items is []User
 
 ## The typed chain
 
-Go methods cannot take type parameters, so the builder's `Get(ctx, &dest)` cannot return `[]T`.
-That is why `Query[T]` is a separate type: it mirrors the most used builder methods and returns
-itself, so `T` survives the chain.
+Go methods cannot take type parameters, so the select builder's `Get(ctx, &dest)` cannot return
+`[]T`. That is why `Query[T]` is a separate type: it mirrors the select builder's chain methods
+(sources, `Select*`, every `Where*`, joins, grouping and `Having*`, ordering, limit and offset,
+unions, CTEs, locks and index hints) and returns itself, so `T` survives the chain. The mirror is
+generated from the select builder, so the two always match.
 
-- **Select and where:** `Select`, `AddSelect`, `SelectRaw`, `Distinct`, `Where`, `OrWhere`,
-  `WhereNot`, `WhereRaw`, `OrWhereRaw`, `WhereColumn`, `WhereIn`, `OrWhereIn`, `WhereNotIn`,
-  `WhereNull`, `OrWhereNull`, `WhereNotNull`, `WhereBetween`, `WhereNotBetween`, `WhereLike`,
-  `WhereGroup`, `OrWhereGroup`, `WhereExists`, `WhereNotExists`
-- **Joins:** `Join`, `LeftJoin`, `RightJoin`, `JoinFunc`, `LeftJoinFunc`
-- **Grouping, order, paging:** `GroupBy`, `Having`, `HavingRaw`, `OrderBy`, `OrderByDesc`,
-  `OrderByRaw`, `Latest`, `Oldest`, `Limit`, `Offset`, `ForPage`
-- **Other:** `LockForUpdate`, `SharedLock`, `AllRows`, `Returning`
-- **Control:** `When`, `Unless`, `Clone`, `Builder`
-
-Each forwards to the builder method of the same name; a test keeps them identical. For anything
-else, `Apply` hands you the builder:
+Two methods take a `Query[T]` or a clause instead of a builder: `When` and `Unless` receive
+`func(*db.Query[T])`, and `WhereGroup` / `HavingGroup` receive `*db.WhereClause` / `*db.HavingClause`.
+For anything not mirrored, `Apply` hands you the underlying select builder:
 
 ```go
 db.From[User](conn).
-    Apply(func(b *db.Builder) { b.WhereDate("created_at", day).WhereJsonContains("meta->tags", "go") }).
+    Apply(func(b *db.SelectBuilder) { b.WhereDate("created_at", day).WhereJsonContains("meta->tags", "go") }).
     OrderBy("id").
     Get(ctx)
 ```
 
-`Builder()` returns the underlying builder (the same one, not a copy).
+`Builder()` returns the underlying `*db.SelectBuilder` (the same one, not a copy). The full list
+of `Query[T]` methods is in the [reference](reference.md#method-index).
 
-## Writing structs
+## Struct writes
 
-Writes take structs and use the same `db` tags as scanning:
+Writes are not part of `Query[T]`. Use the write builders with the same `db` tags as scanning:
 
 ```go
-id, err := db.From[User](conn).InsertGetID(ctx, User{Name: "Ann"})
-n, err  := db.From[User](conn).Insert(ctx, u1, u2)
-n, err   = db.From[User](conn).InsertOrIgnore(ctx, u1)
-n, err   = db.From[User](conn).Upsert(ctx, []User{u1}, []string{"email"}, []string{"name"})
-n, err   = db.From[User](conn).Where("id", id).Update(ctx, User{Name: "Anna"})
-n, err   = db.From[User](conn).Where("id", id).UpdateMap(ctx, map[string]any{"email": nil}) // explicit NULL
-n, err   = db.From[User](conn).Where("id", id).Delete(ctx)
-err      = db.From[User](conn).Truncate(ctx)
+id, err := conn.Insert("users").Rows(User{Name: "Ann"}).ExecGetID(ctx)
+n, err  := conn.Insert("users").Rows(u1, u2).Exec(ctx)                // or Rows([]User{u1, u2})
+n, err   = conn.Insert("users").Rows(u1).Ignore().Exec(ctx)
+n, err   = conn.Insert("users").Rows(u1).Upsert([]string{"email"}, []string{"name"}).Exec(ctx)
+n, err   = conn.Update("users").SetRow(User{Name: "Anna"}).Where("id", id).Exec(ctx)
+n, err   = conn.Update("users").SetMap(map[string]any{"email": nil}).Where("id", id).Exec(ctx) // explicit NULL
+n, err   = conn.Delete("users").Where("id", id).Exec(ctx)
+err      = conn.Truncate(ctx, "users")
 ```
+
+Take the table name from the type when you do not want to repeat it:
+`name, err := db.TableName[User]()`.
 
 ### Tags
 
@@ -137,57 +135,55 @@ err      = db.From[User](conn).Truncate(ctx)
 ### Rules
 
 - **Zero values with `omitempty` are skipped**, so the database default or the existing value
-  stays. To write a zero value, use a pointer field (`Age *int` with `&zero`) or `UpdateMap`.
+  stays. To write a zero value, use a pointer field (`Age *int` with `&zero`) or `SetMap` / `Set`.
 - **Pointers and `sql.Null*`:** a nil pointer is written as `NULL`; `sql.Null*` types and any
   `driver.Valuer` work as usual; a `db.Raw(...)` field value is inlined.
 - **Batches:** every row of a batch insert must have the same columns, so an `omitempty` column
-  is left out only when it is zero in **every** row. If any row sets it, all rows write it.
+  is left out only when it is zero in **every** row of one `Rows` call. If any row sets it, all
+  rows write it.
 - **Embedded structs** are flattened. A field behind a nil embedded pointer counts as omitted
   (or `NULL` in a batch where another row sets it).
 - Unexported fields are ignored.
-- `Update` refuses to run without a `WHERE` (`db.ErrNoWhere`) and returns `db.ErrNoValues` when
-  every field was omitted. `Delete` is guarded the same way. See
+- `Update(...).SetRow(...)` refuses to run without a `WHERE` (`db.ErrNoWhere`) and returns
+  `db.ErrNoValues` when every field was omitted. `Delete` is guarded the same way. See
   [the guard](writing-data.md#the-where-guard).
-- A pointer to a struct also works: `db.As[*User](b).Insert(ctx, &u)`.
+- A pointer to a struct also works: `Rows(&u)`, `SetRow(&u)`.
 
-## Returning typed rows
+## Returning rows
 
-On PostgreSQL and SQLite:
+On PostgreSQL and SQLite, scan `RETURNING` rows into a slice of structs with the write builder's
+`Get`:
 
 ```go
-rows, err := db.From[User](conn).InsertReturning(ctx, User{Name: "Rae"})            // []User, all columns
-rows, err  = db.From[User](conn).Where("id", 7).UpdateReturning(ctx, User{Name: "Rae2"})
-rows, err  = db.From[User](conn).Where("id", 7).DeleteReturning(ctx)
+var rows []User
+err := conn.Insert("users").Rows(User{Name: "Rae"}).Returning("*").Get(ctx, &rows)
+err  = conn.Update("users").SetRow(User{Name: "Rae2"}).Where("id", 7).Returning("*").Get(ctx, &rows)
+err  = conn.Delete("users").Where("id", 7).Returning("*").Get(ctx, &rows)
 ```
 
-The `RETURNING` columns default to `*`; narrow them with `.Returning("id", "name")`. MySQL returns
-`db.ErrUnsupported`.
+`Returning` is required before `Get`. MySQL and MariaDB return `db.ErrUnsupported`.
 
 ## Scalar helpers
 
 For a single value or column, without a struct:
 
 ```go
-name, err   := db.ValueAs[string](ctx, conn.Table("users").Where("id", 7), "name")
-ids, err    := db.PluckAs[int64](ctx, conn.Table("users").OrderBy("id"), "id")
-oldest, err := db.MinAs[time.Time](ctx, conn.Table("users"), "created_at")
-newest, err := db.MaxAs[time.Time](ctx, conn.Table("users"), "created_at")
-total, err  := db.AggregateAs[float64](ctx, conn.Table("orders"), "sum", "total")
+name, err   := db.ValueAs[string](ctx, conn.Select().From("users").Where("id", 7), "name")
+ids, err    := db.PluckAs[int64](ctx, conn.Select().From("users").OrderBy("id"), "id")
 ```
 
 `NULL` comes back as the zero value of the type. `db.As[int64](...)` with a single-column query
 gives the same results through `Query[T]`.
 
-## Row and Rows
+## Row
 
-`db.Row(v)` and `db.Rows(vs)` turn structs into the `map[string]any` form the write methods and the
-`...SQL` builders take, applying the tag rules above:
+`db.Row(v)` turns a struct into the `map[string]any` form that `Values`, `SetMap` and
+`UpdateOrInsert` take, applying the tag rules above (`Rows(...)` and `SetRow(...)` on the write
+builders do this for you):
 
 ```go
 row, err := db.Row(User{Name: "Ann"})                       // map[string]any{"name": "Ann", "email": (*string)(nil)}
-sql, args, err := db.Use(db.Postgres).Table("users").InsertSQL(row)
-
-rows, err := db.Rows([]User{u1, u2})                        // one map per struct, same columns
+sql, args, err := db.Use(db.Postgres).Insert("users").Values(row).ToSQL()
 ```
 
 `Row` accepts a struct or non-nil pointer; anything else (a map, a nil, a scalar) is

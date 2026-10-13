@@ -48,29 +48,3 @@ func Row(v any) (map[string]any, error) {
 	}
 	return rows[0], nil
 }
-
-// Rows converts structs into column maps for a batch insert. Every row gets
-// the same columns: an `omitempty` column is left out only when it is zero in
-// every row, since a batch insert cannot skip a column for just some rows.
-//
-// Example:
-//
-//	rows, err := db.Rows([]Post{{Title: "One"}, {Title: "Two"}})
-//	conn.Table("posts").InsertSQL(rows...)
-//	// INSERT INTO "posts" ("title") VALUES ($1), ($2)   args: [One Two]
-func Rows[T any](vs []T) ([]map[string]any, error) {
-	if len(vs) == 0 {
-		return nil, nil
-	}
-	t, err := rowmap.StructType(reflect.TypeFor[T]())
-	if err != nil {
-		return nil, err
-	}
-	vals := make([]reflect.Value, len(vs))
-	for i := range vs {
-		if vals[i], err = rowmap.StructValue(reflect.ValueOf(&vs[i]).Elem()); err != nil {
-			return nil, fmt.Errorf("row %d: %w", i, err)
-		}
-	}
-	return rowmap.ToRows(t, vals)
-}

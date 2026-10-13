@@ -105,7 +105,7 @@ func (e *runEnv) scenarios() []runScenario {
 		{name: "SelectOne", libs: []runLib{
 			{"quill", func(ctx context.Context) (int64, error) {
 				var u user
-				err := e.q.Table("users").Select("id", "name", "age", "email").Find(ctx, oneID, &u)
+				err := e.q.Select("id", "name", "age", "email").From("users").Find(ctx, oneID, &u)
 				return u.ID, err
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
@@ -128,7 +128,7 @@ func (e *runEnv) scenarios() []runScenario {
 		{name: "SelectMany", libs: []runLib{
 			{"quill", func(ctx context.Context) (int64, error) {
 				var us []user
-				err := e.q.Table("users").Select("id", "name", "age", "email").
+				err := e.q.Select("id", "name", "age", "email").From("users").
 					Where("age", ">=", minAge).OrderBy("id").Limit(limit).Get(ctx, &us)
 				return sumIDs(us), err
 			}},
@@ -164,7 +164,7 @@ func (e *runEnv) scenarios() []runScenario {
 		}},
 		{name: "Count", libs: []runLib{
 			{"quill", func(ctx context.Context) (int64, error) {
-				return e.q.Table("users").Where("age", ">=", minAge).Count(ctx)
+				return e.q.Select().From("users").Where("age", ">=", minAge).Count(ctx)
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
 				var n int64
@@ -185,7 +185,9 @@ func (e *runEnv) scenarios() []runScenario {
 		{name: "Insert", libs: []runLib{
 			{"quill", func(ctx context.Context) (int64, error) {
 				u := newUser()
-				return e.q.Table("users").Insert(ctx, map[string]any{"name": u.Name, "age": u.Age, "email": u.Email})
+				return e.q.Insert("users").
+					Values(map[string]any{"name": u.Name, "age": u.Age, "email": u.Email}).
+					Exec(ctx)
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
 				u := newUser()
@@ -213,7 +215,7 @@ func (e *runEnv) scenarios() []runScenario {
 		}},
 		{name: "Update", libs: []runLib{
 			{"quill", func(ctx context.Context) (int64, error) {
-				return e.q.Table("users").Where("id", oneID).Update(ctx, map[string]any{"age": 31})
+				return e.q.Update("users").Set("age", 31).Where("id", oneID).Exec(ctx)
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
 				res, err := e.x.ExecContext(ctx, "UPDATE users SET age = ? WHERE id = ?", 31, oneID)

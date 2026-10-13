@@ -235,3 +235,13 @@ func TestMariaDBInheritsMySQL(t *testing.T) {
 		)
 	}
 }
+
+func TestQuoteChar(t *testing.T) {
+	perDialect(t, Grammar.QuoteChar, '"', '`', '"')
+}
+
+func TestPlaceholderBeyondCacheAndNegative(t *testing.T) {
+	assert.Equal(t, "$100000", Postgres().Placeholder(100000))
+	assert.Equal(t, "$-1", Postgres().Placeholder(-1))
+	assert.Equal(t, "?", MySQL().Placeholder(100000))
+}

@@ -93,46 +93,43 @@ func TestRowErrors(t *testing.T) {
 	}
 }
 
-func TestRowsBatchUsesTheUnionOfColumns(t *testing.T) {
+func TestInsertRowsBatchUsesTheUnionOfColumns(t *testing.T) {
+	ins := func(rows ...account) *db.InsertBuilder {
+		return db.Use(db.Postgres).Insert("accounts").Rows(rows)
+	}
 	// ID is omitempty: zero in every row -> dropped; non-zero in one row -> kept for all
-	rows, err := db.Rows([]account{{Name: "a"}, {Name: "b"}})
+	q, _, err := ins(account{Name: "a"}, account{Name: "b"}).ToSQL()
 	require.NoError(t, err)
-	for _, r := range rows {
-		if _, has := r["id"]; has {
-			t.Errorf("id should be dropped when zero everywhere: %v", r)
-		}
-	}
-	rows, err = db.Rows([]account{{Name: "a"}, {ID: 9, Name: "b"}})
+	assert.NotContains(t, q, `"id"`)
+
+	q, args, err := ins(account{Name: "a"}, account{ID: 9, Name: "b"}).ToSQL()
 	require.NoError(t, err)
-	if rows[0]["id"] != int64(0) || rows[1]["id"] != int64(9) {
-		t.Errorf("id should be written for every row once any row sets it: %v", rows)
-	}
-	// the result is a valid batch insert: every row has the same columns
-	if _, _, err := db.Use(db.Postgres).Table("accounts").InsertSQL(rows...); err != nil {
-		t.Errorf("InsertSQL rejected the batch: %v", err)
-	}
+	assert.Contains(t, q, `"id"`)
+	assert.Contains(t, args, int64(9))
+	assert.Contains(t, args, int64(0)) // the first row gets the column too
 }
 
-func TestRowsPointersAndEmpty(t *testing.T) {
-	rows, err := db.Rows([]*account{{Name: "a"}, {Name: "b"}})
-	if err != nil || len(rows) != 2 || rows[1]["name"] != "b" {
-		t.Errorf("pointer elements: %v %v", rows, err)
-	}
-	if rows, err := db.Rows([]account(nil)); rows != nil || err != nil {
-		t.Errorf("empty input should be a no-op, got %v %v", rows, err)
-	}
-	if _, err := db.Rows([]*account{nil}); !errors.Is(err, db.ErrInvalidArgs) {
-		t.Errorf("nil element: %v", err)
-	}
-	if _, err := db.Rows([]int{1}); !errors.Is(err, db.ErrInvalidArgs) {
-		t.Errorf("non-struct element: %v", err)
-	}
+func TestInsertRowsPointersAndEmpty(t *testing.T) {
+	ins := func(v ...any) *db.InsertBuilder { return db.Use(db.Postgres).Insert("accounts").Rows(v...) }
+
+	_, args, err := ins([]*account{{Name: "a"}, {Name: "b"}}).ToSQL()
+	require.NoError(t, err)
+	assert.Contains(t, args, "b")
+
+	_, _, err = ins([]account(nil)).ToSQL()
+	require.ErrorIs(t, err, db.ErrNoValues)
+
+	_, _, err = ins([]*account{nil}).ToSQL()
+	require.ErrorIs(t, err, db.ErrInvalidArgs)
+
+	_, _, err = ins([]int{1}).ToSQL()
+	require.ErrorIs(t, err, db.ErrInvalidArgs)
 }
 
 func TestRowFeedsTheSQLBuilders(t *testing.T) {
 	row, err := db.Row(account{Name: "Ann", Email: str("a@x")})
 	require.NoError(t, err)
-	sql, args, err := db.Use(db.Postgres).Table("accounts").InsertSQL(row)
+	sql, args, err := db.Use(db.Postgres).Insert("accounts").Values(row).ToSQL()
 	require.NoError(t, err)
 	if want := `INSERT INTO "accounts" ("email", "name", "nick") VALUES ($1, $2, $3)`; sql != want {
 		t.Errorf("got %s\nwant %s", sql, want)
@@ -142,7 +139,26 @@ func TestRowFeedsTheSQLBuilders(t *testing.T) {
 	row, _ = db.Row(struct {
 		A int `db:"a,omitempty"`
 	}{})
-	if sql, _, _ := db.Use(db.Postgres).Table("t").InsertSQL(row); sql != `INSERT INTO "t" DEFAULT VALUES` {
+	if sql, _, _ := db.Use(db.Postgres).Insert("t").Values(row).ToSQL(); sql != `INSERT INTO "t" DEFAULT VALUES` {
 		t.Errorf("got %s", sql)
 	}
+}
+
+func TestStructWritesViaBuilders(t *testing.T) {
+	q, args, err := db.Use(db.Postgres).Insert("accounts").Rows(account{Name: "Ann", Email: str("a@x")}).ToSQL()
+	require.NoError(t, err)
+	assert.Equal(t, `INSERT INTO "accounts" ("email", "name", "nick") VALUES ($1, $2, $3)`, q)
+	require.Len(t, args, 3)
+
+	q, args, err = db.Use(db.Postgres).
+		Update("accounts").
+		SetRow(account{Name: "Ann", Email: str("a@x")}).
+		Where("id", 1).
+		ToSQL()
+	require.NoError(t, err)
+	assert.Contains(t, q, `UPDATE "accounts" SET `)
+	assert.Len(t, args, 4)
+
+	_, _, err = db.Use(db.Postgres).Update("accounts").SetRow(42).Where("id", 1).ToSQL()
+	require.ErrorIs(t, err, db.ErrInvalidArgs)
 }

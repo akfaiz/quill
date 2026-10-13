@@ -9,7 +9,7 @@ import (
 // selectQuery compiles a SELECT, with a WITH prefix and unions when present. Components follow
 // the usual order: columns, from, index hint, joins, wheres, groups, havings,
 // orders, limit, offset, lock.
-func (c *compiler) selectQuery(b *Builder) error {
+func (c *compiler) selectQuery(b *query) error {
 	if err := c.with(b); err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (c *compiler) selectQuery(b *Builder) error {
 	return c.orderLimitOffset(b.unionOrders, b.unionLimit, b.unionOffset)
 }
 
-func (c *compiler) selectCore(b *Builder) error {
+func (c *compiler) selectCore(b *query) error {
 	if b.table == "" && b.fromSub == nil && b.fromRaw == nil {
 		return ErrNoTable
 	}
@@ -338,7 +338,7 @@ func (c *compiler) valueList(vs []any, closer string) error {
 }
 
 // subquery writes "(SELECT ...)" sharing this compiler's arg numbering.
-func (c *compiler) subquery(q *Builder) error {
+func (c *compiler) subquery(q *query) error {
 	if q == nil {
 		return errNilSubquery
 	}
@@ -353,14 +353,16 @@ func (c *compiler) subquery(q *Builder) error {
 	return nil
 }
 
-// value writes a predicate operand: Expression inline, *Builder as subquery,
+// value writes a predicate operand: Expression inline, *query as subquery,
 // anything else as a bind argument.
 func (c *compiler) value(v any) error {
 	switch x := v.(type) {
 	case Expression:
 		c.raw(x)
-	case *Builder:
+	case *query:
 		return c.subquery(x)
+	case *SelectBuilder:
+		return c.subquery(sq(x))
 	default:
 		c.param(v)
 	}

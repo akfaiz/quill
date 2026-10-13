@@ -13,7 +13,7 @@ import (
 
 type golden struct {
 	name  string
-	build func(d db.Dialect) *db.Builder
+	build func(d db.Dialect) *db.SelectBuilder
 	pg    string
 	my    string
 	lite  string
@@ -25,15 +25,15 @@ func TestSelectGolden(t *testing.T) {
 	tests := []golden{
 		{
 			name:  "select all",
-			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("users") },
+			build: func(d db.Dialect) *db.SelectBuilder { return db.Use(d).Select().From("users") },
 			pg:    `SELECT * FROM "users"`,
 			my:    "SELECT * FROM `users`",
 			lite:  `SELECT * FROM "users"`,
 		},
 		{
 			name: "columns alias distinct qualified",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("users as u").Distinct().Select("u.id", "u.name as n", "u.*")
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("users as u").Distinct().Select("u.id", "u.name as n", "u.*")
 			},
 			pg:   `SELECT DISTINCT "u"."id", "u"."name" AS "n", "u".* FROM "users" AS "u"`,
 			my:   "SELECT DISTINCT `u`.`id`, `u`.`name` AS `n`, `u`.* FROM `users` AS `u`",
@@ -41,8 +41,8 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "where and or null",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("users").
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("users").
 					Where("votes", ">", 100).
 					OrWhere("name", "john").
 					Where("deleted_at", nil).
@@ -55,8 +55,8 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "raw keeps placeholders in order",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("t").
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("t").
 					SelectRaw("count(*) filter (WHERE x > ?) AS c", 5).
 					WhereRaw("a = ? and b = '?' and c ?? 'k'", 1).
 					Where("z", 9)
@@ -68,8 +68,8 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "group having order limit offset",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("orders").
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("orders").
 					Select("user_id").SelectRaw("sum(total) as s").
 					GroupBy("user_id").
 					Having("s", ">", 10).OrHavingRaw("count(*) > ?", 3).
@@ -83,22 +83,22 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name:  "for page",
-			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("t").ForPage(3, 15) },
+			build: func(d db.Dialect) *db.SelectBuilder { return db.Use(d).Select().From("t").ForPage(3, 15) },
 			pg:    `SELECT * FROM "t" LIMIT 15 OFFSET 30`,
 			my:    "SELECT * FROM `t` LIMIT 15 OFFSET 30",
 			lite:  `SELECT * FROM "t" LIMIT 15 OFFSET 30`,
 		},
 		{
 			name:  "offset without limit",
-			build: func(d db.Dialect) *db.Builder { return db.Use(d).Table("t").Skip(5) },
+			build: func(d db.Dialect) *db.SelectBuilder { return db.Use(d).Select().From("t").Skip(5) },
 			pg:    `SELECT * FROM "t" OFFSET 5`,
 			my:    "SELECT * FROM `t` LIMIT 18446744073709551615 OFFSET 5",
 			lite:  `SELECT * FROM "t" LIMIT -1 OFFSET 5`,
 		},
 		{
 			name: "prefix and schema",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("app.users as u").Prefix("p_").Where("u.id", 1)
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("app.users as u").Prefix("p_").Where("u.id", 1)
 			},
 			pg:   `SELECT * FROM "app"."p_users" AS "p_u" WHERE "p_u"."id" = $1`,
 			my:   "SELECT * FROM `app`.`p_users` AS `p_u` WHERE `p_u`.`id` = ?",
@@ -107,8 +107,8 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "prefix on a schema-qualified column goes on the table segment",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("public.users").Prefix("app_").
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("public.users").Prefix("app_").
 					Select("public.users.id", "public.users.*", "users.name").
 					Where("public.users.id", 1)
 			},
@@ -122,8 +122,8 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "identifier quote escaped",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("t").Select(`a"b` + "`c")
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("t").Select(`a"b` + "`c")
 			},
 			pg:   `SELECT "a""b` + "`c" + `" FROM "t"`,
 			my:   "SELECT `a\"b``c` FROM `t`",
@@ -131,11 +131,11 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "when unless tap",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("t").
-					When(true, func(q *db.Builder) { q.Where("a", 1) }).
-					When(false, func(q *db.Builder) { q.Where("b", 2) }).
-					Unless(false, func(q *db.Builder) { q.Where("c", 3) })
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("t").
+					When(true, func(q *db.SelectBuilder) { q.Where("a", 1) }).
+					When(false, func(q *db.SelectBuilder) { q.Where("b", 2) }).
+					Unless(false, func(q *db.SelectBuilder) { q.Where("c", 3) })
 			},
 			pg:   `SELECT * FROM "t" WHERE "a" = $1 AND "c" = $2`,
 			my:   "SELECT * FROM `t` WHERE `a` = ? AND `c` = ?",
@@ -144,8 +144,8 @@ func TestSelectGolden(t *testing.T) {
 		},
 		{
 			name: "expression value inlined",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("t").Where("a", "=", db.Raw("now() - interval ?", "1 day"))
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("t").Where("a", "=", db.Raw("now() - interval ?", "1 day"))
 			},
 			pg:   `SELECT * FROM "t" WHERE "a" = now() - interval $1`,
 			my:   "SELECT * FROM `t` WHERE `a` = now() - interval ?",
@@ -191,14 +191,14 @@ func runGolden(t *testing.T, tests []golden) {
 func TestErrors(t *testing.T) {
 	tests := []struct {
 		name  string
-		build *db.Builder
+		build *db.SelectBuilder
 		want  error
 	}{
-		{"no table", db.NewBuilder(db.Postgres), db.ErrNoTable},
-		{"bad operator", db.Use(db.Postgres).Table("t").Where("a", "; drop table t", 1), db.ErrInvalidOperator},
-		{"bad direction", db.Use(db.Postgres).Table("t").OrderBy("a", "sideways"), db.ErrInvalidDirection},
-		{"bad arg count", db.Use(db.Postgres).Table("t").Where("a"), db.ErrInvalidArgs},
-		{"unknown dialect", db.Use(db.Dialect(99)).Table("t"), db.ErrUnknownDialect},
+		{"no table", db.Use(db.Postgres).Select(), db.ErrNoTable},
+		{"bad operator", db.Use(db.Postgres).Select().From("t").Where("a", "; drop table t", 1), db.ErrInvalidOperator},
+		{"bad direction", db.Use(db.Postgres).Select().From("t").OrderBy("a", "sideways"), db.ErrInvalidDirection},
+		{"bad arg count", db.Use(db.Postgres).Select().From("t").Where("a"), db.ErrInvalidArgs},
+		{"unknown dialect", db.Use(db.Dialect(99)).Select().From("t"), db.ErrUnknownDialect},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,7 +209,7 @@ func TestErrors(t *testing.T) {
 }
 
 func TestCloneIndependent(t *testing.T) {
-	base := db.Use(db.Postgres).Table("t").Where("a", 1)
+	base := db.Use(db.Postgres).Select().From("t").Where("a", 1)
 	c := base.Clone().Where("b", 2).Limit(1)
 	bs, _, _ := base.ToSQL()
 	cs, _, _ := c.ToSQL()
@@ -222,20 +222,26 @@ func TestCloneIndependent(t *testing.T) {
 }
 
 func TestToRawSQL(t *testing.T) {
-	q := db.Use(db.Postgres).Table("t").Where("name", "o'brien").Where("n", ">", 3).Where("ok", true)
+	q := db.Use(db.Postgres).Select().From("t").Where("name", "o'brien").Where("n", ">", 3).Where("ok", true)
 	got, err := q.ToRawSQL()
 	require.NoError(t, err)
 	want := `SELECT * FROM "t" WHERE "name" = 'o''brien' AND "n" > 3 AND "ok" = true`
 	assert.Equal(t, want, got)
 
-	m, _ := db.Use(db.MySQL).Table("t").Where("a", 1).Where("b", "x").ToRawSQL()
+	m, _ := db.Use(db.MySQL).Select().From("t").Where("a", 1).Where("b", "x").ToRawSQL()
 	if m != "SELECT * FROM `t` WHERE `a` = 1 AND `b` = 'x'" {
 		t.Errorf("mysql raw: %s", m)
 	}
 }
 
 func TestCloneKeepsUnionLimitAndLock(t *testing.T) {
-	base := db.Use(db.Postgres).Table("a").Union(db.Use(db.Postgres).Table("b")).OrderBy("id").Limit(2).LockForUpdate()
+	base := db.Use(db.Postgres).
+		Select().
+		From("a").
+		Union(db.Use(db.Postgres).Select().From("b")).
+		OrderBy("id").
+		Limit(2).
+		LockForUpdate()
 	c := base.Clone().Limit(9)
 	bs, _, _ := base.ToSQL()
 	cs, _, _ := c.ToSQL()
@@ -251,10 +257,10 @@ func TestCloneKeepsUnionLimitAndLock(t *testing.T) {
 // tables do not reach (raw OR, group by raw, take, tap, limit/offset clamping).
 func TestBuilderWrappers(t *testing.T) {
 	d := db.Postgres
-	tb := func() *db.Builder { return db.Use(d).Table("t") }
+	tb := func() *db.SelectBuilder { return db.Use(d).Select().From("t") }
 	tests := []struct {
 		name  string
-		build *db.Builder
+		build *db.SelectBuilder
 		sql   string
 		args  []any
 	}{
@@ -271,7 +277,7 @@ func TestBuilderWrappers(t *testing.T) {
 			[]any{1, 2, 3},
 		},
 		{"take, and a page number below 1", tb().Take(3).ForPage(0, 5), `SELECT * FROM "t" LIMIT 5 OFFSET 0`, nil},
-		{"tap", tb().Tap(func(q *db.Builder) { q.Where("a", 1) }), `SELECT * FROM "t" WHERE "a" = $1`, []any{1}},
+		{"tap", tb().Tap(func(q *db.SelectBuilder) { q.Where("a", 1) }), `SELECT * FROM "t" WHERE "a" = $1`, []any{1}},
 		{
 			"negative limit ignored, negative offset clamped",
 			tb().Limit(-1).Offset(-5),
@@ -292,7 +298,7 @@ func TestBuilderWrappers(t *testing.T) {
 }
 
 func TestErrAccessorAndRawSQLLiterals(t *testing.T) {
-	b := db.Use(db.Postgres).Table("t").Where("a", "bogus", 1)
+	b := db.Use(db.Postgres).Select().From("t").Where("a", "bogus", 1)
 	if b.Err() == nil {
 		t.Fatal("Err should expose the recorded error")
 	}
@@ -300,7 +306,7 @@ func TestErrAccessorAndRawSQLLiterals(t *testing.T) {
 		t.Error("ToRawSQL should surface the error")
 	}
 	at := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
-	got, err := db.Use(db.SQLite).Table("t").
+	got, err := db.Use(db.SQLite).Select().From("t").
 		Where("a", nil).Where("b", []byte("x'y")).Where("c", at).Where("d", 1.5).Where("e", false).
 		ToRawSQL()
 	require.NoError(t, err)
@@ -309,15 +315,15 @@ func TestErrAccessorAndRawSQLLiterals(t *testing.T) {
 }
 
 func TestToRawSQLKeepsPostgresJSONQuestionMark(t *testing.T) {
-	got, err := db.Use(db.Postgres).Table("t").WhereJsonContainsKey("o->k").Where("a", 1).ToRawSQL()
+	got, err := db.Use(db.Postgres).Select().From("t").WhereJsonContainsKey("o->k").Where("a", 1).ToRawSQL()
 	require.NoError(t, err)
 	want := `SELECT * FROM "t" WHERE COALESCE(("o")::JSONB ? 'k', FALSE) AND "a" = 1`
 	assert.Equal(t, want, got)
 }
 
 func TestMustSQLAndMustRawSQL(t *testing.T) {
-	q := func() *db.Builder {
-		return db.Use(db.Postgres).Table("users").Where("name", "o'brien").Where("age", ">", 30)
+	q := func() *db.SelectBuilder {
+		return db.Use(db.Postgres).Select().From("users").Where("name", "o'brien").Where("age", ">", 30)
 	}
 
 	sql, args := q().MustSQL()
@@ -336,16 +342,19 @@ func TestMustSQLAndMustRawSQL(t *testing.T) {
 		want error
 	}{
 		"MustSQL, invalid operator": {
-			func() { db.Use(db.Postgres).Table("t").Where("a", "bogus", 1).MustSQL() },
+			func() { db.Use(db.Postgres).Select().From("t").Where("a", "bogus", 1).MustSQL() },
 			db.ErrInvalidOperator,
 		},
-		"MustSQL, no table":        {func() { db.Use(db.Postgres).NewQuery().MustSQL() }, db.ErrNoTable},
-		"MustSQL, unknown dialect": {func() { db.Use(db.Dialect(99)).Table("t").MustSQL() }, db.ErrUnknownDialect},
+		"MustSQL, no table": {func() { db.Use(db.Postgres).Select().MustSQL() }, db.ErrNoTable},
+		"MustSQL, unknown dialect": {
+			func() { db.Use(db.Dialect(99)).Select().From("t").MustSQL() },
+			db.ErrUnknownDialect,
+		},
 		"MustRawSQL, invalid operator": {
-			func() { db.Use(db.Postgres).Table("t").Where("a", "bogus", 1).MustRawSQL() },
+			func() { db.Use(db.Postgres).Select().From("t").Where("a", "bogus", 1).MustRawSQL() },
 			db.ErrInvalidOperator,
 		},
-		"MustRawSQL, no table": {func() { db.Use(db.Postgres).NewQuery().MustRawSQL() }, db.ErrNoTable},
+		"MustRawSQL, no table": {func() { db.Use(db.Postgres).Select().MustRawSQL() }, db.ErrNoTable},
 	}
 	for name, tc := range bad {
 		t.Run(name, func(t *testing.T) {

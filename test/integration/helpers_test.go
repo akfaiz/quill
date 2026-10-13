@@ -32,7 +32,7 @@ func names(us []User) []string {
 	return out
 }
 
-func pluckNames(t *testing.T, b *db.Builder) []string {
+func pluckNames(t *testing.T, b *db.SelectBuilder) []string {
 	t.Helper()
 	var out []string
 	require.NoError(t, b.Pluck(ctx, "name", &out))

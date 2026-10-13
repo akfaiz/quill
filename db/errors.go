@@ -28,10 +28,10 @@ var (
 	ErrJoinNeedsOn = errors.New("quill: join requires an ON condition")
 	// ErrNoValues is returned by a write that has no values to write.
 	ErrNoValues = errors.New("quill: no values to write")
-	// ErrNoWhere is returned by Update, Delete and Increment* without a WHERE or LIMIT
+	// ErrNoWhere is returned by UpdateBuilder and DeleteBuilder without a WHERE or LIMIT
 	// unless AllRows was called.
 	ErrNoWhere = errors.New("quill: update/delete without a where clause; call AllRows() to confirm")
 )
 
-// errNilSubquery is recorded when a nil *Builder is passed where a subquery belongs.
+// errNilSubquery is recorded when a nil *SelectBuilder is passed where a subquery belongs.
 var errNilSubquery = fmt.Errorf("%w: nil subquery", ErrInvalidArgs)

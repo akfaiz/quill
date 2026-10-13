@@ -5,26 +5,26 @@ import (
 	"iter"
 )
 
-// Query reads rows of type T from a Builder. Go methods cannot take type
-// parameters, so Builder cannot return []T itself; wrap the finished builder
+// Query reads rows of type T from a SelectBuilder. Go methods cannot take type
+// parameters, so SelectBuilder cannot return []T itself; wrap the finished builder
 // once instead:
 //
-//	users, err := db.As[User](conn.Table("users").Where("active", true)).Get(ctx)
+//	users, err := db.As[User](conn.Select().From("users").Where("active", true)).Get(ctx)
 //
 // T may be a struct (`db:"col"` tags, else snake_case field names), a
 // map[string]any, or a scalar when the query selects a single column.
-type Query[T any] struct{ b *Builder }
+type Query[T any] struct{ b *SelectBuilder }
 
 // As wraps b for typed reads. The builder is not copied: keep chaining on it
 // before calling As, or use Builder to get it back.
 //
 // Example:
 //
-//	q := db.As[string](conn.Table("users").Select("name"))
+//	q := db.As[string](conn.Select().From("users").Select("name"))
 //	names, err := q.Get(ctx)
 //	// SELECT "name" FROM "users"   args: []
 //	// names: [ann bob]
-func As[T any](b *Builder) *Query[T] { return &Query[T]{b: b} }
+func As[T any](b *SelectBuilder) *Query[T] { return &Query[T]{b: b} }
 
 // Builder returns the underlying builder for further chaining.
 //
@@ -32,7 +32,7 @@ func As[T any](b *Builder) *Query[T] { return &Query[T]{b: b} }
 //
 //	sql, args, err := db.From[User](conn).Where("age", ">", 18).Builder().OrderBy("name").ToSQL()
 //	// SELECT * FROM "users" WHERE "age" > $1 ORDER BY "name" ASC   args: [18]
-func (q *Query[T]) Builder() *Builder { return q.b }
+func (q *Query[T]) Builder() *SelectBuilder { return q.b }
 
 // Get returns every matching row.
 //
@@ -131,7 +131,7 @@ func (q *Query[T]) SimplePaginate(ctx context.Context, page, perPage int) (Simpl
 	return SimplePaged[T]{SimplePage: p, Items: items}, err
 }
 
-// CursorPaginate pages forward by keyset; see Builder.CursorPaginate.
+// CursorPaginate pages forward by keyset; see SelectBuilder.CursorPaginate.
 //
 // Example:
 //
@@ -150,7 +150,7 @@ func (q *Query[T]) CursorPaginate(
 }
 
 // Chunk reads size rows at a time and calls fn; return false to stop. The query
-// needs an ORDER BY. See Builder.Chunk.
+// needs an ORDER BY. See SelectBuilder.Chunk.
 //
 // Example:
 //
@@ -207,75 +207,16 @@ func (q *Query[T]) Each(ctx context.Context, fn func(T) error) error {
 //	// SELECT * FROM "users"   args: []
 func (q *Query[T]) Stream(ctx context.Context) iter.Seq2[T, error] { return Stream[T](ctx, q.b) }
 
-// returningBuilder clones the builder and defaults RETURNING to every column.
-func (q *Query[T]) returningBuilder() *Builder {
-	b := q.b.Clone()
-	if len(b.returning) == 0 {
-		b.returning = []string{"*"}
-	}
-	return b
-}
-
-// InsertReturning inserts the structs and returns the rows the database wrote
-// (the Returning(...) columns, default all). PostgreSQL and SQLite only.
-//
-// Example:
-//
-//	rows, err := db.From[User](conn).InsertReturning(ctx, User{Name: "dee", Age: 22})
-//	// INSERT INTO "users" ("age", "name") VALUES ($1, $2) RETURNING *   args: [22 dee]
-//	// rows: [{7 dee 22}]
-func (q *Query[T]) InsertReturning(ctx context.Context, rows ...T) ([]T, error) {
-	maps, err := Rows(rows)
-	if err != nil {
-		return nil, err
-	}
-	var out []T
-	err = q.returningBuilder().InsertReturning(ctx, &out, maps...)
-	return out, err
-}
-
-// UpdateReturning updates the matching rows from the struct's non-omitted
-// columns and returns the updated rows.
-//
-// Example:
-//
-//	q := db.From[User](conn).Where("id", 1)
-//	rows, err := q.UpdateReturning(ctx, User{Name: "ann", Age: 31})
-//	// UPDATE "users" SET "age" = $1, "name" = $2 WHERE "id" = $3 RETURNING *   args: [31 ann 1]
-//	// rows: [{1 ann 31}]
-func (q *Query[T]) UpdateReturning(ctx context.Context, row T) ([]T, error) {
-	m, err := Row(row)
-	if err != nil {
-		return nil, err
-	}
-	var out []T
-	err = q.returningBuilder().UpdateReturning(ctx, &out, m)
-	return out, err
-}
-
-// DeleteReturning deletes the matching rows and returns them.
-//
-// Example:
-//
-//	rows, err := db.From[User](conn).Where("id", 2).DeleteReturning(ctx)
-//	// DELETE FROM "users" WHERE "id" = $1 RETURNING *   args: [2]
-//	// rows: [{2 bob 25}]
-func (q *Query[T]) DeleteReturning(ctx context.Context) ([]T, error) {
-	var out []T
-	err := q.returningBuilder().DeleteReturning(ctx, &out)
-	return out, err
-}
-
 // ---- generic scalar helpers ----
 
 // ValueAs returns one column of the first row as V (the zero value for NULL), or ErrNotFound.
 //
 // Example:
 //
-//	name, err := db.ValueAs[string](ctx, conn.Table("users").Where("id", 1), "name")
+//	name, err := db.ValueAs[string](ctx, conn.Select().From("users").Where("id", 1), "name")
 //	// SELECT "name" FROM "users" WHERE "id" = $1 LIMIT 1   args: [1]
 //	// name: ann
-func ValueAs[V any](ctx context.Context, b *Builder, column string) (V, error) {
+func ValueAs[V any](ctx context.Context, b *SelectBuilder, column string) (V, error) {
 	var v V
 	err := b.Value(ctx, column, &v)
 	return v, err
@@ -285,47 +226,102 @@ func ValueAs[V any](ctx context.Context, b *Builder, column string) (V, error) {
 //
 // Example:
 //
-//	ids, err := db.PluckAs[int64](ctx, conn.Table("users").OrderBy("id"), "id")
+//	ids, err := db.PluckAs[int64](ctx, conn.Select().From("users").OrderBy("id"), "id")
 //	// SELECT "id" FROM "users" ORDER BY "id" ASC   args: []
 //	// ids: [1 2]
-func PluckAs[V any](ctx context.Context, b *Builder, column string) ([]V, error) {
+func PluckAs[V any](ctx context.Context, b *SelectBuilder, column string) ([]V, error) {
 	var out []V
 	err := b.Pluck(ctx, column, &out)
 	return out, err
 }
 
-// AggregateAs runs fn(column) and returns it as V. It is the typed form of
-// Aggregate: MinAs/MaxAs on a timestamp column return time.Time, for example.
+// Apply runs fn on the underlying builder, for any SelectBuilder method this type does not mirror.
 //
 // Example:
 //
-//	avg, err := db.AggregateAs[float64](ctx, conn.Table("orders"), "avg", "total")
-//	// SELECT AVG("total") AS "aggregate" FROM "orders"   args: []
-//	// avg: 3.5
-func AggregateAs[V any](ctx context.Context, b *Builder, fn, column string) (V, error) {
-	var v V
-	err := b.Aggregate(ctx, fn, column, &v)
-	return v, err
+//	db.From[User](conn).Apply(func(b *db.SelectBuilder) { b.WhereDate("created_at", day) })
+//	// SELECT * FROM "users" WHERE "created_at"::DATE = $1   args: [2026-01-02]
+func (q *Query[T]) Apply(fn func(*SelectBuilder)) *Query[T] {
+	fn(q.b)
+	return q
 }
 
-// MinAs returns min(column) as V.
+// When runs fn when cond is true.
 //
 // Example:
 //
-//	t, err := db.MinAs[time.Time](ctx, conn.Table("users"), "created_at")
-//	// SELECT MIN("created_at") AS "aggregate" FROM "users"   args: []
-//	// t: 2026-01-02 03:04:05 UTC
-func MinAs[V any](ctx context.Context, b *Builder, column string) (V, error) {
-	return AggregateAs[V](ctx, b, "min", column)
+//	db.From[User](conn).When(onlyAdults, func(q *db.Query[User]) { q.Where("age", ">=", 18) })
+//	// onlyAdults == true: SELECT * FROM "users" WHERE "age" >= $1   args: [18]
+func (q *Query[T]) When(cond bool, fn func(*Query[T])) *Query[T] {
+	if cond {
+		fn(q)
+	}
+	return q
 }
 
-// MaxAs returns max(column) as V.
+// Unless runs fn when cond is false.
 //
 // Example:
 //
-//	oldest, err := db.MaxAs[int](ctx, conn.Table("users"), "age")
-//	// SELECT MAX("age") AS "aggregate" FROM "users"   args: []
-//	// oldest: 41
-func MaxAs[V any](ctx context.Context, b *Builder, column string) (V, error) {
-	return AggregateAs[V](ctx, b, "max", column)
+//	db.From[User](conn).Unless(includeMinors, func(q *db.Query[User]) { q.Where("age", ">=", 18) })
+//	// includeMinors == false: SELECT * FROM "users" WHERE "age" >= $1   args: [18]
+func (q *Query[T]) Unless(cond bool, fn func(*Query[T])) *Query[T] { return q.When(!cond, fn) }
+
+// Clone returns an independent copy of the query.
+//
+// Example:
+//
+//	base := db.From[User](conn).Where("age", ">=", 18)
+//	refined := base.Clone().OrderBy("name")
+//	// refined: SELECT * FROM "users" WHERE "age" >= $1 ORDER BY "name" ASC   args: [18]
+//	// base is unchanged: SELECT * FROM "users" WHERE "age" >= $1   args: [18]
+func (q *Query[T]) Clone() *Query[T] { return &Query[T]{b: q.b.Clone()} }
+
+// Count returns the number of matching rows.
+//
+// Example:
+//
+//	n, err := db.From[User](conn).Where("age", ">", 18).Count(ctx)
+//	// SELECT COUNT(*) AS "aggregate" FROM "users" WHERE "age" > $1   args: [18]
+//	// n: 3
+func (q *Query[T]) Count(ctx context.Context) (int64, error) { return q.b.Count(ctx) }
+
+// Exists reports whether any row matches.
+//
+// Example:
+//
+//	ok, err := db.From[User](conn).Where("name", "ann").Exists(ctx)
+//	// SELECT EXISTS(SELECT * FROM "users" WHERE "name" = $1) AS "exists"   args: [ann]
+//	// ok: true
+func (q *Query[T]) Exists(ctx context.Context) (bool, error) { return q.b.Exists(ctx) }
+
+// DoesntExist reports whether no row matches.
+//
+// Example:
+//
+//	none, err := db.From[User](conn).Where("name", "ann").DoesntExist(ctx)
+//	// SELECT EXISTS(SELECT * FROM "users" WHERE "name" = $1) AS "exists"   args: [ann]
+//	// none: false when a matching row exists
+func (q *Query[T]) DoesntExist(ctx context.Context) (bool, error) { return q.b.DoesntExist(ctx) }
+
+// Sum returns sum(column) as float64 (0 when there are no rows).
+//
+// Example:
+//
+//	total, err := db.From[User](conn).Sum(ctx, "age")
+//	// SELECT SUM("age") AS "aggregate" FROM "users"   args: []
+//	// total: 86
+func (q *Query[T]) Sum(ctx context.Context, column string) (float64, error) {
+	return q.b.Sum(ctx, column)
+}
+
+// Avg returns avg(column) as float64 (0 when there are no rows).
+//
+// Example:
+//
+//	avg, err := db.From[User](conn).Avg(ctx, "age")
+//	// SELECT AVG("age") AS "aggregate" FROM "users"   args: []
+//	// avg: 28.7
+func (q *Query[T]) Avg(ctx context.Context, column string) (float64, error) {
+	return q.b.Avg(ctx, column)
 }

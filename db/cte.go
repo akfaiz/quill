@@ -10,7 +10,7 @@ import (
 type cteClause struct {
 	name      string
 	cols      []string
-	q         *Builder
+	q         *query
 	raw       *Expression
 	recursive bool
 	mat       int8 // 0 default, 1 materialized, -1 not materialized
@@ -22,12 +22,12 @@ type cteClause struct {
 //
 // Example:
 //
-//	active := conn.Table("users").Where("active", true)
-//	conn.Table("active_users").With("active_users", active)
+//	active := conn.Select().From("users").Where("active", true)
+//	conn.Select().From("active_users").With("active_users", active)
 //	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
 //	//     "active_users"
 //	// args: [true]
-func (b *Builder) With(name string, q *Builder, cols ...string) *Builder {
+func (b *query) With(name string, q *query, cols ...string) *query {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols})
 }
 
@@ -37,13 +37,13 @@ func (b *Builder) With(name string, q *Builder, cols ...string) *Builder {
 //
 // Example:
 //
-//	anchor := conn.Table("categories").Where("parent_id", nil)
-//	member := conn.Table("categories as c").Join("tree as t", "c.parent_id", "t.id")
-//	conn.Table("tree").WithRecursive("tree", anchor.UnionAll(member))
+//	anchor := conn.Select().From("categories").Where("parent_id", nil)
+//	member := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Select().From("tree").WithRecursive("tree", anchor.UnionAll(member))
 //	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
 //	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
 //	//     "t"."id") SELECT * FROM "tree"
-func (b *Builder) WithRecursive(name string, q *Builder, cols ...string) *Builder {
+func (b *query) WithRecursive(name string, q *query, cols ...string) *query {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols, recursive: true})
 }
 
@@ -52,10 +52,10 @@ func (b *Builder) WithRecursive(name string, q *Builder, cols ...string) *Builde
 //
 // Example:
 //
-//	conn.Table("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), "id")
+//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), "id")
 //	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
 //	// args: [1 2]
-func (b *Builder) WithRaw(name string, e Expression, cols ...string) *Builder {
+func (b *query) WithRaw(name string, e Expression, cols ...string) *query {
 	return b.addCTE(cteClause{name: name, raw: &e, cols: cols})
 }
 
@@ -64,13 +64,13 @@ func (b *Builder) WithRaw(name string, e Expression, cols ...string) *Builder {
 //
 // Example:
 //
-//	recent := conn.Table("orders").Where("total", ">", 100)
-//	conn.Table("recent").WithMaterialized("recent", recent)
+//	recent := conn.Select().From("orders").Where("total", ">", 100)
+//	conn.Select().From("recent").WithMaterialized("recent", recent)
 //	// WITH "recent" AS MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
 //	//     "recent"
 //	// args: [100]
 //	// MySQL, SQLite and MariaDB return ErrUnsupported
-func (b *Builder) WithMaterialized(name string, q *Builder, cols ...string) *Builder {
+func (b *query) WithMaterialized(name string, q *query, cols ...string) *query {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols, mat: 1})
 }
 
@@ -79,17 +79,17 @@ func (b *Builder) WithMaterialized(name string, q *Builder, cols ...string) *Bui
 //
 // Example:
 //
-//	recent := conn.Table("orders").Where("total", ">", 100)
-//	conn.Table("recent").WithNotMaterialized("recent", recent)
+//	recent := conn.Select().From("orders").Where("total", ">", 100)
+//	conn.Select().From("recent").WithNotMaterialized("recent", recent)
 //	// WITH "recent" AS NOT MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
 //	//     "recent"
 //	// args: [100]
 //	// MySQL, SQLite and MariaDB return ErrUnsupported
-func (b *Builder) WithNotMaterialized(name string, q *Builder, cols ...string) *Builder {
+func (b *query) WithNotMaterialized(name string, q *query, cols ...string) *query {
 	return b.addCTE(cteClause{name: name, q: q, cols: cols, mat: -1})
 }
 
-func (b *Builder) addCTE(cte cteClause) *Builder {
+func (b *query) addCTE(cte cteClause) *query {
 	if cte.name == "" || strings.Contains(cte.name, ".") || aliasRe.MatchString(cte.name) {
 		return b.fail(fmt.Errorf("%w: invalid CTE name %q", ErrInvalidArgs, cte.name))
 	}
@@ -128,7 +128,7 @@ func cloneCTEs(cs []cteClause) []cteClause {
 }
 
 // with writes the "with [recursive] ..." prefix of a select, if any.
-func (c *compiler) with(b *Builder) error {
+func (c *compiler) with(b *query) error {
 	if len(b.ctes) == 0 {
 		return nil
 	}

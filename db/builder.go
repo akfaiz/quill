@@ -56,7 +56,7 @@ type clause struct {
 type clauseExt struct {
 	columns []string
 	nested  []clause
-	sub     *Builder
+	sub     *query
 	raw     Expression
 	part    string // date part for clauseDate
 }
@@ -99,7 +99,7 @@ func (k connKind) String() string {
 func (k connKind) negated() bool { return k == connAndNot || k == connOrNot }
 
 // Nil-safe views of the extension fields.
-func (c *clause) subquery() *Builder {
+func (c *clause) subquery() *query {
 	if c.x == nil {
 		return nil
 	}
@@ -137,12 +137,12 @@ func (c *clause) datePart() string {
 type selectItem struct {
 	column string
 	raw    *Expression
-	sub    *Builder // select-list subquery; alias is its column alias
+	sub    *query // select-list subquery; alias is its column alias
 	alias  string
 }
 
 type unionClause struct {
-	q   *Builder
+	q   *query
 	all bool
 }
 
@@ -157,16 +157,16 @@ type orderItem struct {
 	raw    *Expression
 }
 
-// Builder is a mutable, fluent SQL query builder. Not safe for concurrent use;
-// call Clone to branch a query.
-type Builder struct {
-	db      *DB // set by DB.Table; nil for build-only builders
+// query holds the clause state shared by the statement builders (SelectBuilder,
+// UpdateBuilder, DeleteBuilder). Not safe for concurrent use.
+type query struct {
+	db      *DB // set by DB.Select and friends; nil for build-only builders
 	dialect Dialect
 	prefix  string
 	err     error
 
 	table     string
-	fromSub   *Builder
+	fromSub   *query
 	fromAlias string
 	fromRaw   *Expression
 	columns   []selectItem
@@ -194,22 +194,7 @@ type Builder struct {
 	hint    *indexHint
 }
 
-// NewBuilder returns a builder that compiles for the given dialect.
-//
-// Example:
-//
-//	db.NewBuilder(db.Postgres).From("users").Where("id", 42)
-//	// SELECT * FROM "users" WHERE "id" = $1
-//	// args: [42]
-func NewBuilder(d Dialect) *Builder {
-	b := &Builder{dialect: d}
-	if _, err := d.grammar(); err != nil {
-		b.err = err
-	}
-	return b
-}
-
-func (b *Builder) fail(err error) *Builder {
+func (b *query) fail(err error) *query {
 	if b.err == nil {
 		b.err = err
 	}
@@ -220,31 +205,31 @@ func (b *Builder) fail(err error) *Builder {
 //
 // Example:
 //
-//	q := conn.Table("users").Where("id", "!!", 1)
+//	q := conn.Select().From("users").Where("id", "!!", 1)
 //	err := q.Err()
 //	// err: quill: invalid operator: "!!"
-func (b *Builder) Err() error { return b.err }
+func (b *query) Err() error { return b.err }
 
 // Prefix sets a table prefix applied to table names, aliases and qualified columns.
 //
 // Example:
 //
-//	db.NewBuilder(db.Postgres).Prefix("app_").From("users as u").Select("u.id")
+//	db.Use(db.Postgres).Select("u.id").From("users as u").Prefix("app_")
 //	// SELECT "app_u"."id" FROM "app_users" AS "app_u"
-func (b *Builder) Prefix(p string) *Builder { b.prefix = p; return b }
+func (b *query) Prefix(p string) *query { b.prefix = p; return b }
 
 // Clone returns an independent copy.
 //
 // Example:
 //
-//	base := conn.Table("users").Where("active", true)
+//	base := conn.Select().From("users").Where("active", true)
 //	admins := base.Clone().Where("role", "admin")
 //	// base:   SELECT * FROM "users" WHERE "active" = $1
 //	// admins: SELECT * FROM "users" WHERE "active" = $1 AND "role" = $2
 //	// args: [true admin] (admins)
 //
-// Cloning a nil *Builder returns nil.
-func (b *Builder) Clone() *Builder {
+// Cloning a nil builder returns nil.
+func (b *query) Clone() *query {
 	if b == nil {
 		return nil
 	}
@@ -313,9 +298,9 @@ func cloneClauses(cs []clause) []clause {
 //
 // Example:
 //
-//	db.NewBuilder(db.Postgres).From("public.users as u")
+//	db.Use(db.Postgres).Select().From("public.users as u")
 //	// SELECT * FROM "public"."users" AS "u"
-func (b *Builder) From(table string) *Builder {
+func (b *query) From(table string) *query {
 	b.table, b.fromSub, b.fromRaw = table, nil, nil
 	return b
 }
@@ -324,9 +309,9 @@ func (b *Builder) From(table string) *Builder {
 //
 // Example:
 //
-//	conn.Table("users as u").Select("u.id", "u.name as full_name")
+//	conn.Select().From("users as u").Select("u.id", "u.name as full_name")
 //	// SELECT "u"."id", "u"."name" AS "full_name" FROM "users" AS "u"
-func (b *Builder) Select(columns ...string) *Builder {
+func (b *query) Select(columns ...string) *query {
 	b.columns = nil
 	return b.AddSelect(columns...)
 }
@@ -335,9 +320,9 @@ func (b *Builder) Select(columns ...string) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Select("id").AddSelect("name", "age")
+//	conn.Select().From("users").Select("id").AddSelect("name", "age")
 //	// SELECT "id", "name", "age" FROM "users"
-func (b *Builder) AddSelect(columns ...string) *Builder {
+func (b *query) AddSelect(columns ...string) *query {
 	b.columns = slices.Grow(b.columns, len(columns))
 	for _, c := range columns {
 		b.columns = append(b.columns, selectItem{column: c})
@@ -349,11 +334,11 @@ func (b *Builder) AddSelect(columns ...string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").
+//	conn.Select().From("orders").Select("user_id").
 //		SelectRaw("sum(amount) * ? as total", 1.1).GroupBy("user_id")
 //	// SELECT "user_id", sum(amount) * $1 as total FROM "orders" GROUP BY "user_id"
 //	// args: [1.1]
-func (b *Builder) SelectRaw(sql string, args ...any) *Builder {
+func (b *query) SelectRaw(sql string, args ...any) *query {
 	e := Raw(sql, args...)
 	b.columns = append(b.columns, selectItem{raw: &e})
 	return b
@@ -363,19 +348,19 @@ func (b *Builder) SelectRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("posts").Distinct().Select("user_id")
+//	conn.Select().From("posts").Distinct().Select("user_id")
 //	// SELECT DISTINCT "user_id" FROM "posts"
-func (b *Builder) Distinct() *Builder { b.distinct = true; return b }
+func (b *query) Distinct() *query { b.distinct = true; return b }
 
 // Where adds an AND predicate. Forms: Where(col, value) means "=";
 // Where(col, op, value). A nil value with "=" / "!=" / "<>" becomes IS [NOT] NULL.
 //
 // Example:
 //
-//	conn.Table("users").Where("active", true).Where("age", ">=", 18)
+//	conn.Select().From("users").Where("active", true).Where("age", ">=", 18)
 //	// SELECT * FROM "users" WHERE "active" = $1 AND "age" >= $2
 //	// args: [true 18]
-func (b *Builder) Where(column string, args ...any) *Builder {
+func (b *query) Where(column string, args ...any) *query {
 	return b.addClause(&b.wheres, "and", column, args)
 }
 
@@ -383,10 +368,10 @@ func (b *Builder) Where(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Where("role", "admin").OrWhere("role", "owner")
+//	conn.Select().From("users").Where("role", "admin").OrWhere("role", "owner")
 //	// SELECT * FROM "users" WHERE "role" = $1 OR "role" = $2
 //	// args: [admin owner]
-func (b *Builder) OrWhere(column string, args ...any) *Builder {
+func (b *query) OrWhere(column string, args ...any) *query {
 	return b.addClause(&b.wheres, "or", column, args)
 }
 
@@ -394,10 +379,10 @@ func (b *Builder) OrWhere(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").WhereRaw("lower(name) = ?", "ann")
+//	conn.Select().From("users").WhereRaw("lower(name) = ?", "ann")
 //	// SELECT * FROM "users" WHERE lower(name) = $1
 //	// args: [ann]
-func (b *Builder) WhereRaw(sql string, args ...any) *Builder {
+func (b *query) WhereRaw(sql string, args ...any) *query {
 	b.wheres = append(b.wheres, clause{kind: clauseRaw, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
@@ -406,10 +391,10 @@ func (b *Builder) WhereRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Where("active", true).OrWhereRaw("age between ? and ?", 18, 30)
+//	conn.Select().From("users").Where("active", true).OrWhereRaw("age between ? and ?", 18, 30)
 //	// SELECT * FROM "users" WHERE "active" = $1 OR age between $2 and $3
 //	// args: [true 18 30]
-func (b *Builder) OrWhereRaw(sql string, args ...any) *Builder {
+func (b *query) OrWhereRaw(sql string, args ...any) *query {
 	b.wheres = append(b.wheres, clause{kind: clauseRaw, conn: connOr, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
@@ -418,9 +403,9 @@ func (b *Builder) OrWhereRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id", "status").GroupBy("user_id", "status")
+//	conn.Select().From("orders").Select("user_id", "status").GroupBy("user_id", "status")
 //	// SELECT "user_id", "status" FROM "orders" GROUP BY "user_id", "status"
-func (b *Builder) GroupBy(columns ...string) *Builder {
+func (b *query) GroupBy(columns ...string) *query {
 	b.groups = slices.Grow(b.groups, len(columns))
 	for _, c := range columns {
 		b.groups = append(b.groups, selectItem{column: c})
@@ -432,11 +417,11 @@ func (b *Builder) GroupBy(columns ...string) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").SelectRaw("date_trunc('day', created_at) as day").
+//	conn.Select().From("orders").SelectRaw("date_trunc('day', created_at) as day").
 //		GroupByRaw("date_trunc('day', created_at)")
 //	// SELECT date_trunc('day', created_at) as day FROM "orders" GROUP BY date_trunc('day',
 //	//     created_at)
-func (b *Builder) GroupByRaw(sql string, args ...any) *Builder {
+func (b *query) GroupByRaw(sql string, args ...any) *query {
 	e := Raw(sql, args...)
 	b.groups = append(b.groups, selectItem{raw: &e})
 	return b
@@ -446,11 +431,11 @@ func (b *Builder) GroupByRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").GroupBy("user_id").
 //		Having("user_id", ">", 10)
 //	// SELECT "user_id" FROM "orders" GROUP BY "user_id" HAVING "user_id" > $1
 //	// args: [10]
-func (b *Builder) Having(column string, args ...any) *Builder {
+func (b *query) Having(column string, args ...any) *query {
 	return b.addClause(&b.havings, "and", column, args)
 }
 
@@ -458,11 +443,11 @@ func (b *Builder) Having(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").GroupBy("user_id").
 //		Having("user_id", ">", 10).OrHaving("user_id", 1)
 //	// SELECT "user_id" FROM "orders" GROUP BY "user_id" HAVING "user_id" > $1 OR "user_id" = $2
 //	// args: [10 1]
-func (b *Builder) OrHaving(column string, args ...any) *Builder {
+func (b *query) OrHaving(column string, args ...any) *query {
 	return b.addClause(&b.havings, "or", column, args)
 }
 
@@ -470,11 +455,11 @@ func (b *Builder) OrHaving(column string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").GroupBy("user_id").
 //		HavingRaw("sum(amount) > ?", 100)
 //	// SELECT "user_id" FROM "orders" GROUP BY "user_id" HAVING sum(amount) > $1
 //	// args: [100]
-func (b *Builder) HavingRaw(sql string, args ...any) *Builder {
+func (b *query) HavingRaw(sql string, args ...any) *query {
 	b.havings = append(b.havings, clause{kind: clauseRaw, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
@@ -483,11 +468,11 @@ func (b *Builder) HavingRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("orders").Select("user_id").GroupBy("user_id").
+//	conn.Select().From("orders").Select("user_id").GroupBy("user_id").
 //		HavingRaw("sum(amount) > ?", 100).OrHavingRaw("count(*) > ?", 5)
 //	// SELECT "user_id" FROM "orders" GROUP BY "user_id" HAVING sum(amount) > $1 OR count(*) > $2
 //	// args: [100 5]
-func (b *Builder) OrHavingRaw(sql string, args ...any) *Builder {
+func (b *query) OrHavingRaw(sql string, args ...any) *query {
 	b.havings = append(b.havings, clause{kind: clauseRaw, conn: connOr, x: &clauseExt{raw: Raw(sql, args...)}})
 	return b
 }
@@ -496,9 +481,9 @@ func (b *Builder) OrHavingRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").OrderBy("name").OrderBy("age", "desc")
+//	conn.Select().From("users").OrderBy("name").OrderBy("age", "desc")
 //	// SELECT * FROM "users" ORDER BY "name" ASC, "age" DESC
-func (b *Builder) OrderBy(column string, direction ...string) *Builder {
+func (b *query) OrderBy(column string, direction ...string) *query {
 	dir := "ASC"
 	if len(direction) > 0 {
 		dir = strings.ToUpper(direction[0])
@@ -514,18 +499,18 @@ func (b *Builder) OrderBy(column string, direction ...string) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").OrderByDesc("created_at")
+//	conn.Select().From("users").OrderByDesc("created_at")
 //	// SELECT * FROM "users" ORDER BY "created_at" DESC
-func (b *Builder) OrderByDesc(column string) *Builder { return b.OrderBy(column, "desc") }
+func (b *query) OrderByDesc(column string) *query { return b.OrderBy(column, "desc") }
 
 // OrderByRaw adds a raw ORDER BY expression (caller-trusted SQL).
 //
 // Example:
 //
-//	conn.Table("users").OrderByRaw("case when role = ? then 0 else 1 end", "admin")
+//	conn.Select().From("users").OrderByRaw("case when role = ? then 0 else 1 end", "admin")
 //	// SELECT * FROM "users" ORDER BY case when role = $1 then 0 else 1 end
 //	// args: [admin]
-func (b *Builder) OrderByRaw(sql string, args ...any) *Builder {
+func (b *query) OrderByRaw(sql string, args ...any) *query {
 	e := Raw(sql, args...)
 	b.addOrder(orderItem{raw: &e})
 	return b
@@ -535,9 +520,9 @@ func (b *Builder) OrderByRaw(sql string, args ...any) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Limit(10)
+//	conn.Select().From("users").Limit(10)
 //	// SELECT * FROM "users" LIMIT 10
-func (b *Builder) Limit(n int) *Builder {
+func (b *query) Limit(n int) *query {
 	if n >= 0 {
 		if len(b.unions) > 0 {
 			b.unionLimit = &n
@@ -549,7 +534,7 @@ func (b *Builder) Limit(n int) *Builder {
 }
 
 // addOrder appends to the union's ORDER BY once a union exists.
-func (b *Builder) addOrder(o orderItem) {
+func (b *query) addOrder(o orderItem) {
 	if len(b.unions) > 0 {
 		b.unionOrders = append(b.unionOrders, o)
 		return
@@ -561,17 +546,17 @@ func (b *Builder) addOrder(o orderItem) {
 //
 // Example:
 //
-//	conn.Table("users").Take(5)
+//	conn.Select().From("users").Take(5)
 //	// SELECT * FROM "users" LIMIT 5
-func (b *Builder) Take(n int) *Builder { return b.Limit(n) }
+func (b *query) Take(n int) *query { return b.Limit(n) }
 
 // Offset sets OFFSET; negative values clamp to 0.
 //
 // Example:
 //
-//	conn.Table("users").Limit(10).Offset(20)
+//	conn.Select().From("users").Limit(10).Offset(20)
 //	// SELECT * FROM "users" LIMIT 10 OFFSET 20
-func (b *Builder) Offset(n int) *Builder {
+func (b *query) Offset(n int) *query {
 	if n < 0 {
 		n = 0
 	}
@@ -587,57 +572,22 @@ func (b *Builder) Offset(n int) *Builder {
 //
 // Example:
 //
-//	conn.Table("users").Take(10).Skip(5)
+//	conn.Select().From("users").Take(10).Skip(5)
 //	// SELECT * FROM "users" LIMIT 10 OFFSET 5
-func (b *Builder) Skip(n int) *Builder { return b.Offset(n) }
+func (b *query) Skip(n int) *query { return b.Offset(n) }
 
 // ForPage sets offset/limit for a 1-based page.
 //
 // Example:
 //
-//	conn.Table("users").OrderBy("id").ForPage(3, 25) // page 3, 25 rows per page
+//	conn.Select().From("users").OrderBy("id").ForPage(3, 25) // page 3, 25 rows per page
 //	// SELECT * FROM "users" ORDER BY "id" ASC LIMIT 25 OFFSET 50
-func (b *Builder) ForPage(page, perPage int) *Builder {
+func (b *query) ForPage(page, perPage int) *query {
 	if page < 1 {
 		page = 1
 	}
 	return b.Offset((page - 1) * perPage).Limit(perPage)
 }
-
-// When applies fn when cond is true.
-//
-// Example:
-//
-//	conn.Table("posts").When(status != "", func(q *db.Builder) {
-//		q.Where("status", status)
-//	}) // status = "published"
-//	// SELECT * FROM "posts" WHERE "status" = $1
-//	// args: [published]
-func (b *Builder) When(cond bool, fn func(*Builder)) *Builder {
-	if cond {
-		fn(b)
-	}
-	return b
-}
-
-// Unless applies fn when cond is false.
-//
-// Example:
-//
-//	conn.Table("posts").Unless(includeDeleted, func(q *db.Builder) {
-//		q.WhereNull("deleted_at")
-//	}) // includeDeleted = false
-//	// SELECT * FROM "posts" WHERE "deleted_at" IS NULL
-func (b *Builder) Unless(cond bool, fn func(*Builder)) *Builder { return b.When(!cond, fn) }
-
-// Tap runs fn for side effects and returns the builder.
-//
-// Example:
-//
-//	conn.Table("users").Tap(func(q *db.Builder) { q.Where("active", true).Limit(1) })
-//	// SELECT * FROM "users" WHERE "active" = $1 LIMIT 1
-//	// args: [true]
-func (b *Builder) Tap(fn func(*Builder)) *Builder { fn(b); return b }
 
 // operators maps each allowed operator, lowercased, to the SQL written for it.
 var operators = map[string]string{
@@ -678,7 +628,7 @@ func parseOpValue(column string, args []any) (op string, val any, err error) {
 	return "", nil, fmt.Errorf("%w: %q takes (value) or (operator, value)", ErrInvalidArgs, column)
 }
 
-func (b *Builder) addClause(dst *[]clause, boolean, column string, args []any) *Builder {
+func (b *query) addClause(dst *[]clause, boolean, column string, args []any) *query {
 	op, val, err := parseOpValue(column, args)
 	if err != nil {
 		return b.fail(err)
@@ -696,24 +646,19 @@ func (b *Builder) addClause(dst *[]clause, boolean, column string, args []any) *
 	return b.push(dst, boolean, clause{kind: clauseBasic, column: column, op: op, value: val})
 }
 
-// NewQuery returns an empty builder sharing this builder's dialect and prefix.
-//
-// Example:
-//
-//	sub := conn.Table("users").NewQuery().From("posts").Select("user_id")
-//	// SELECT "user_id" FROM "posts"
-func (b *Builder) NewQuery() *Builder {
-	return &Builder{dialect: b.dialect, prefix: b.prefix, err: b.err}
+// fresh returns an empty query sharing this one's dialect, prefix and error.
+func (b *query) fresh() *query {
+	return &query{dialect: b.dialect, prefix: b.prefix, err: b.err}
 }
 
 // ToSQL compiles a SELECT into SQL text and its ordered bind arguments.
 //
 // Example:
 //
-//	sql, args, err := conn.Table("users").Where("age", ">", 18).Limit(10).ToSQL()
+//	sql, args, err := conn.Select().From("users").Where("age", ">", 18).Limit(10).ToSQL()
 //	// SELECT * FROM "users" WHERE "age" > $1 LIMIT 10
 //	// args: [18]
-func (b *Builder) ToSQL() (string, []any, error) {
+func (b *query) ToSQL() (string, []any, error) {
 	c, err := b.newCompiler()
 	if err != nil {
 		return "", nil, err
@@ -729,7 +674,7 @@ func (b *Builder) ToSQL() (string, []any, error) {
 }
 
 // newCompiler returns a compiler for this builder's dialect, or the first build error.
-func (b *Builder) newCompiler() (*compiler, error) {
+func (b *query) newCompiler() (*compiler, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -748,10 +693,10 @@ func (b *Builder) newCompiler() (*compiler, error) {
 //
 // Example:
 //
-//	sql, args := conn.Table("users").Where("id", 42).MustSQL()
+//	sql, args := conn.Select().From("users").Where("id", 42).MustSQL()
 //	// SELECT * FROM "users" WHERE "id" = $1
 //	// args: [42]
-func (b *Builder) MustSQL() (string, []any) {
+func (b *query) MustSQL() (string, []any) {
 	sql, args, err := b.ToSQL()
 	if err != nil {
 		panic(fmt.Errorf("quill: MustSQL: %w", err))
@@ -764,10 +709,10 @@ func (b *Builder) MustSQL() (string, []any) {
 //
 // Example:
 //
-//	sql := conn.Table("users").Where("id", 42).Where("name", "ann").MustRawSQL()
+//	sql := conn.Select().From("users").Where("id", 42).Where("name", "ann").MustRawSQL()
 //	// sql: SELECT * FROM "users" WHERE "id" = 42 AND "name" = 'ann'
 //	// DEBUG ONLY: not injection-safe
-func (b *Builder) MustRawSQL() string {
+func (b *query) MustRawSQL() string {
 	sql, err := b.ToRawSQL()
 	if err != nil {
 		panic(fmt.Errorf("quill: MustRawSQL: %w", err))
@@ -780,10 +725,10 @@ func (b *Builder) MustRawSQL() string {
 //
 // Example:
 //
-//	sql, err := conn.Table("users").Where("id", 42).Where("name", "ann").ToRawSQL()
+//	sql, err := conn.Select().From("users").Where("id", 42).Where("name", "ann").ToRawSQL()
 //	// sql: SELECT * FROM "users" WHERE "id" = 42 AND "name" = 'ann'
 //	// DEBUG ONLY: not injection-safe
-func (b *Builder) ToRawSQL() (string, error) {
+func (b *query) ToRawSQL() (string, error) {
 	sql, args, err := b.ToSQL()
 	if err != nil {
 		return "", err

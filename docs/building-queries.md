@@ -12,28 +12,30 @@ noted. `ToSQL()` returns `(sql string, args []any, err error)`.
 ## Select
 
 ```go
-q := conn.Table("users").Select("id", "name as n", "u.email")   // SELECT "id", "name" AS "n", "u"."email" ...
+q := conn.Select("id", "name as n", "u.email").From("users")    // SELECT "id", "name" AS "n", "u"."email" ...
 q.AddSelect("age")                                              // append
 q.Distinct()                                                    // SELECT DISTINCT
 q.SelectRaw("count(*) filter (where active) as active_count")   // raw expression
-q.SelectSub(conn.Table("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id"), "post_count")
+q.SelectSub(conn.Select().From("posts").SelectRaw("count(*)").WhereColumn("posts.user_id", "users.id"), "post_count")
 ```
 
-With no columns, `*` is selected. `Select` replaces the list; `AddSelect`, `SelectRaw` and
-`SelectSub` append.
+With no columns, `*` is selected. `conn.Select(cols...)` and the builder's `Select` replace the list;
+`AddSelect`, `SelectRaw` and `SelectSub` append.
 
 ## From
 
 ```go
-conn.Table("users")                    // FROM "users"
-conn.Table("users as u")               // FROM "users" AS "u"
-conn.Table("app.users")                // FROM "app"."users"
-conn.NewQuery().FromSub(sub, "t")      // FROM (SELECT ...) AS "t"
-conn.NewQuery().FromRaw("generate_series(?, ?) g", 1, 3)
+conn.Select().From("users")                    // FROM "users"
+conn.Select().From("users as u")               // FROM "users" AS "u"
+conn.Select().From("app.users")                // FROM "app"."users"
+conn.Select().FromSub(sub, "t")        // FROM (SELECT ...) AS "t"
+conn.Select().FromRaw("generate_series(?, ?) g", 1, 3)
 ```
 
-`NewQuery()` gives a builder with no table yet, for `FromSub` and `FromRaw`.
-`Prefix("p_")` on a builder applies a table prefix (or set it once with `db.WithPrefix`).
+`conn.Select()` gives a select builder with no table yet: name one with `From`, `FromSub` or
+`FromRaw`. `Prefix("p_")` on a builder applies a table prefix (or set it once with `db.WithPrefix`).
+The `Where*`, `Join*`, `OrderBy*` and `Limit` families also exist on `conn.Update(...)` and
+`conn.Delete(...)` (grouping, `Offset`, unions, locks and CTEs do not); see [Writing data](writing-data.md).
 
 ## Where
 
@@ -61,9 +63,9 @@ Allowed operators: `=` `<` `>` `<=` `>=` `<>` `!=` `<=>` `like` `not like` `ilik
 ### Grouping
 
 ```go
-conn.Table("users").
+conn.Select().From("users").
     Where("active", true).
-    WhereGroup(func(q *db.Builder) {
+    WhereGroup(func(q *db.WhereClause) {
         q.Where("role", "admin").OrWhereNull("deleted_at")
     })
 // WHERE "active" = $1 AND ("role" = $2 OR "deleted_at" IS NULL)
@@ -71,13 +73,15 @@ conn.Table("users").
 WhereMap(map[string]any{"b": 2, "a": 1})   // WHERE ("a" = $1 AND "b" = $2)  (keys sorted)
 ```
 
-`OrWhereGroup` joins with `or`. An empty group is skipped.
+`OrWhereGroup` joins with `or`. An empty group is skipped. The callback receives a
+`*db.WhereClause` (every `Where*` method, including nested groups); `HavingGroup` receives a
+`*db.HavingClause`.
 
 ### In, between, null, like
 
 ```go
 WhereIn("id", []int{1, 2, 3})            // "id" in ($1, $2, $3)
-WhereIn("id", conn.Table("bans").Select("user_id"))   // "id" IN (SELECT "user_id" FROM "bans")
+WhereIn("id", conn.Select().From("bans").Select("user_id"))   // "id" IN (SELECT "user_id" FROM "bans")
 WhereNotIn("status", []string{"a", "b"})
 WhereIntegerInRaw("id", []int{1, 2})     // "id" IN (1, 2)   integers inlined, no bind args
 WhereNull("deleted_at")                  // WhereNotNull, OrWhereNull, OrWhereNotNull
@@ -106,9 +110,9 @@ WhereAny([]string{"name", "email"}, "like", "b%")   // ("name" LIKE $1 OR "email
 WhereNone([]string{"name", "email"}, "like", "z%")  // NOT ("name" LIKE $1 OR "email" LIKE $2)
 WhereRowValues([]string{"id", "age"}, "=", []any{1, 30})   // ("id", "age") = ($1, $2)
 
-posts := conn.NewQuery().From("posts").WhereColumn("posts.user_id", "users.id")
-conn.Table("users").WhereExists(posts)       // EXISTS (SELECT * FROM "posts" WHERE ...)
-conn.Table("users").WhereNotExists(posts)
+posts := conn.Select().From("posts").WhereColumn("posts.user_id", "users.id")
+conn.Select().From("users").WhereExists(posts)       // EXISTS (SELECT * FROM "posts" WHERE ...)
+conn.Select().From("users").WhereNotExists(posts)
 ```
 
 ## Date and time parts
@@ -150,7 +154,7 @@ of its SQL literal.
 ## Joins
 
 ```go
-conn.Table("users as u").
+conn.Select().From("users as u").
     Join("posts as p", "p.user_id", "u.id").          // INNER JOIN ... ON "p"."user_id" = "u"."id"
     LeftJoin("profiles", "profiles.user_id", "=", "u.id").
     RightJoin("teams", "teams.id", "<>", "u.team_id").
@@ -162,7 +166,7 @@ Column-to-column joins take `(second)` or `(operator, second)`.
 ### Complex conditions
 
 ```go
-conn.Table("users").JoinFunc("contacts", func(j *db.JoinClause) {
+conn.Select().From("users").JoinFunc("contacts", func(j *db.JoinClause) {
     j.On("users.id", "contacts.user_id").
         OrOn("users.alt_id", "contacts.user_id").
         Where("contacts.kind", "primary").          // a bound value
@@ -184,15 +188,15 @@ Closure forms: `JoinFunc`, `LeftJoinFunc`, `RightJoinFunc`. Join on a bound valu
 ### Subquery and lateral joins
 
 ```go
-latest := conn.NewQuery().From("posts").Select("user_id").SelectRaw("max(created_at) as last").GroupBy("user_id")
+latest := conn.Select().From("posts").Select("user_id").SelectRaw("max(created_at) as last").GroupBy("user_id")
 
-conn.Table("users").JoinSub(latest, "l", "l.user_id", "users.id")   // also LeftJoinSub, RightJoinSub
-conn.Table("users").CrossJoinSub(latest, "l")
-conn.Table("users").JoinSubFunc(latest, "l", func(j *db.JoinClause) { j.On("l.user_id", "users.id") })
+conn.Select().From("users").JoinSub(latest, "l", "l.user_id", "users.id")   // also LeftJoinSub, RightJoinSub
+conn.Select().From("users").CrossJoinSub(latest, "l")
+conn.Select().From("users").JoinSubFunc(latest, "l", func(j *db.JoinClause) { j.On("l.user_id", "users.id") })
 
-top := conn.NewQuery().From("posts").WhereColumn("posts.user_id", "users.id").OrderByDesc("views").Limit(1)
-conn.Table("users").JoinLateral(top, "p")        // INNER JOIN LATERAL (...) AS "p" ON TRUE
-conn.Table("users").LeftJoinLateral(top, "p")    // PostgreSQL and MySQL 8.0.14+; not MariaDB or SQLite
+top := conn.Select().From("posts").WhereColumn("posts.user_id", "users.id").OrderByDesc("views").Limit(1)
+conn.Select().From("users").JoinLateral(top, "p")        // INNER JOIN LATERAL (...) AS "p" ON TRUE
+conn.Select().From("users").LeftJoinLateral(top, "p")    // PostgreSQL and MySQL 8.0.14+; not MariaDB or SQLite
 ```
 
 `StraightJoin` works on MySQL and MariaDB. Lateral joins work on PostgreSQL and MySQL only (not MariaDB or
@@ -201,7 +205,7 @@ SQLite). Unsupported joins return `db.ErrUnsupported`.
 ## Grouping and having
 
 ```go
-conn.Table("orders").
+conn.Select().From("orders").
     Select("user_id").SelectRaw("sum(total) as s").
     GroupBy("user_id").
     HavingRaw("sum(total) > ?", 100)
@@ -209,7 +213,7 @@ conn.Table("orders").
 Having("count", ">", 1)      // OrHaving
 HavingNull("x")              // HavingNotNull
 HavingBetween("n", 1, 5)     // HavingNotBetween
-HavingGroup(func(q *db.Builder) { q.Having("a", 1).OrHavingRaw("b > ?", 2) })
+HavingGroup(func(q *db.HavingClause) { q.Having("a", 1).OrHavingRaw("b > ?", 2) })
 GroupByRaw("date(created_at)")
 ```
 
@@ -255,10 +259,10 @@ every dialect (MySQL and SQLite get the unbounded limit they require).
 ## Unions
 
 ```go
-a := conn.Table("a").Select("id").Where("x", 1)
-b := conn.Table("b").Select("id")
+a := conn.Select().From("a").Select("id").Where("x", 1)
+b := conn.Select().From("b").Select("id")
 
-a.Union(b).UnionAll(conn.Table("c").Select("id")).OrderBy("id").Limit(5)
+a.Union(b).UnionAll(conn.Select().From("c").Select("id")).OrderBy("id").Limit(5)
 // (SELECT "id" FROM "a" WHERE "x" = $1) UNION (SELECT "id" FROM "b") UNION ALL (SELECT "id" FROM "c") ORDER BY "id" ASC LIMIT 5
 ```
 
@@ -268,18 +272,18 @@ limits set before the union stay on the first query. SQLite wraps each member as
 
 ## Subqueries
 
-Pass a `*db.Builder` where a value, list or table is expected:
+Pass a `*db.SelectBuilder` where a value, list or table is expected:
 
 ```go
-Where("score", ">", conn.Table("scores").SelectRaw("avg(v)"))   // scalar subquery
-WhereIn("id", conn.Table("bans").Select("user_id"))
+Where("score", ">", conn.Select().From("scores").SelectRaw("avg(v)"))   // scalar subquery
+WhereIn("id", conn.Select().From("bans").Select("user_id"))
 WhereExists(sub); WhereNotExists(sub)
 SelectSub(sub, "alias"); FromSub(sub, "alias"); JoinSub(sub, "alias", ...)
 ```
 
 Bind arguments are numbered across the whole statement, so `$1, $2, ...` stay correct however
-deeply queries nest. Build the inner query with `conn.NewQuery().From("t")` or
-`conn.Table("t")`. Subqueries are copied when added.
+deeply queries nest. Build the inner query with `conn.Select().From("t")`. Subqueries are copied
+when added.
 
 ## Common table expressions
 
@@ -287,12 +291,12 @@ deeply queries nest. Build the inner query with `conn.NewQuery().From("t")` or
 subqueries:
 
 ```go
-active := conn.Table("users").Where("active", true)
+active := conn.Select().From("users").Where("active", true)
 
-conn.Table("au").With("au", active).Where("age", ">", 30)
+conn.Select().From("au").With("au", active).Where("age", ">", 30)
 // WITH "au" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM "au" WHERE "age" > $2
 
-conn.Table("a").With("a", conn.Table("users").Select("id", "name"), "uid", "uname")
+conn.Select().From("a").With("a", conn.Select().From("users").Select("id", "name"), "uid", "uname")
 // WITH "a" ("uid", "uname") AS (SELECT "id", "name" FROM "users") SELECT * FROM "a"
 ```
 
@@ -301,10 +305,10 @@ The clause becomes `WITH RECURSIVE`, and the members are written without parenth
 SQLite rejects a recursive reference inside a subquery:
 
 ```go
-anchor := conn.Table("categories").Where("id", 1)
-step := conn.Table("categories as c").Select("c.*").Join("tree", "tree.id", "c.parent_id")
+anchor := conn.Select().From("categories").Where("id", 1)
+step := conn.Select().From("categories as c").Select("c.*").Join("tree", "tree.id", "c.parent_id")
 
-conn.Table("tree").WithRecursive("tree", anchor.UnionAll(step))
+conn.Select().From("tree").WithRecursive("tree", anchor.UnionAll(step))
 // WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "id" = $1 UNION ALL
 //   SELECT "c".* FROM "categories" AS "c" INNER JOIN "tree" ON "tree"."id" = "c"."parent_id")
 //   SELECT * FROM "tree"
@@ -316,10 +320,10 @@ conn.Table("tree").WithRecursive("tree", anchor.UnionAll(step))
 - A CTE name is a table reference, so the table prefix applies to it just as it does in `From`.
 - The query passed in is copied when added. Duplicate or qualified names return `ErrInvalidArgs`.
 - WITH belongs to a select. A select carrying CTEs works as a subquery, a union member, in
-  `Count`/`Exists`/`Paginate`, and as the source of `InsertUsing`
-  (`INSERT INTO t (cols) WITH ... SELECT ...`). Calling `With` on the builder that runs
-  `Insert`, `Update`, `Delete`, `Upsert` or `Truncate` returns `ErrUnsupported`; filter the write
-  with `WhereIn("id", cteQuery)` instead.
+  `Count`/`Exists`/`Paginate`, and as the source of `Insert(...).Using`
+  (`INSERT INTO t (cols) WITH ... SELECT ...`). `With` exists only on the select builder: the insert,
+  update and delete builders have no CTE methods, so filter a write with `WhereIn("id", cteQuery)`
+  instead.
 
 ## Locks and index hints
 
@@ -351,16 +355,16 @@ Markers inside quoted strings or identifiers are left alone.
 ## Conditional building
 
 ```go
-q := conn.Table("users").
-    When(onlyActive, func(q *db.Builder) { q.Where("active", true) }).
-    Unless(includeDeleted, func(q *db.Builder) { q.WhereNull("deleted_at") }).
-    Tap(func(q *db.Builder) { log.Println("building users query") })
+q := conn.Select().From("users").
+    When(onlyActive, func(q *db.SelectBuilder) { q.Where("active", true) }).
+    Unless(includeDeleted, func(q *db.SelectBuilder) { q.WhereNull("deleted_at") }).
+    Tap(func(q *db.SelectBuilder) { log.Println("building users query") })
 ```
 
 ## Inspecting SQL
 
 ```go
-q := conn.Table("users").Where("id", 7)
+q := conn.Select().From("users").Where("id", 7)
 
 sql, args, err := q.ToSQL()     // statement with placeholders, plus the ordered arguments
 raw, err      := q.ToRawSQL()   // arguments interpolated: DEBUG ONLY, never execute or log it
@@ -369,4 +373,4 @@ sql, args, err  = q.ExistsSQL() // SELECT EXISTS(...) AS "exists"
 sql, args, err  = q.AggregateSQL("sum", "total")
 ```
 
-The write statements have matching `...SQL` forms; see [Writing data](writing-data.md).
+The write builders have their own `ToSQL()`; see [Writing data](writing-data.md).

@@ -15,8 +15,8 @@ func TestJoinGolden(t *testing.T) {
 	tests := []golden{
 		{
 			name: "inner left right cross",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("users as u").
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("users as u").
 					Join("posts as p", "p.user_id", "u.id").
 					LeftJoin("profiles", "profiles.user_id", "=", "u.id").
 					RightJoin("teams", "teams.id", "<>", "u.team_id").
@@ -30,8 +30,8 @@ func TestJoinGolden(t *testing.T) {
 		},
 		{
 			name: "complex on with values keeps arg order",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("users").
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("users").
 					Where("a", 1).
 					JoinFunc("contacts", func(j *db.JoinClause) {
 						j.On("users.id", "contacts.user_id").
@@ -51,8 +51,8 @@ func TestJoinGolden(t *testing.T) {
 		},
 		{
 			name: "join where binds a value",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("u").JoinWhere("p", "p.status", "live").LeftJoinWhere("q", "q.n", ">", 3)
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("u").JoinWhere("p", "p.status", "live").LeftJoinWhere("q", "q.n", ">", 3)
 			},
 			pg:   `SELECT * FROM "u" INNER JOIN "p" ON "p"."status" = $1 LEFT JOIN "q" ON "q"."n" > $2`,
 			my:   "SELECT * FROM `u` INNER JOIN `p` ON `p`.`status` = ? LEFT JOIN `q` ON `q`.`n` > ?",
@@ -61,16 +61,16 @@ func TestJoinGolden(t *testing.T) {
 		},
 		{
 			name: "join subquery numbers args in order",
-			build: func(d db.Dialect) *db.Builder {
+			build: func(d db.Dialect) *db.SelectBuilder {
 				sub := db.Use(d).
-					Table("posts").
+					Select().From("posts").
 					Select("user_id").
 					SelectRaw("max(created_at) as last").
 					Where("pub", true).
 					GroupBy("user_id")
-				return db.Use(d).Table("users").
+				return db.Use(d).Select().From("users").
 					JoinSub(sub, "latest", "latest.user_id", "users.id").
-					LeftJoinSubFunc(db.Use(d).Table("x").Where("k", 7), "xs", func(j *db.JoinClause) { j.On("xs.id", "users.id") }).
+					LeftJoinSubFunc(db.Use(d).Select().From("x").Where("k", 7), "xs", func(j *db.JoinClause) { j.On("xs.id", "users.id") }).
 					Where("users.n", 1)
 			},
 			pg:   `SELECT * FROM "users" INNER JOIN (SELECT "user_id", max(created_at) as last FROM "posts" WHERE "pub" = $1 GROUP BY "user_id") AS "latest" ON "latest"."user_id" = "users"."id" LEFT JOIN (SELECT * FROM "x" WHERE "k" = $2) AS "xs" ON "xs"."id" = "users"."id" WHERE "users"."n" = $3`,
@@ -80,8 +80,8 @@ func TestJoinGolden(t *testing.T) {
 		},
 		{
 			name: "prefix applies to join table and alias",
-			build: func(d db.Dialect) *db.Builder {
-				return db.Use(d).Table("users").Prefix("p_").Join("posts as po", "po.uid", "users.id")
+			build: func(d db.Dialect) *db.SelectBuilder {
+				return db.Use(d).Select().From("users").Prefix("p_").Join("posts as po", "po.uid", "users.id")
 			},
 			pg:   `SELECT * FROM "p_users" INNER JOIN "p_posts" AS "p_po" ON "p_po"."uid" = "p_users"."id"`,
 			my:   "SELECT * FROM `p_users` INNER JOIN `p_posts` AS `p_po` ON `p_po`.`uid` = `p_users`.`id`",
@@ -92,12 +92,16 @@ func TestJoinGolden(t *testing.T) {
 }
 
 func TestJoinDialectSpecific(t *testing.T) {
-	lateral := func(d db.Dialect) *db.Builder {
-		sub := db.Use(d).Table("posts").Where("user_id", 1).Limit(3)
-		return db.Use(d).Table("users").JoinLateral(sub, "recent").LeftJoinLateral(db.Use(d).Table("c"), "cc")
+	lateral := func(d db.Dialect) *db.SelectBuilder {
+		sub := db.Use(d).Select().From("posts").Where("user_id", 1).Limit(3)
+		return db.Use(d).
+			Select().
+			From("users").
+			JoinLateral(sub, "recent").
+			LeftJoinLateral(db.Use(d).Select().From("c"), "cc")
 	}
-	straight := func(d db.Dialect) *db.Builder {
-		return db.Use(d).Table("a").StraightJoin("b", "b.id", "a.id")
+	straight := func(d db.Dialect) *db.SelectBuilder {
+		return db.Use(d).Select().From("a").StraightJoin("b", "b.id", "a.id")
 	}
 
 	got, args, err := lateral(db.Postgres).ToSQL()
@@ -140,21 +144,29 @@ func TestJoinErrors(t *testing.T) {
 	d := db.Postgres
 	tests := []struct {
 		name  string
-		build *db.Builder
+		build *db.SelectBuilder
 		want  error
 	}{
-		{"missing on", db.Use(d).Table("a").Join("b", ""), db.ErrJoinNeedsOn},
-		{"empty func", db.Use(d).Table("a").JoinFunc("b", func(*db.JoinClause) {}), db.ErrJoinNeedsOn},
-		{"bad operator", db.Use(d).Table("a").Join("b", "b.x", "bogus", "a.x"), db.ErrInvalidOperator},
-		{"second column not string", db.Use(d).Table("a").Join("b", "b.x", 5), db.ErrInvalidArgs},
-		{"sub needs alias", db.Use(d).Table("a").JoinSub(db.Use(d).Table("s"), "", "s.x", "a.x"), db.ErrInvalidArgs},
-		{"bad sub propagates", db.Use(d).Table("a").JoinSub(db.NewBuilder(d), "s", "s.x", "a.x"), db.ErrNoTable},
-		{"nil sub", db.Use(d).Table("a").JoinSub(nil, "s", "s.x", "a.x"), db.ErrInvalidArgs},
-		{"nil cross sub", db.Use(d).Table("a").CrossJoinSub(nil, "s"), db.ErrInvalidArgs},
-		{"empty table", db.Use(d).Table("a").Join("", "s.x", "a.x"), db.ErrInvalidArgs},
+		{"missing on", db.Use(d).Select().From("a").Join("b", ""), db.ErrJoinNeedsOn},
+		{"empty func", db.Use(d).Select().From("a").JoinFunc("b", func(*db.JoinClause) {}), db.ErrJoinNeedsOn},
+		{"bad operator", db.Use(d).Select().From("a").Join("b", "b.x", "bogus", "a.x"), db.ErrInvalidOperator},
+		{"second column not string", db.Use(d).Select().From("a").Join("b", "b.x", 5), db.ErrInvalidArgs},
+		{
+			"sub needs alias",
+			db.Use(d).Select().From("a").JoinSub(db.Use(d).Select().From("s"), "", "s.x", "a.x"),
+			db.ErrInvalidArgs,
+		},
+		{
+			"bad sub propagates",
+			db.Use(d).Select().From("a").JoinSub(db.Use(d).Select(), "s", "s.x", "a.x"),
+			db.ErrNoTable,
+		},
+		{"nil sub", db.Use(d).Select().From("a").JoinSub(nil, "s", "s.x", "a.x"), db.ErrInvalidArgs},
+		{"nil cross sub", db.Use(d).Select().From("a").CrossJoinSub(nil, "s"), db.ErrInvalidArgs},
+		{"empty table", db.Use(d).Select().From("a").Join("", "s.x", "a.x"), db.ErrInvalidArgs},
 		{
 			"error inside on func",
-			db.Use(d).Table("a").JoinFunc("b", func(j *db.JoinClause) { j.Where("x", "bogus", 1) }),
+			db.Use(d).Select().From("a").JoinFunc("b", func(j *db.JoinClause) { j.Where("x", "bogus", 1) }),
 			db.ErrInvalidOperator,
 		},
 	}
@@ -167,8 +179,8 @@ func TestJoinErrors(t *testing.T) {
 }
 
 func TestJoinSubIsSnapshotAndCloneIndependent(t *testing.T) {
-	sub := db.Use(db.Postgres).Table("s").Where("a", 1)
-	base := db.Use(db.Postgres).Table("t").JoinSub(sub, "x", "x.id", "t.id")
+	sub := db.Use(db.Postgres).Select().From("s").Where("a", 1)
+	base := db.Use(db.Postgres).Select().From("t").JoinSub(sub, "x", "x.id", "t.id")
 	c := base.Clone().LeftJoin("z", "z.id", "t.id")
 	sub.Where("b", 2)
 	bs, _, _ := base.ToSQL()
@@ -185,11 +197,11 @@ func TestJoinSubIsSnapshotAndCloneIndependent(t *testing.T) {
 // the remaining JoinClause conditions, right joins and every subquery-join form.
 func TestJoinVariantsPostgres(t *testing.T) {
 	d := db.Postgres
-	tb := func() *db.Builder { return db.Use(d).Table("t") }
-	sub := func() *db.Builder { return db.Use(d).Table("s").Where("k", 1) }
+	tb := func() *db.SelectBuilder { return db.Use(d).Select().From("t") }
+	sub := func() *db.SelectBuilder { return db.Use(d).Select().From("s").Where("k", 1) }
 	tests := []struct {
 		name  string
-		build *db.Builder
+		build *db.SelectBuilder
 		sql   string
 		args  []any
 	}{
