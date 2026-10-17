@@ -18,7 +18,16 @@ Writes finish with `Exec`, `Get` (scans `RETURNING` rows) or `ToSQL`.
   on `Query[T]` (now select-only), and `db.Rows`, `db.AggregateAs`, `db.MinAs`, `db.MaxAs`.
 - Subquery arguments take `*db.SelectBuilder`; `WhereGroup` / `HavingGroup` callbacks take `*db.WhereClause` /
   `*db.HavingClause`; `When`, `Unless`, `Tap` take `*db.SelectBuilder`.
-- An update or delete no longer inherits select-only state (grouping, unions, locks, CTEs)
+- An update or delete no longer inherits select-only state (grouping, unions, locks); CTEs are supported again on
+  them (see Added)
+
+CTE methods take options instead of one method per combination:
+
+- `With(name, q, cols...)` is `With(name, q, db.CTEColumns(cols...))`; `WithRaw` likewise.
+- `WithRecursive(name, anchor.UnionAll(step), cols...)` is `WithRecursive(name, anchor, step, db.CTEColumns(cols...))`;
+  `db.CTEUnionDistinct()` gives `UNION`. A recursive CTE no longer accepts an anchor that already has unions.
+- `WithMaterialized(...)` / `WithNotMaterialized(...)` are `With(..., db.CTEMaterialized())` /
+  `With(..., db.CTENotMaterialized())`.
 
 | Before | After |
 | --- | --- |
@@ -40,6 +49,11 @@ Writes finish with `Exec`, `Get` (scans `RETURNING` rows) or `ToSQL`.
 
 ### Added
 
+- CTE options: `db.CTEColumns`, `db.CTEMaterialized`, `db.CTENotMaterialized`, `db.CTEUnionDistinct`. They combine
+  freely, e.g. a raw, materialized, column-named CTE.
+- `With`, `WithRaw` and `WithRecursive` on `UpdateBuilder` and `DeleteBuilder` (`WITH ... UPDATE` / `DELETE` on
+  PostgreSQL, MySQL 8, SQLite; MariaDB returns `ErrUnsupported`) and on `InsertBuilder` (moved into the `Using` select).
+- The `MATERIALIZED` hint works on SQLite 3.35+ as well as PostgreSQL.
 - `db.SelectBuilder`, `InsertBuilder`, `UpdateBuilder`, `DeleteBuilder`, `WhereClause`, `HavingClause`.
 - `UpdateBuilder`: `Set`, `SetMap`, `SetRow`, `Increment`, `Decrement`, `IncrementEach`, `DecrementEach`, `FromJoins`.
 - `InsertBuilder`: `Values`, `Rows`, `Ignore`, `Using`, `Upsert`, `ExecGetID`, `IDSQL`.

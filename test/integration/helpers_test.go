@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,19 @@ type User struct {
 	Active bool
 	Score  float64
 	Bio    string // NULL in some rows: scans to ""
+}
+
+var errRollback = errors.New("rollback")
+
+// rolledBack runs fn in a transaction that is always rolled back, so a test can
+// write to the shared fixture without disturbing the tests that follow.
+func rolledBack(t *testing.T, conn *db.DB, fn func(tx *db.DB)) {
+	t.Helper()
+	err := conn.Transaction(ctx, func(tx *db.DB) error {
+		fn(tx)
+		return errRollback
+	})
+	require.ErrorIs(t, err, errRollback)
 }
 
 func names(us []User) []string {

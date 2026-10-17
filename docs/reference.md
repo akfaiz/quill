@@ -65,9 +65,17 @@ builder) shows the first one early.
 | `db.WithHook(fn)` | `fn(ctx, QueryEvent)` after every statement |
 | `db.WithLogArgs()` | Put bind values in `QueryEvent.Args` (off by default) |
 
+CTE options (`db.CTEOption`), passed after the query of `With`, `WithRaw` and `WithRecursive`:
+
+| Option | Effect |
+| --- | --- |
+| `db.CTEColumns(cols...)` | Name the CTE's columns |
+| `db.CTEMaterialized()`, `db.CTENotMaterialized()` | `AS [NOT] MATERIALIZED` (PostgreSQL, SQLite) |
+| `db.CTEUnionDistinct()` | `UNION` instead of `UNION ALL` between the anchor and step of `WithRecursive` |
+
 ## Package functions
 
-`As`, `From`, `New`, `PluckAs`, `Raw`, `Row`, `Stream`,
+`As`, `CTEColumns`, `CTEMaterialized`, `CTENotMaterialized`, `CTEUnionDistinct`, `From`, `New`, `PluckAs`, `Raw`, `Row`, `Stream`,
 `TableName`, `Use`, `ValueAs`, `WithHook`, `WithLogArgs`, `WithPrefix`
 
 There is no builder constructor besides the `DB` methods: start with `db.Use(dialect).Select()` (or
@@ -86,7 +94,7 @@ builder type no longer exists.
 
 `Select`, `Insert`, `Update` and `Delete` start a statement; `Truncate`, `TruncateSQL` and `UpdateOrInsert` are statement-level helpers that need no builder.
 
-### `db.SelectBuilder` (183)
+### `db.SelectBuilder` (181)
 
 Started with `DB.Select(columns...)`. Chain methods return `*db.SelectBuilder`; the build and read methods end the chain.
 
@@ -138,9 +146,9 @@ Started with `DB.Select(columns...)`. Chain methods return `*db.SelectBuilder`; 
 `ForPage`, `ForPageAfterID`, `ForPageBeforeID`, `InRandomOrder`, `Latest`, `Limit`, `Offset`,
 `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`, `ReorderBy`, `Skip`, `Take`
 
-**Common table expressions** (5)
+**Common table expressions** (3)
 
-`With`, `WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
+`With`, `WithRaw`, `WithRecursive`
 
 **Unions, locks, index hints** (8)
 
@@ -156,9 +164,9 @@ Started with `DB.Select(columns...)`. Chain methods return `*db.SelectBuilder`; 
 `Exists`, `Find`, `First`, `Get`, `Max`, `Min`, `Paginate`, `Pluck`, `PluckMap`, `SimplePaginate`,
 `Sole`, `Sum`, `Value`
 
-### `db.InsertBuilder` (14)
+### `db.InsertBuilder` (17)
 
-Started with `DB.Insert(table)`. An insert has no `Where`, `Join`, `OrderBy` or `Limit`.
+Started with `DB.Insert(table)`. An insert has no `Where`, `Join`, `OrderBy` or `Limit`. Its CTEs need `Using`.
 
 **Build SQL** (2)
 
@@ -168,6 +176,10 @@ Started with `DB.Insert(table)`. An insert has no `Where`, `Join`, `OrderBy` or 
 
 `Prefix`
 
+**Common table expressions** (3)
+
+`With`, `WithRaw`, `WithRecursive`
+
 **Control flow** (3)
 
 `Clone`, `Err`, `Returning`
@@ -176,9 +188,9 @@ Started with `DB.Insert(table)`. An insert has no `Where`, `Join`, `OrderBy` or 
 
 `Exec`, `ExecGetID`, `Get`, `Ignore`, `Rows`, `Upsert`, `Using`, `Values`
 
-### `db.UpdateBuilder` (124)
+### `db.UpdateBuilder` (127)
 
-Started with `DB.Update(table)`. Without a `WHERE` or `LIMIT`, `Exec`, `Get` and `ToSQL` return `ErrNoWhere` unless `AllRows` was called. No grouping, `Offset`, unions, locks or CTEs.
+Started with `DB.Update(table)`. Without a `WHERE` or `LIMIT`, `Exec`, `Get` and `ToSQL` return `ErrNoWhere` unless `AllRows` was called. No grouping, `Offset`, unions or locks. CTEs are written before `UPDATE` (not on MariaDB).
 
 **Build SQL** (1)
 
@@ -204,6 +216,10 @@ Started with `DB.Update(table)`. Without a `WHERE` or `LIMIT`, `Exec`, `Get` and
 `InRandomOrder`, `Latest`, `Limit`, `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`,
 `ReorderBy`, `Take`
 
+**Common table expressions** (3)
+
+`With`, `WithRaw`, `WithRecursive`
+
 **Control flow** (4)
 
 `AllRows`, `Clone`, `Err`, `Returning`
@@ -212,9 +228,9 @@ Started with `DB.Update(table)`. Without a `WHERE` or `LIMIT`, `Exec`, `Get` and
 
 `Decrement`, `DecrementEach`, `Exec`, `Get`, `Increment`, `IncrementEach`, `Set`, `SetMap`, `SetRow`
 
-### `db.DeleteBuilder` (116)
+### `db.DeleteBuilder` (119)
 
-Started with `DB.Delete(table)`. Guarded like `UpdateBuilder`. No grouping, `Offset`, unions, locks or CTEs.
+Started with `DB.Delete(table)`. Guarded like `UpdateBuilder`. No grouping, `Offset`, unions or locks. CTEs are written before `DELETE` (not on MariaDB).
 
 **Build SQL** (1)
 
@@ -240,6 +256,10 @@ Started with `DB.Delete(table)`. Guarded like `UpdateBuilder`. No grouping, `Off
 `InRandomOrder`, `Latest`, `Limit`, `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`,
 `ReorderBy`, `Take`
 
+**Common table expressions** (3)
+
+`With`, `WithRaw`, `WithRecursive`
+
 **Control flow** (4)
 
 `AllRows`, `Clone`, `Err`, `Returning`
@@ -264,7 +284,7 @@ Every `Where*` and `OrWhere*` method of the select builder, including `WhereGrou
 `OrWhereNull`, `OrWhereRaw`, `Where`, `WhereIn`, `WhereNotIn`, `WhereNotNull`, `WhereNull`,
 `WhereRaw`
 
-### `db.Query[T]` (171)
+### `db.Query[T]` (169)
 
 Select-only. Every `SelectBuilder` chain method is mirrored and returns `*db.Query[T]`, so `T` survives the chain; the readers return `T` values (see [Typed API](typed-api.md)). `Apply` and `Builder` give access to the underlying `*db.SelectBuilder`. `Min`, `Max`, `Value`, `Pluck` and `Aggregate` are not mirrored: use `db.ValueAs` and `db.PluckAs`, or the `SelectBuilder` readers.
 
@@ -294,9 +314,9 @@ Select-only. Every `SelectBuilder` chain method is mirrored and returns `*db.Que
 `ForPage`, `ForPageAfterID`, `ForPageBeforeID`, `InRandomOrder`, `Latest`, `Limit`, `Offset`,
 `Oldest`, `OrderBy`, `OrderByDesc`, `OrderByRaw`, `Reorder`, `ReorderBy`, `Skip`, `Take`
 
-**Common table expressions** (5)
+**Common table expressions** (3)
 
-`With`, `WithMaterialized`, `WithNotMaterialized`, `WithRaw`, `WithRecursive`
+`With`, `WithRaw`, `WithRecursive`
 
 **Unions, locks, index hints** (8)
 

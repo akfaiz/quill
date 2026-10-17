@@ -399,9 +399,15 @@ func (s *SelectBuilder) Each(ctx context.Context, dest any, fn func() error) err
 	return s.q.Each(ctx, dest, fn)
 }
 
-// With adds a common table expression: "with name (cols) as (q)". The name is
-// a table reference, so the table prefix applies to it as it does to From.
-// The subquery is snapshotted: later changes to q do not affect this query.
+// With adds a common table expression: "with name as (q)". The name is a table
+// reference, so the table prefix applies to it as it does to From. The subquery
+// is snapshotted: later changes to q do not affect this query. Options name the
+// columns (CTEColumns) or hint materialization (CTEMaterialized, CTENotMaterialized).
+//
+// On a select, a CTE can feed the query, a subquery, a union member, Count,
+// Exists and Paginate. On an update or delete it is written before the verb
+// (PostgreSQL, MySQL 8, SQLite; MariaDB returns ErrUnsupported). On an insert it is
+// moved into the SELECT given to Using, so it needs Using.
 //
 // Example:
 //
@@ -410,70 +416,41 @@ func (s *SelectBuilder) Each(ctx context.Context, dest any, fn func() error) err
 //	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
 //	//     "active_users"
 //	// args: [true]
-func (s *SelectBuilder) With(name string, q *SelectBuilder, cols ...string) *SelectBuilder {
-	s.q.With(name, sq(q), cols...)
+func (s *SelectBuilder) With(name string, q *SelectBuilder, opts ...CTEOption) *SelectBuilder {
+	s.q.With(name, sq(q), opts...)
 	return s
 }
 
-// WithRecursive adds a recursive common table expression and switches the
-// clause to "with recursive". q is the anchor with the recursive member added
-// by UnionAll (or Union); the members are emitted without parentheses.
+// WithRecursive adds a recursive common table expression and switches the clause
+// to "with recursive". anchor is the starting query and step the recursive member
+// that refers to name; they are joined with UNION ALL (CTEUnionDistinct for UNION)
+// and written without parentheses, because SQLite rejects a recursive reference
+// inside a subquery. Neither query is modified, and anchor must not have unions.
 //
 // Example:
 //
 //	anchor := conn.Select().From("categories").Where("parent_id", nil)
-//	member := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
-//	conn.Select().From("tree").WithRecursive("tree", anchor.UnionAll(member))
+//	step := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Select().From("tree").WithRecursive("tree", anchor, step)
 //	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
 //	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
 //	//     "t"."id") SELECT * FROM "tree"
-func (s *SelectBuilder) WithRecursive(name string, q *SelectBuilder, cols ...string) *SelectBuilder {
-	s.q.WithRecursive(name, sq(q), cols...)
+func (s *SelectBuilder) WithRecursive(name string, anchor *SelectBuilder, step *SelectBuilder, opts ...CTEOption) *SelectBuilder {
+	s.q.WithRecursive(name, sq(anchor), sq(step), opts...)
 	return s
 }
 
 // WithRaw adds a common table expression whose body is a raw SQL fragment
-// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2).
+// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2). It takes the same
+// options as With.
 //
 // Example:
 //
-//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), "id")
+//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), db.CTEColumns("id"))
 //	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
 //	// args: [1 2]
-func (s *SelectBuilder) WithRaw(name string, e Expression, cols ...string) *SelectBuilder {
-	s.q.WithRaw(name, e, cols...)
-	return s
-}
-
-// WithMaterialized adds "name as materialized (q)". PostgreSQL only; other
-// dialects return ErrUnsupported.
-//
-// Example:
-//
-//	recent := conn.Select().From("orders").Where("total", ">", 100)
-//	conn.Select().From("recent").WithMaterialized("recent", recent)
-//	// WITH "recent" AS MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
-//	//     "recent"
-//	// args: [100]
-//	// MySQL, SQLite and MariaDB return ErrUnsupported
-func (s *SelectBuilder) WithMaterialized(name string, q *SelectBuilder, cols ...string) *SelectBuilder {
-	s.q.WithMaterialized(name, sq(q), cols...)
-	return s
-}
-
-// WithNotMaterialized adds "name as not materialized (q)". PostgreSQL only;
-// other dialects return ErrUnsupported.
-//
-// Example:
-//
-//	recent := conn.Select().From("orders").Where("total", ">", 100)
-//	conn.Select().From("recent").WithNotMaterialized("recent", recent)
-//	// WITH "recent" AS NOT MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
-//	//     "recent"
-//	// args: [100]
-//	// MySQL, SQLite and MariaDB return ErrUnsupported
-func (s *SelectBuilder) WithNotMaterialized(name string, q *SelectBuilder, cols ...string) *SelectBuilder {
-	s.q.WithNotMaterialized(name, sq(q), cols...)
+func (s *SelectBuilder) WithRaw(name string, e Expression, opts ...CTEOption) *SelectBuilder {
+	s.q.WithRaw(name, e, opts...)
 	return s
 }
 
@@ -2288,6 +2265,61 @@ func (i *InsertBuilder) Prefix(p string) *InsertBuilder {
 	return i
 }
 
+// With adds a common table expression: "with name as (q)". The name is a table
+// reference, so the table prefix applies to it as it does to From. The subquery
+// is snapshotted: later changes to q do not affect this query. Options name the
+// columns (CTEColumns) or hint materialization (CTEMaterialized, CTENotMaterialized).
+//
+// On a select, a CTE can feed the query, a subquery, a union member, Count,
+// Exists and Paginate. On an update or delete it is written before the verb
+// (PostgreSQL, MySQL 8, SQLite; MariaDB returns ErrUnsupported). On an insert it is
+// moved into the SELECT given to Using, so it needs Using.
+//
+// Example:
+//
+//	active := conn.Select().From("users").Where("active", true)
+//	conn.Select().From("active_users").With("active_users", active)
+//	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
+//	//     "active_users"
+//	// args: [true]
+func (i *InsertBuilder) With(name string, q *SelectBuilder, opts ...CTEOption) *InsertBuilder {
+	i.q.With(name, sq(q), opts...)
+	return i
+}
+
+// WithRecursive adds a recursive common table expression and switches the clause
+// to "with recursive". anchor is the starting query and step the recursive member
+// that refers to name; they are joined with UNION ALL (CTEUnionDistinct for UNION)
+// and written without parentheses, because SQLite rejects a recursive reference
+// inside a subquery. Neither query is modified, and anchor must not have unions.
+//
+// Example:
+//
+//	anchor := conn.Select().From("categories").Where("parent_id", nil)
+//	step := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Select().From("tree").WithRecursive("tree", anchor, step)
+//	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
+//	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
+//	//     "t"."id") SELECT * FROM "tree"
+func (i *InsertBuilder) WithRecursive(name string, anchor *SelectBuilder, step *SelectBuilder, opts ...CTEOption) *InsertBuilder {
+	i.q.WithRecursive(name, sq(anchor), sq(step), opts...)
+	return i
+}
+
+// WithRaw adds a common table expression whose body is a raw SQL fragment
+// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2). It takes the same
+// options as With.
+//
+// Example:
+//
+//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), db.CTEColumns("id"))
+//	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
+//	// args: [1 2]
+func (i *InsertBuilder) WithRaw(name string, e Expression, opts ...CTEOption) *InsertBuilder {
+	i.q.WithRaw(name, e, opts...)
+	return i
+}
+
 // Returning adds a RETURNING clause to insert/update/delete/upsert
 // (Postgres, SQLite >= 3.35; MySQL returns ErrUnsupported). "*" is allowed.
 //
@@ -2425,6 +2457,61 @@ func (u *UpdateBuilder) Limit(n int) *UpdateBuilder {
 //	// SELECT * FROM "users" LIMIT 5
 func (u *UpdateBuilder) Take(n int) *UpdateBuilder {
 	u.q.Take(n)
+	return u
+}
+
+// With adds a common table expression: "with name as (q)". The name is a table
+// reference, so the table prefix applies to it as it does to From. The subquery
+// is snapshotted: later changes to q do not affect this query. Options name the
+// columns (CTEColumns) or hint materialization (CTEMaterialized, CTENotMaterialized).
+//
+// On a select, a CTE can feed the query, a subquery, a union member, Count,
+// Exists and Paginate. On an update or delete it is written before the verb
+// (PostgreSQL, MySQL 8, SQLite; MariaDB returns ErrUnsupported). On an insert it is
+// moved into the SELECT given to Using, so it needs Using.
+//
+// Example:
+//
+//	active := conn.Select().From("users").Where("active", true)
+//	conn.Select().From("active_users").With("active_users", active)
+//	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
+//	//     "active_users"
+//	// args: [true]
+func (u *UpdateBuilder) With(name string, q *SelectBuilder, opts ...CTEOption) *UpdateBuilder {
+	u.q.With(name, sq(q), opts...)
+	return u
+}
+
+// WithRecursive adds a recursive common table expression and switches the clause
+// to "with recursive". anchor is the starting query and step the recursive member
+// that refers to name; they are joined with UNION ALL (CTEUnionDistinct for UNION)
+// and written without parentheses, because SQLite rejects a recursive reference
+// inside a subquery. Neither query is modified, and anchor must not have unions.
+//
+// Example:
+//
+//	anchor := conn.Select().From("categories").Where("parent_id", nil)
+//	step := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Select().From("tree").WithRecursive("tree", anchor, step)
+//	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
+//	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
+//	//     "t"."id") SELECT * FROM "tree"
+func (u *UpdateBuilder) WithRecursive(name string, anchor *SelectBuilder, step *SelectBuilder, opts ...CTEOption) *UpdateBuilder {
+	u.q.WithRecursive(name, sq(anchor), sq(step), opts...)
+	return u
+}
+
+// WithRaw adds a common table expression whose body is a raw SQL fragment
+// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2). It takes the same
+// options as With.
+//
+// Example:
+//
+//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), db.CTEColumns("id"))
+//	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
+//	// args: [1 2]
+func (u *UpdateBuilder) WithRaw(name string, e Expression, opts ...CTEOption) *UpdateBuilder {
+	u.q.WithRaw(name, e, opts...)
 	return u
 }
 
@@ -3809,6 +3896,61 @@ func (d *DeleteBuilder) Limit(n int) *DeleteBuilder {
 //	// SELECT * FROM "users" LIMIT 5
 func (d *DeleteBuilder) Take(n int) *DeleteBuilder {
 	d.q.Take(n)
+	return d
+}
+
+// With adds a common table expression: "with name as (q)". The name is a table
+// reference, so the table prefix applies to it as it does to From. The subquery
+// is snapshotted: later changes to q do not affect this query. Options name the
+// columns (CTEColumns) or hint materialization (CTEMaterialized, CTENotMaterialized).
+//
+// On a select, a CTE can feed the query, a subquery, a union member, Count,
+// Exists and Paginate. On an update or delete it is written before the verb
+// (PostgreSQL, MySQL 8, SQLite; MariaDB returns ErrUnsupported). On an insert it is
+// moved into the SELECT given to Using, so it needs Using.
+//
+// Example:
+//
+//	active := conn.Select().From("users").Where("active", true)
+//	conn.Select().From("active_users").With("active_users", active)
+//	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
+//	//     "active_users"
+//	// args: [true]
+func (d *DeleteBuilder) With(name string, q *SelectBuilder, opts ...CTEOption) *DeleteBuilder {
+	d.q.With(name, sq(q), opts...)
+	return d
+}
+
+// WithRecursive adds a recursive common table expression and switches the clause
+// to "with recursive". anchor is the starting query and step the recursive member
+// that refers to name; they are joined with UNION ALL (CTEUnionDistinct for UNION)
+// and written without parentheses, because SQLite rejects a recursive reference
+// inside a subquery. Neither query is modified, and anchor must not have unions.
+//
+// Example:
+//
+//	anchor := conn.Select().From("categories").Where("parent_id", nil)
+//	step := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Select().From("tree").WithRecursive("tree", anchor, step)
+//	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
+//	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
+//	//     "t"."id") SELECT * FROM "tree"
+func (d *DeleteBuilder) WithRecursive(name string, anchor *SelectBuilder, step *SelectBuilder, opts ...CTEOption) *DeleteBuilder {
+	d.q.WithRecursive(name, sq(anchor), sq(step), opts...)
+	return d
+}
+
+// WithRaw adds a common table expression whose body is a raw SQL fragment
+// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2). It takes the same
+// options as With.
+//
+// Example:
+//
+//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), db.CTEColumns("id"))
+//	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
+//	// args: [1 2]
+func (d *DeleteBuilder) WithRaw(name string, e Expression, opts ...CTEOption) *DeleteBuilder {
+	d.q.WithRaw(name, e, opts...)
 	return d
 }
 
@@ -6499,9 +6641,15 @@ func (q *Query[T]) ForPage(page int, perPage int) *Query[T] {
 	return q
 }
 
-// With adds a common table expression: "with name (cols) as (q)". The name is
-// a table reference, so the table prefix applies to it as it does to From.
-// The subquery is snapshotted: later changes to q do not affect this query.
+// With adds a common table expression: "with name as (q)". The name is a table
+// reference, so the table prefix applies to it as it does to From. The subquery
+// is snapshotted: later changes to q do not affect this query. Options name the
+// columns (CTEColumns) or hint materialization (CTEMaterialized, CTENotMaterialized).
+//
+// On a select, a CTE can feed the query, a subquery, a union member, Count,
+// Exists and Paginate. On an update or delete it is written before the verb
+// (PostgreSQL, MySQL 8, SQLite; MariaDB returns ErrUnsupported). On an insert it is
+// moved into the SELECT given to Using, so it needs Using.
 //
 // Example:
 //
@@ -6510,70 +6658,41 @@ func (q *Query[T]) ForPage(page int, perPage int) *Query[T] {
 //	// WITH "active_users" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM
 //	//     "active_users"
 //	// args: [true]
-func (q *Query[T]) With(name string, sub *SelectBuilder, cols ...string) *Query[T] {
-	q.b.q.With(name, sq(sub), cols...)
+func (q *Query[T]) With(name string, sub *SelectBuilder, opts ...CTEOption) *Query[T] {
+	q.b.q.With(name, sq(sub), opts...)
 	return q
 }
 
-// WithRecursive adds a recursive common table expression and switches the
-// clause to "with recursive". q is the anchor with the recursive member added
-// by UnionAll (or Union); the members are emitted without parentheses.
+// WithRecursive adds a recursive common table expression and switches the clause
+// to "with recursive". anchor is the starting query and step the recursive member
+// that refers to name; they are joined with UNION ALL (CTEUnionDistinct for UNION)
+// and written without parentheses, because SQLite rejects a recursive reference
+// inside a subquery. Neither query is modified, and anchor must not have unions.
 //
 // Example:
 //
 //	anchor := conn.Select().From("categories").Where("parent_id", nil)
-//	member := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
-//	conn.Select().From("tree").WithRecursive("tree", anchor.UnionAll(member))
+//	step := conn.Select().From("categories as c").Join("tree as t", "c.parent_id", "t.id")
+//	conn.Select().From("tree").WithRecursive("tree", anchor, step)
 //	// WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "parent_id" IS NULL UNION ALL
 //	//     SELECT * FROM "categories" AS "c" INNER JOIN "tree" AS "t" ON "c"."parent_id" =
 //	//     "t"."id") SELECT * FROM "tree"
-func (q *Query[T]) WithRecursive(name string, sub *SelectBuilder, cols ...string) *Query[T] {
-	q.b.q.WithRecursive(name, sq(sub), cols...)
+func (q *Query[T]) WithRecursive(name string, anchor *SelectBuilder, step *SelectBuilder, opts ...CTEOption) *Query[T] {
+	q.b.q.WithRecursive(name, sq(anchor), sq(step), opts...)
 	return q
 }
 
 // WithRaw adds a common table expression whose body is a raw SQL fragment
-// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2).
+// (caller-trusted SQL), e.g. db.Raw("values (?), (?)", 1, 2). It takes the same
+// options as With.
 //
 // Example:
 //
-//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), "id")
+//	conn.Select().From("ids").WithRaw("ids", db.Raw("values (?), (?)", 1, 2), db.CTEColumns("id"))
 //	// WITH "ids" ("id") AS (values ($1), ($2)) SELECT * FROM "ids"
 //	// args: [1 2]
-func (q *Query[T]) WithRaw(name string, e Expression, cols ...string) *Query[T] {
-	q.b.q.WithRaw(name, e, cols...)
-	return q
-}
-
-// WithMaterialized adds "name as materialized (q)". PostgreSQL only; other
-// dialects return ErrUnsupported.
-//
-// Example:
-//
-//	recent := conn.Select().From("orders").Where("total", ">", 100)
-//	conn.Select().From("recent").WithMaterialized("recent", recent)
-//	// WITH "recent" AS MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
-//	//     "recent"
-//	// args: [100]
-//	// MySQL, SQLite and MariaDB return ErrUnsupported
-func (q *Query[T]) WithMaterialized(name string, sub *SelectBuilder, cols ...string) *Query[T] {
-	q.b.q.WithMaterialized(name, sq(sub), cols...)
-	return q
-}
-
-// WithNotMaterialized adds "name as not materialized (q)". PostgreSQL only;
-// other dialects return ErrUnsupported.
-//
-// Example:
-//
-//	recent := conn.Select().From("orders").Where("total", ">", 100)
-//	conn.Select().From("recent").WithNotMaterialized("recent", recent)
-//	// WITH "recent" AS NOT MATERIALIZED (SELECT * FROM "orders" WHERE "total" > $1) SELECT * FROM
-//	//     "recent"
-//	// args: [100]
-//	// MySQL, SQLite and MariaDB return ErrUnsupported
-func (q *Query[T]) WithNotMaterialized(name string, sub *SelectBuilder, cols ...string) *Query[T] {
-	q.b.q.WithNotMaterialized(name, sq(sub), cols...)
+func (q *Query[T]) WithRaw(name string, e Expression, opts ...CTEOption) *Query[T] {
+	q.b.q.WithRaw(name, e, opts...)
 	return q
 }
 

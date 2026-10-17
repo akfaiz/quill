@@ -69,7 +69,8 @@ n, err := conn.Insert("archive").
 ```
 
 An empty column list, or `[]string{"*"}`, omits the column list. Add `.Ignore()` to skip
-conflicts.
+conflicts. `With` on the insert builder moves its CTEs into the select (see
+[Common table expressions](building-queries.md#common-table-expressions)).
 
 ## Upsert
 

@@ -34,7 +34,7 @@ jobs:
           go vet ./...
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.14.0
           working-directory: ${{ matrix.dir }}
 
   test:

@@ -813,7 +813,7 @@ func TestMariaDBCTE(t *testing.T) {
 			t,
 			conn.Select().
 				From("seq").
-				WithRecursive("seq", anchor.UnionAll(step), "n").
+				WithRecursive("seq", anchor, step, db.CTEColumns("n")).
 				OrderBy("n").
 				Pluck(ctx, "n", &got),
 		)
@@ -840,6 +840,17 @@ func TestMariaDBCTE(t *testing.T) {
 		ok, err := conn.Select().From("au").With("au", active()).Where("name", "Bob").Exists(ctx)
 		require.NoError(t, err)
 		assert.False(t, ok)
+	})
+	t.Run("materialized hint is rejected before it reaches the server", func(t *testing.T) {
+		_, _, err := conn.Select().From("au").With("au", active(), db.CTEMaterialized()).ToSQL()
+		assert.ErrorIs(t, err, db.ErrUnsupported)
+	})
+	t.Run("update and delete with a cte are rejected before they reach the server", func(t *testing.T) {
+		gone := conn.Select("id").From("users").Where("active", false)
+		_, _, err := conn.Update("posts").With("gone", gone).Set("views", 1).Where("id", 1).ToSQL()
+		require.ErrorIs(t, err, db.ErrUnsupported)
+		_, _, err = conn.Delete("posts").With("gone", gone).Where("id", 1).ToSQL()
+		require.ErrorIs(t, err, db.ErrUnsupported)
 	})
 	t.Run("insert using", func(t *testing.T) {
 		sub := conn.Select("name").From("inactive").With("inactive", conn.Select().From("users").Where("active", false))
