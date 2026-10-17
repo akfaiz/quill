@@ -63,6 +63,7 @@ var groups = map[string][]string{
 	"join":       {kSelect, kUpdate, kDelete, kTyped},
 	"orderlimit": {kSelect, kUpdate, kDelete, kTyped},
 	kSelect:      {kSelect, kTyped},
+	"cte":        {kSelect, kInsert, kUpdate, kDelete, kTyped},
 	"read":       {kSelect}, // terminal methods that do not return the query
 }
 
@@ -82,6 +83,8 @@ func groupOf(name string, chain bool) string {
 		return "returning"
 	case name == "AllRows":
 		return "allrows"
+	case chain && (name == "With" || name == "WithRaw" || name == "WithRecursive"):
+		return "cte"
 	case !chain:
 		return "read"
 	case strings.HasPrefix(name, "Having") || strings.HasPrefix(name, "OrHaving"):

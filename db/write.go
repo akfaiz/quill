@@ -61,11 +61,23 @@ func (b *query) writeCompiler() (*compiler, error) {
 	if b.table == "" {
 		return nil, ErrNoTable
 	}
-	if len(b.ctes) > 0 {
-		// put the WITH on the select passed to InsertUsing instead
-		return nil, fmt.Errorf("%w: with clause on a write statement", ErrUnsupported)
-	}
 	return c, nil
+}
+
+// rejectWith refuses a WITH clause on a statement that cannot carry one.
+func (b *query) rejectWith(stmt string) error {
+	if len(b.ctes) > 0 {
+		return fmt.Errorf("%w: with clause on %s", ErrUnsupported, stmt)
+	}
+	return nil
+}
+
+// withWrite writes the WITH prefix of an UPDATE or DELETE. MariaDB has no WITH before them.
+func (c *compiler) withWrite(b *query, stmt string) error {
+	if len(b.ctes) > 0 && c.d == MariaDB {
+		return fmt.Errorf("%w: with clause on %s on %s", ErrUnsupported, stmt, c.d)
+	}
+	return c.with(b)
 }
 
 func (b *query) requireWhere() error {
@@ -205,6 +217,9 @@ func (c *compiler) insert(b *query, rows []map[string]any, ignore bool) error {
 
 // insertSQL compiles INSERT INTO t (cols) VALUES (...), (...) for DB.Insert.
 func (b *query) insertSQL(rows ...map[string]any) (string, []any, error) {
+	if err := b.rejectWith("an insert without Using"); err != nil {
+		return "", nil, err
+	}
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -214,6 +229,9 @@ func (b *query) insertSQL(rows ...map[string]any) (string, []any, error) {
 
 // insertOrIgnoreSQL compiles an insert that skips conflicting rows (InsertBuilder.Ignore).
 func (b *query) insertOrIgnoreSQL(rows ...map[string]any) (string, []any, error) {
+	if err := b.rejectWith("an insert without Using"); err != nil {
+		return "", nil, err
+	}
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -241,6 +259,15 @@ func (c *compiler) insertUsing(b *query, columns []string, sub *query, ignore bo
 	}
 	if sub.err != nil {
 		return sub.err
+	}
+	if len(b.ctes) > 0 {
+		// WITH cannot precede INSERT on MySQL: move it into the SELECT, where every dialect accepts it
+		merged := sub.Clone()
+		merged.ctes = append(cloneCTEs(b.ctes), merged.ctes...)
+		if dup := duplicateCTE(merged.ctes); dup != "" {
+			return fmt.Errorf("%w: duplicate CTE name %q", ErrInvalidArgs, dup)
+		}
+		sub = merged
 	}
 	c.write(c.insertVerb(ignore) + c.wrapTable(b.table))
 	if len(columns) > 0 && (len(columns) != 1 || columns[0] != "*") {
@@ -280,6 +307,9 @@ func (b *query) insertOrIgnoreUsingSQL(columns []string, sub *query) (string, []
 // lists the columns that take the inserted value (nil means every inserted column);
 // uniqueBy is the conflict target on Postgres/SQLite and ignored on MySQL.
 func (b *query) upsertSQL(rows []map[string]any, uniqueBy, update []string) (string, []any, error) {
+	if err := b.rejectWith("an upsert"); err != nil {
+		return "", nil, err
+	}
 	c, err := b.writeCompiler()
 	if err != nil {
 		return "", nil, err
@@ -423,6 +453,7 @@ func (c *compiler) rowIDSubquery(b *query) error {
 	sub := b.Clone()
 	sub.columns = []selectItem{{column: alias + "." + c.rowIDColumn()}}
 	sub.returning = nil
+	sub.ctes = nil // the statement's own WITH already precedes the verb and is visible here
 	c.write(" WHERE " + c.g.Quote(c.rowIDColumn()) + " IN ")
 	return c.subquery(sub)
 }
@@ -439,6 +470,9 @@ func (c *compiler) joinedOrderLimit(b *query, stmt string) error {
 
 func (c *compiler) update(b *query, sets []setItem) error {
 	if err := c.joinedOrderLimit(b, "update"); err != nil {
+		return err
+	}
+	if err := c.withWrite(b, "update"); err != nil {
 		return err
 	}
 	c.write("UPDATE ")
@@ -508,6 +542,9 @@ func (b *query) updateFromSQL(sets []setItem) (string, []any, error) {
 	if len(b.wheres) == 0 && len(b.joins) == 0 && !b.allRows {
 		return "", nil, ErrNoWhere
 	}
+	if err := c.withWrite(b, "update"); err != nil {
+		return "", nil, err
+	}
 	c.write("UPDATE ")
 	c.writeTable(b.table)
 	c.write(" SET ")
@@ -551,6 +588,9 @@ func isNumber(v any) bool {
 
 func (c *compiler) delete(b *query) error {
 	if err := c.joinedOrderLimit(b, "delete"); err != nil {
+		return err
+	}
+	if err := c.withWrite(b, "delete"); err != nil {
 		return err
 	}
 	switch {
@@ -622,6 +662,9 @@ func (c *compiler) sqliteSchema(table string) string {
 // yet (no table uses AUTOINCREMENT); run DB.TruncateSQL's statements yourself only
 // if you handle that case.
 func (b *query) truncateSQL() ([]Stmt, error) {
+	if err := b.rejectWith("truncate"); err != nil {
+		return nil, err
+	}
 	c, err := b.writeCompiler()
 	if err != nil {
 		return nil, err

@@ -35,7 +35,7 @@ conn.Select().FromRaw("generate_series(?, ?) g", 1, 3)
 `conn.Select()` gives a select builder with no table yet: name one with `From`, `FromSub` or
 `FromRaw`. `Prefix("p_")` on a builder applies a table prefix (or set it once with `db.WithPrefix`).
 The `Where*`, `Join*`, `OrderBy*` and `Limit` families also exist on `conn.Update(...)` and
-`conn.Delete(...)` (grouping, `Offset`, unions, locks and CTEs do not); see [Writing data](writing-data.md).
+`conn.Delete(...)` (grouping, `Offset`, unions and locks do not); see [Writing data](writing-data.md).
 
 ## Where
 
@@ -296,34 +296,54 @@ active := conn.Select().From("users").Where("active", true)
 conn.Select().From("au").With("au", active).Where("age", ">", 30)
 // WITH "au" AS (SELECT * FROM "users" WHERE "active" = $1) SELECT * FROM "au" WHERE "age" > $2
 
-conn.Select().From("a").With("a", conn.Select().From("users").Select("id", "name"), "uid", "uname")
+conn.Select().From("a").With("a", conn.Select().From("users").Select("id", "name"), db.CTEColumns("uid", "uname"))
 // WITH "a" ("uid", "uname") AS (SELECT "id", "name" FROM "users") SELECT * FROM "a"
 ```
 
-`WithRecursive` takes the anchor query with the recursive member added by `UnionAll` (or `Union`).
-The clause becomes `WITH RECURSIVE`, and the members are written without parentheses, because
-SQLite rejects a recursive reference inside a subquery:
+Options follow the query and combine freely:
+
+| Option | Effect |
+| --- | --- |
+| `db.CTEColumns(cols...)` | Name the CTE's columns |
+| `db.CTEMaterialized()` / `db.CTENotMaterialized()` | `AS [NOT] MATERIALIZED` (PostgreSQL and SQLite; MySQL and MariaDB return `ErrUnsupported`). Not both |
+| `db.CTEUnionDistinct()` | `UNION` instead of `UNION ALL` (`WithRecursive` only) |
+
+`WithRecursive(name, anchor, step, opts...)` takes the starting query and the recursive member that
+refers back to `name`, and joins them with `UNION ALL`. The clause becomes `WITH RECURSIVE`, and the
+members are written without parentheses, because SQLite rejects a recursive reference inside a
+subquery. Neither query is modified, and the anchor must not have unions of its own:
 
 ```go
 anchor := conn.Select().From("categories").Where("id", 1)
 step := conn.Select().From("categories as c").Select("c.*").Join("tree", "tree.id", "c.parent_id")
 
-conn.Select().From("tree").WithRecursive("tree", anchor.UnionAll(step))
+conn.Select().From("tree").WithRecursive("tree", anchor, step)
 // WITH RECURSIVE "tree" AS (SELECT * FROM "categories" WHERE "id" = $1 UNION ALL
 //   SELECT "c".* FROM "categories" AS "c" INNER JOIN "tree" ON "tree"."id" = "c"."parent_id")
 //   SELECT * FROM "tree"
 ```
 
-- `WithRaw(name, db.Raw(sql, args...), cols...)` uses caller-trusted SQL as the body.
-- `WithMaterialized` and `WithNotMaterialized` add `as [not] materialized` (PostgreSQL only; other
-  dialects return `ErrUnsupported`).
+- `WithRaw(name, db.Raw(sql, args...), opts...)` uses caller-trusted SQL as the body and takes the
+  same options.
 - A CTE name is a table reference, so the table prefix applies to it just as it does in `From`.
-- The query passed in is copied when added. Duplicate or qualified names return `ErrInvalidArgs`.
-- WITH belongs to a select. A select carrying CTEs works as a subquery, a union member, in
-  `Count`/`Exists`/`Paginate`, and as the source of `Insert(...).Using`
-  (`INSERT INTO t (cols) WITH ... SELECT ...`). `With` exists only on the select builder: the insert,
-  update and delete builders have no CTE methods, so filter a write with `WhereIn("id", cteQuery)`
-  instead.
+- The queries passed in are copied when added. Duplicate or qualified names return `ErrInvalidArgs`.
+- A select carrying CTEs works as a subquery, a union member, and in `Count`/`Exists`/`Paginate`.
+- **Writes.** `With`, `WithRaw` and `WithRecursive` also exist on the update, delete and insert
+  builders:
+
+  ```go
+  gone := conn.Select("id").From("users").Where("active", false)
+
+  conn.Delete("posts").With("gone", gone).WhereIn("user_id", conn.Select("id").From("gone"))
+  // WITH "gone" AS (SELECT "id" FROM "users" WHERE "active" = $1)
+  //   DELETE FROM "posts" WHERE "user_id" IN (SELECT "id" FROM "gone")
+  ```
+
+  On update and delete the clause is written before the verb (PostgreSQL, MySQL 8, SQLite). MariaDB
+  has no `WITH` before `UPDATE` / `DELETE` and returns `ErrUnsupported`; filter with
+  `WhereIn("id", subquery)` there. On insert the CTEs are moved into the `SELECT` given to `Using`
+  (`INSERT INTO t (cols) WITH ... SELECT ...`, valid on every dialect), so an insert with `With`
+  but no `Using` (`Values`, `Rows`, `Upsert`) returns `ErrUnsupported`.
 
 ## Locks and index hints
 

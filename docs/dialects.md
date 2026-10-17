@@ -24,7 +24,8 @@ and SQLite; [MariaDB](#mariadb) is the MySQL column except where its section say
 | Random order | `RANDOM()` | `RAND()` / `RAND(seed)` | `RANDOM()` |
 | Union members | `(SELECT ...)` | `(SELECT ...)` | `SELECT * FROM (SELECT ...)` |
 | Recursive CTE members | `anchor UNION ALL step` | same | same |
-| `WithMaterialized` | `as [not] materialized` | `ErrUnsupported` | `ErrUnsupported` |
+| `CTEMaterialized`, `CTENotMaterialized` | `as [not] materialized` | `ErrUnsupported` | `as [not] materialized` |
+| `With` on update / delete | before the verb | before the verb (MariaDB: `ErrUnsupported`) | before the verb |
 | Insert, no columns | `DEFAULT VALUES` | `() VALUES ()` | `DEFAULT VALUES` |
 
 ## Matching and comparison
@@ -108,8 +109,12 @@ Differences you can observe:
   `*` from two tables sharing a column name should select explicit columns.
 - **Affected rows on MySQL** count changed rows, so updating a row to its current value reports 0.
 - **Version floors:** SQLite `RETURNING` needs 3.35; MySQL lateral joins need 8.0.14. CTEs need
-  MySQL 8.0, MariaDB 10.2 and SQLite 3.8.3; `materialized` needs PostgreSQL 12. The CTE floors
-  are the vendors' documented minimums and are untested here.
+  MySQL 8.0, MariaDB 10.2 and SQLite 3.8.3; `materialized` needs PostgreSQL 12 or SQLite 3.35.
+  The floors are the vendors' documented minimums and are untested here. Probed on the
+  integration servers (MariaDB 11.4, MySQL 8.4, SQLite 3.53): MariaDB rejects `WITH` before
+  `UPDATE` / `DELETE` and the `MATERIALIZED` hint; MySQL rejects the hint but accepts `WITH` before
+  `UPDATE` / `DELETE`; MySQL and MariaDB reject `WITH` before `INSERT`, so a CTE on an insert is moved
+  into the `SELECT` given to `Using`.
 - **Recursion depth on MySQL** is capped by `cte_max_recursion_depth` (default 1000); a deeper
   recursive CTE fails at run time.
 

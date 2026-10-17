@@ -811,7 +811,7 @@ func TestMySQLCTE(t *testing.T) {
 			t,
 			conn.Select().
 				From("seq").
-				WithRecursive("seq", anchor.UnionAll(step), "n").
+				WithRecursive("seq", anchor, step, db.CTEColumns("n")).
 				OrderBy("n").
 				Pluck(ctx, "n", &got),
 		)
@@ -838,6 +838,40 @@ func TestMySQLCTE(t *testing.T) {
 		ok, err := conn.Select().From("au").With("au", active()).Where("name", "Bob").Exists(ctx)
 		require.NoError(t, err)
 		assert.False(t, ok)
+	})
+	t.Run("materialized hint is rejected before it reaches the server", func(t *testing.T) {
+		_, _, err := conn.Select().From("au").With("au", active(), db.CTEMaterialized()).ToSQL()
+		assert.ErrorIs(t, err, db.ErrUnsupported)
+	})
+	t.Run("update and delete with a cte", func(t *testing.T) {
+		rolledBack(t, conn, func(tx *db.DB) {
+			gone := func() *db.SelectBuilder { return tx.Select("id").From("users").Where("active", false) }
+			posts := func() *db.SelectBuilder {
+				return tx.Select().From("posts").WhereIn("user_id", gone())
+			}
+			want, err := posts().Count(ctx)
+			require.NoError(t, err)
+			require.Positive(t, want)
+			byCTE := func() *db.SelectBuilder { return tx.Select("id").From("gone") }
+			n, err := tx.Update("posts").With("gone", gone()).Set("views", 99).WhereIn("user_id", byCTE()).Exec(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, want, n)
+			n, err = tx.Delete("posts").With("gone", gone()).WhereIn("user_id", byCTE()).Exec(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, want, n)
+			left, err := posts().Count(ctx)
+			require.NoError(t, err)
+			assert.Zero(t, left)
+		})
+	})
+	t.Run("insert with a cte moves it into the select", func(t *testing.T) {
+		rolledBack(t, conn, func(tx *db.DB) {
+			n, err := tx.Insert("users").
+				With("inactive", tx.Select().From("users").Where("active", false)).
+				Using([]string{"name"}, tx.Select("name").From("inactive")).Exec(ctx)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), n)
+		})
 	})
 	t.Run("insert using", func(t *testing.T) {
 		sub := conn.Select("name").From("inactive").With("inactive", conn.Select().From("users").Where("active", false))
