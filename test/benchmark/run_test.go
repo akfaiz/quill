@@ -10,6 +10,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -50,6 +52,7 @@ type runEnv struct {
 	q    *db.DB
 	x    *sqlx.DB
 	g    *gorm.DB
+	b    *bun.DB
 }
 
 func newRunEnv(tb testing.TB) *runEnv {
@@ -82,7 +85,8 @@ func newRunEnv(tb testing.TB) *runEnv {
 	g, err := gorm.Open(sqlite.Dialector{Conn: conn}, &gorm.Config{Logger: logger.Discard})
 	require.NoError(tb, err)
 
-	return &runEnv{conn: conn, q: db.New(conn, db.SQLite), x: sqlx.NewDb(conn, "sqlite"), g: g}
+	return &runEnv{conn: conn, q: db.New(conn, db.SQLite), x: sqlx.NewDb(conn, "sqlite"), g: g,
+		b: bun.NewDB(conn, sqlitedialect.New())}
 }
 
 func (e *runEnv) scenarios() []runScenario {
@@ -118,6 +122,11 @@ func (e *runEnv) scenarios() []runScenario {
 				err := e.g.WithContext(ctx).Select("id", "name", "age", "email").Where("id = ?", oneID).Take(&u).Error
 				return u.ID, err
 			}},
+			{"bun", func(ctx context.Context) (int64, error) {
+				var u user
+				err := e.b.NewSelect().Model(&u).Column("id", "name", "age", "email").Where("id = ?", oneID).Scan(ctx)
+				return u.ID, err
+			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
 				var u user
 				err := e.conn.QueryRowContext(ctx, "SELECT "+cols+" FROM users WHERE id = ? LIMIT 1", oneID).
@@ -142,6 +151,12 @@ func (e *runEnv) scenarios() []runScenario {
 				var us []user
 				err := e.g.WithContext(ctx).Select("id", "name", "age", "email").
 					Where("age >= ?", minAge).Order("id").Limit(limit).Find(&us).Error
+				return sumIDs(us), err
+			}},
+			{"bun", func(ctx context.Context) (int64, error) {
+				var us []user
+				err := e.b.NewSelect().Model(&us).Column("id", "name", "age", "email").
+					Where("age >= ?", minAge).Order("id").Limit(limit).Scan(ctx)
 				return sumIDs(us), err
 			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
@@ -176,6 +191,10 @@ func (e *runEnv) scenarios() []runScenario {
 				err := e.g.WithContext(ctx).Model(&user{}).Where("age >= ?", minAge).Count(&n).Error
 				return n, err
 			}},
+			{"bun", func(ctx context.Context) (int64, error) {
+				n, err := e.b.NewSelect().Model((*user)(nil)).Where("age >= ?", minAge).Count(ctx)
+				return n, err
+			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
 				var n int64
 				err := e.conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE age >= ?", minAge).Scan(&n)
@@ -203,6 +222,14 @@ func (e *runEnv) scenarios() []runScenario {
 				res := e.g.WithContext(ctx).Select("name", "age", "email").Create(&u)
 				return res.RowsAffected, res.Error
 			}},
+			{"bun", func(ctx context.Context) (int64, error) {
+				u := newUser()
+				res, err := e.b.NewInsert().Model(&u).Column("name", "age", "email").Exec(ctx)
+				if err != nil {
+					return 0, err
+				}
+				return res.RowsAffected()
+			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
 				u := newUser()
 				res, err := e.conn.ExecContext(ctx, "INSERT INTO users (name, age, email) VALUES (?, ?, ?)",
@@ -227,6 +254,13 @@ func (e *runEnv) scenarios() []runScenario {
 			{"gorm", func(ctx context.Context) (int64, error) {
 				res := e.g.WithContext(ctx).Model(&user{}).Where("id = ?", oneID).Update("age", 31)
 				return res.RowsAffected, res.Error
+			}},
+			{"bun", func(ctx context.Context) (int64, error) {
+				res, err := e.b.NewUpdate().Model((*user)(nil)).Set("age = ?", 31).Where("id = ?", oneID).Exec(ctx)
+				if err != nil {
+					return 0, err
+				}
+				return res.RowsAffected()
 			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
 				res, err := e.conn.ExecContext(ctx, "UPDATE users SET age = ? WHERE id = ?", 31, oneID)
@@ -268,9 +302,10 @@ func TestRunScenariosAreComparable(t *testing.T) {
 func BenchmarkRun(b *testing.B) {
 	ctx := context.Background()
 	names := []string{"SelectOne", "SelectMany", "Count", "Insert", "Update"}
+	nLibs := len(newRunEnv(b).scenarios()[0].libs)
 	for _, name := range names {
 		b.Run(name, func(b *testing.B) {
-			for i := range 4 {
+			for i := range nLibs {
 				e := newRunEnv(b)
 				var s runScenario
 				for _, c := range e.scenarios() {

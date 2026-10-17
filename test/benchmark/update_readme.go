@@ -32,7 +32,7 @@ var sections = []section{
 
 // libOrder is the row order within a scenario. A library not listed follows these in the
 // order it appears in the output. quill must stay first: the other rows are relative to it.
-var libOrder = []string{"quill", "sqlbuilder", "goqu", "squirrel", "sqlx", "gorm", "stdlib"}
+var libOrder = []string{"quill", "sqlbuilder", "goqu", "squirrel", "sqlx", "gorm", "bun", "stdlib"}
 
 // labels override the scenario name shown in the table.
 var labels = map[string]string{"WideWhere": "WideWhere (12 predicates)"}

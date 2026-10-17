@@ -66,7 +66,7 @@ test-sqlite: ## Integration tests, SQLite only (no Docker)
 bench: ## Run benchmarks (BENCH=regexp, BENCHTIME=1s); no tests
 	$(GO) test -run=NONE -bench=$(BENCH) -benchmem -benchtime=$(BENCHTIME) ./...
 
-bench-libs: ## Compare quill with sqlbuilder, goqu, squirrel (build) and sqlx, GORM (run) (6 runs); saves test/benchmark/results.txt
+bench-libs: ## Compare quill with sqlbuilder, goqu, squirrel (build) and sqlx, GORM, bun (run) (6 runs); saves test/benchmark/results.txt
 	cd $(BENCHMARK_DIR) && $(GO) test -run Comparable .
 	cd $(BENCHMARK_DIR) && { echo "go: $$($(GO) env GOVERSION | sed 's/^go//')"; \
 		$(GO) test -run=NONE -bench=. -benchmem -count=6 .; } | tee results.txt
