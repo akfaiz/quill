@@ -80,5 +80,5 @@ interpolation), `errs` (shared sentinel errors, re-exported by `db`).
 
 ## Docs
 
-`docs/*.md` are the user guides; `docs/reference.md` indexes every exported method, so update it when adding one.
-Code blocks in the docs are written to compile as shown. Markdown files start with the line
+User guides and the method reference live in the GitHub wiki (https://github.com/akfaiz/quill/wiki), not in this
+repo; there is no `docs/` folder. Keep `go doc` comments accurate and `db/example_test.go` examples compiling.

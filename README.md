@@ -141,20 +141,14 @@ err := conn.Transaction(ctx, func(tx *db.DB) error {
 
 ## Documentation
 
-| Guide | What it covers |
+Guides (getting started, building queries, writing data, running queries, the typed API, dialects,
+security and the method reference) live in the [project wiki](https://github.com/akfaiz/quill/wiki).
+
+| Resource | What it covers |
 | --- | --- |
-| [Getting started](docs/getting-started.md) | Install, connecting, options, building versus running, errors |
-| [Building queries](docs/building-queries.md) | Select, where, joins, grouping, ordering, unions, subqueries, JSON, raw SQL |
-| [Writing data](docs/writing-data.md) | Insert, upsert, update, increment, delete, truncate, `RETURNING`, the safety guard |
-| [Running queries](docs/running-queries.md) | Reading and scanning, aggregates, pagination, chunking, streaming, transactions, hooks |
-| [Typed API](docs/typed-api.md) | `TableName()`, `From[T]`, `As[T]`, struct writes with `Rows` / `SetRow`, scalar helpers |
-| [Dialects](docs/dialects.md) | What differs between PostgreSQL, MySQL, MariaDB and SQLite, with versions |
-| [Security](docs/security.md) | Injection, raw SQL, logging and personal data, untrusted cursors |
-| [Reference](docs/reference.md) | Errors, types, options and an index of every method |
+| [Wiki](https://github.com/akfaiz/quill/wiki) | User guides and method reference |
 | [Benchmarks](test/benchmark/README.md) | Build-time comparison with go-sqlbuilder, goqu and squirrel |
 | [Contributing](CONTRIBUTING.md) | Layout, tests, fuzzing, integration suites, adding a dialect |
-
-API documentation is also available through `go doc github.com/akfaiz/quill/db`.
 
 ## License
 

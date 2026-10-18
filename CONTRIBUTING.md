@@ -14,7 +14,6 @@
 | `internal/errs` | Error values shared with `db`, which re-exports them |
 | `test/benchmark/` | A separate module: quill vs sqlbuilder, goqu and squirrel (building SQL) and vs sqlx and GORM (running queries on SQLite) (`make bench-libs`) |
 | `test/integration/` | A separate module: end-to-end tests on SQLite, PostgreSQL, MySQL and MariaDB |
-| `docs/` | The guides |
 
 Why `internal/`: each package is self-contained (no import of `db`), unit-testable on its own,
 and hidden from users. Code that works on the builders' unexported state (the compiler, the
@@ -140,8 +139,7 @@ runs as a regression case in a plain `go test`.
    `WhereClause`, `HavingClause` and `Query[T]`) in `db/chain_gen.go`; never edit that file by hand. If
    the method belongs to a new group (for example select-only), add it to the group table in
    `internal/chaingen`.
-5. Add it to the relevant guide in `docs/`. `docs/reference.md` lists every method of every builder, so
-   add it there as well.
+5. Document it in the [wiki](https://github.com/akfaiz/quill/wiki): the relevant guide, and the method reference.
 6. If a database could reject or reinterpret the SQL, add an integration case.
 
 ## Adding a dialect
@@ -157,7 +155,7 @@ runs as a regression case in a plain `go test`.
 4. Add golden cases for the new dialect to every table-driven test (they list one expected string
    per dialect), then a `test/integration/<dialect>_test.go` with its container, schema and suite
    (copy `postgres_test.go` or `mysql_test.go`).
-5. Document it in `docs/dialects.md`.
+5. Document it on the wiki's dialects page.
 
 ### A variant of an existing dialect
 
@@ -181,5 +179,5 @@ When a database is mostly another one (MariaDB is mostly MySQL), do not copy the
 ## Documentation
 
 Examples in the guides are written to be correct as shown. When you change behaviour, update the
-guide and `docs/reference.md`, and keep `go doc` comments accurate. Examples in
+wiki guide and method reference, and keep `go doc` comments accurate. Examples in
 `db/example_test.go` are executed by `go test`.
