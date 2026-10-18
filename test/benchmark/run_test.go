@@ -43,6 +43,13 @@ type runLib struct {
 type runScenario struct {
 	name string
 	libs []runLib
+
+	// reset, check and checkWant prove a write really stored every column. reset runs
+	// before each library, check is a COUNT query run after it, and checkWant(i) is the
+	// count expected after the i-th library. Reads leave all three empty.
+	reset     string
+	check     string
+	checkWant func(i int) int64
 }
 
 // runEnv is one in-memory SQLite database shared by every library under test, so the
@@ -96,10 +103,15 @@ func (e *runEnv) scenarios() []runScenario {
 		limit  = 100
 		cols   = "id, name, age, email"
 	)
-	sumIDs := func(us []user) int64 {
+	// checksum folds every column into one number, so a library that scans fewer
+	// columns than the others returns a different result and fails the guard.
+	checksum := func(u user) int64 {
+		return u.ID + int64(len(u.Name)) + int64(u.Age) + int64(len(u.Email))
+	}
+	sumUsers := func(us []user) int64 {
 		var n int64
 		for _, u := range us {
-			n += u.ID
+			n += checksum(u)
 		}
 		return n
 	}
@@ -110,28 +122,28 @@ func (e *runEnv) scenarios() []runScenario {
 			{"quill", func(ctx context.Context) (int64, error) {
 				var u user
 				err := e.q.Select("id", "name", "age", "email").From("users").Find(ctx, oneID, &u)
-				return u.ID, err
+				return checksum(u), err
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
 				var u user
 				err := e.x.GetContext(ctx, &u, "SELECT "+cols+" FROM users WHERE id = ? LIMIT 1", oneID)
-				return u.ID, err
+				return checksum(u), err
 			}},
 			{"gorm", func(ctx context.Context) (int64, error) {
 				var u user
 				err := e.g.WithContext(ctx).Select("id", "name", "age", "email").Where("id = ?", oneID).Take(&u).Error
-				return u.ID, err
+				return checksum(u), err
 			}},
 			{"bun", func(ctx context.Context) (int64, error) {
 				var u user
 				err := e.b.NewSelect().Model(&u).Column("id", "name", "age", "email").Where("id = ?", oneID).Scan(ctx)
-				return u.ID, err
+				return checksum(u), err
 			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
 				var u user
 				err := e.conn.QueryRowContext(ctx, "SELECT "+cols+" FROM users WHERE id = ? LIMIT 1", oneID).
 					Scan(&u.ID, &u.Name, &u.Age, &u.Email)
-				return u.ID, err
+				return checksum(u), err
 			}},
 		}},
 		{name: "SelectMany", libs: []runLib{
@@ -139,25 +151,25 @@ func (e *runEnv) scenarios() []runScenario {
 				var us []user
 				err := e.q.Select("id", "name", "age", "email").From("users").
 					Where("age", ">=", minAge).OrderBy("id").Limit(limit).Get(ctx, &us)
-				return sumIDs(us), err
+				return sumUsers(us), err
 			}},
 			{"sqlx", func(ctx context.Context) (int64, error) {
 				var us []user
 				err := e.x.SelectContext(ctx, &us,
 					"SELECT "+cols+" FROM users WHERE age >= ? ORDER BY id ASC LIMIT ?", minAge, limit)
-				return sumIDs(us), err
+				return sumUsers(us), err
 			}},
 			{"gorm", func(ctx context.Context) (int64, error) {
 				var us []user
 				err := e.g.WithContext(ctx).Select("id", "name", "age", "email").
 					Where("age >= ?", minAge).Order("id").Limit(limit).Find(&us).Error
-				return sumIDs(us), err
+				return sumUsers(us), err
 			}},
 			{"bun", func(ctx context.Context) (int64, error) {
 				var us []user
 				err := e.b.NewSelect().Model(&us).Column("id", "name", "age", "email").
 					Where("age >= ?", minAge).Order("id").Limit(limit).Scan(ctx)
-				return sumIDs(us), err
+				return sumUsers(us), err
 			}},
 			{"stdlib", func(ctx context.Context) (int64, error) {
 				rows, err := e.conn.QueryContext(ctx,
@@ -172,7 +184,7 @@ func (e *runEnv) scenarios() []runScenario {
 					if err := rows.Scan(&u.ID, &u.Name, &u.Age, &u.Email); err != nil {
 						return 0, err
 					}
-					n += u.ID
+					n += checksum(u)
 				}
 				return n, rows.Err()
 			}},
@@ -201,80 +213,90 @@ func (e *runEnv) scenarios() []runScenario {
 				return n, err
 			}},
 		}},
-		{name: "Insert", libs: []runLib{
-			{"quill", func(ctx context.Context) (int64, error) {
-				u := newUser()
-				return e.q.Insert("users").
-					Values(map[string]any{"name": u.Name, "age": u.Age, "email": u.Email}).
-					Exec(ctx)
+		{
+			name:      "Insert",
+			check:     "SELECT COUNT(*) FROM users WHERE name = 'new' AND age = 30 AND email = 'new@example.com'",
+			checkWant: func(i int) int64 { return int64(i + 1) },
+			libs: []runLib{
+				{"quill", func(ctx context.Context) (int64, error) {
+					u := newUser()
+					return e.q.Insert("users").
+						Values(map[string]any{"name": u.Name, "age": u.Age, "email": u.Email}).
+						Exec(ctx)
+				}},
+				{"sqlx", func(ctx context.Context) (int64, error) {
+					u := newUser()
+					res, err := e.x.ExecContext(ctx, "INSERT INTO users (name, age, email) VALUES (?, ?, ?)",
+						u.Name, u.Age, u.Email)
+					if err != nil {
+						return 0, err
+					}
+					return res.RowsAffected()
+				}},
+				{"gorm", func(ctx context.Context) (int64, error) {
+					u := newUser()
+					res := e.g.WithContext(ctx).Select("name", "age", "email").Create(&u)
+					return res.RowsAffected, res.Error
+				}},
+				{"bun", func(ctx context.Context) (int64, error) {
+					u := newUser()
+					res, err := e.b.NewInsert().Model(&u).Column("name", "age", "email").Exec(ctx)
+					if err != nil {
+						return 0, err
+					}
+					return res.RowsAffected()
+				}},
+				{"stdlib", func(ctx context.Context) (int64, error) {
+					u := newUser()
+					res, err := e.conn.ExecContext(ctx, "INSERT INTO users (name, age, email) VALUES (?, ?, ?)",
+						u.Name, u.Age, u.Email)
+					if err != nil {
+						return 0, err
+					}
+					return res.RowsAffected()
+				}},
 			}},
-			{"sqlx", func(ctx context.Context) (int64, error) {
-				u := newUser()
-				res, err := e.x.ExecContext(ctx, "INSERT INTO users (name, age, email) VALUES (?, ?, ?)",
-					u.Name, u.Age, u.Email)
-				if err != nil {
-					return 0, err
-				}
-				return res.RowsAffected()
+		{
+			name:      "Update",
+			reset:     fmt.Sprintf("UPDATE users SET age = 30 WHERE id = %d", oneID),
+			check:     fmt.Sprintf("SELECT COUNT(*) FROM users WHERE id = %d AND age = 31", oneID),
+			checkWant: func(int) int64 { return 1 },
+			libs: []runLib{
+				{"quill", func(ctx context.Context) (int64, error) {
+					return e.q.Update("users").Set("age", 31).Where("id", oneID).Exec(ctx)
+				}},
+				{"sqlx", func(ctx context.Context) (int64, error) {
+					res, err := e.x.ExecContext(ctx, "UPDATE users SET age = ? WHERE id = ?", 31, oneID)
+					if err != nil {
+						return 0, err
+					}
+					return res.RowsAffected()
+				}},
+				{"gorm", func(ctx context.Context) (int64, error) {
+					res := e.g.WithContext(ctx).Model(&user{}).Where("id = ?", oneID).Update("age", 31)
+					return res.RowsAffected, res.Error
+				}},
+				{"bun", func(ctx context.Context) (int64, error) {
+					res, err := e.b.NewUpdate().Model((*user)(nil)).Set("age = ?", 31).Where("id = ?", oneID).Exec(ctx)
+					if err != nil {
+						return 0, err
+					}
+					return res.RowsAffected()
+				}},
+				{"stdlib", func(ctx context.Context) (int64, error) {
+					res, err := e.conn.ExecContext(ctx, "UPDATE users SET age = ? WHERE id = ?", 31, oneID)
+					if err != nil {
+						return 0, err
+					}
+					return res.RowsAffected()
+				}},
 			}},
-			{"gorm", func(ctx context.Context) (int64, error) {
-				u := newUser()
-				res := e.g.WithContext(ctx).Select("name", "age", "email").Create(&u)
-				return res.RowsAffected, res.Error
-			}},
-			{"bun", func(ctx context.Context) (int64, error) {
-				u := newUser()
-				res, err := e.b.NewInsert().Model(&u).Column("name", "age", "email").Exec(ctx)
-				if err != nil {
-					return 0, err
-				}
-				return res.RowsAffected()
-			}},
-			{"stdlib", func(ctx context.Context) (int64, error) {
-				u := newUser()
-				res, err := e.conn.ExecContext(ctx, "INSERT INTO users (name, age, email) VALUES (?, ?, ?)",
-					u.Name, u.Age, u.Email)
-				if err != nil {
-					return 0, err
-				}
-				return res.RowsAffected()
-			}},
-		}},
-		{name: "Update", libs: []runLib{
-			{"quill", func(ctx context.Context) (int64, error) {
-				return e.q.Update("users").Set("age", 31).Where("id", oneID).Exec(ctx)
-			}},
-			{"sqlx", func(ctx context.Context) (int64, error) {
-				res, err := e.x.ExecContext(ctx, "UPDATE users SET age = ? WHERE id = ?", 31, oneID)
-				if err != nil {
-					return 0, err
-				}
-				return res.RowsAffected()
-			}},
-			{"gorm", func(ctx context.Context) (int64, error) {
-				res := e.g.WithContext(ctx).Model(&user{}).Where("id = ?", oneID).Update("age", 31)
-				return res.RowsAffected, res.Error
-			}},
-			{"bun", func(ctx context.Context) (int64, error) {
-				res, err := e.b.NewUpdate().Model((*user)(nil)).Set("age = ?", 31).Where("id = ?", oneID).Exec(ctx)
-				if err != nil {
-					return 0, err
-				}
-				return res.RowsAffected()
-			}},
-			{"stdlib", func(ctx context.Context) (int64, error) {
-				res, err := e.conn.ExecContext(ctx, "UPDATE users SET age = ? WHERE id = ?", 31, oneID)
-				if err != nil {
-					return 0, err
-				}
-				return res.RowsAffected()
-			}},
-		}},
 	}
 }
 
 // TestRunScenariosAreComparable guards the comparison: every library must return the
-// same result for the same query, so a benchmark cannot win by doing less work.
+// same result for the same query (a checksum over every column, not just the id) and
+// writes must store the same data, so a benchmark cannot win by doing less work.
 func TestRunScenariosAreComparable(t *testing.T) {
 	ctx := context.Background()
 	for _, name := range []string{"SelectOne", "SelectMany", "Count", "Insert", "Update"} {
@@ -284,13 +306,25 @@ func TestRunScenariosAreComparable(t *testing.T) {
 				if s.name != name {
 					continue
 				}
-				want, err := s.libs[0].fn(ctx)
-				require.NoError(t, err, s.libs[0].name)
-				assert.NotZero(t, want, s.libs[0].name)
-				for _, l := range s.libs[1:] {
+				var want int64
+				for i, l := range s.libs {
+					if s.reset != "" {
+						_, err := e.conn.ExecContext(ctx, s.reset)
+						require.NoError(t, err, l.name)
+					}
 					got, err := l.fn(ctx)
 					require.NoError(t, err, l.name)
-					assert.Equal(t, want, got, "%s returns a different result", l.name)
+					if i == 0 {
+						want = got
+						assert.NotZero(t, want, l.name)
+					} else {
+						assert.Equal(t, want, got, "%s returns a different result", l.name)
+					}
+					if s.check != "" {
+						var n int64
+						require.NoError(t, e.conn.QueryRowContext(ctx, s.check).Scan(&n), l.name)
+						assert.Equal(t, s.checkWant(i), n, "%s stored different data", l.name)
+					}
 				}
 			}
 		})
@@ -302,7 +336,9 @@ func TestRunScenariosAreComparable(t *testing.T) {
 func BenchmarkRun(b *testing.B) {
 	ctx := context.Background()
 	names := []string{"SelectOne", "SelectMany", "Count", "Insert", "Update"}
-	nLibs := len(newRunEnv(b).scenarios()[0].libs)
+	probe := newRunEnv(b)
+	nLibs := len(probe.scenarios()[0].libs)
+	_ = probe.conn.Close() // only needed to count libraries; do not keep it open for the whole run
 	for _, name := range names {
 		b.Run(name, func(b *testing.B) {
 			for i := range nLibs {

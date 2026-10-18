@@ -1,6 +1,8 @@
 package benchmark
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 
 	sq "github.com/Masterminds/squirrel"
@@ -28,6 +30,10 @@ type scenario struct {
 	// limitArgs is how many extra arguments goqu and sqlbuilder bind: unlike quill
 	// and squirrel they send LIMIT and OFFSET as parameters instead of literals.
 	limitArgs int
+
+	// contains are fragments every library's normalized SQL must include (see normalize),
+	// so a library cannot win by selecting other columns, tables or clauses.
+	contains []string
 }
 
 var (
@@ -37,16 +43,12 @@ var (
 	ids     = []int{1, 2, 3, 4, 5}
 	idsAny  = []any{1, 2, 3, 4, 5}
 	insRows = [][3]any{{"ann", 30, "a@x"}, {"bob", 25, "b@x"}, {"cy", 41, "c@x"}}
-	insMaps = []map[string]any{
-		{"name": "ann", "age": 30, "email": "a@x"},
-		{"name": "bob", "age": 25, "email": "b@x"},
-		{"name": "cy", "age": 41, "email": "c@x"},
-	}
 )
 
 var scenarios = []scenario{
 	{
 		name:      "SimpleSelect",
+		contains:  []string{"select id, name from users", "votes", "order by id desc", "limit"},
 		limitArgs: 1,
 		quill: func() (string, []any, error) {
 			return pg.Select("id", "name").From("users").Where("votes", ">", 100).OrderByDesc("id").Limit(10).ToSQL()
@@ -80,7 +82,11 @@ var scenarios = []scenario{
 		},
 	},
 	{
-		name:      "ComplexSelect",
+		name: "ComplexSelect",
+		contains: []string{
+			"select u.id, u.name, p.title from users", "posts", "profiles",
+			"group by u.id, u.name, p.title", "order by u.name asc",
+		},
 		limitArgs: 2,
 		quill: func() (string, []any, error) {
 			return pg.Select("u.id", "u.name", "p.title").
@@ -138,7 +144,8 @@ var scenarios = []scenario{
 		},
 	},
 	{
-		name: "WideWhere",
+		name:     "WideWhere",
+		contains: []string{"select * from orders", "between"},
 		quill: func() (string, []any, error) {
 			return pg.Select().From("orders").
 				Where("a", 1).Where("b", ">", 2).Where("c", "<", 3).Where("d", "!=", 4).
@@ -175,9 +182,14 @@ var scenarios = []scenario{
 		},
 	},
 	{
-		name: "Insert3Rows",
+		name:     "Insert3Rows",
+		contains: []string{"insert into users", "values"},
 		quill: func() (string, []any, error) {
-			return pg.Insert("users").Values(insMaps...).ToSQL()
+			rows := make([]map[string]any, len(insRows))
+			for i, r := range insRows {
+				rows[i] = map[string]any{"name": r[0], "age": r[1], "email": r[2]}
+			}
+			return pg.Insert("users").Values(rows...).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
 			q := sqPG.Insert("users").Columns("name", "age", "email")
@@ -204,12 +216,13 @@ var scenarios = []scenario{
 		},
 	},
 	{
-		name: "Update",
+		name:     "Update",
+		contains: []string{"update users set", "where"},
 		quill: func() (string, []any, error) {
 			return pg.Update("users").SetMap(map[string]any{"name": "ann", "age": 31}).Where("id", 1).ToSQL()
 		},
 		squirr: func() (string, []any, error) {
-			return sqPG.Update("users").Set("name", "ann").Set("age", 31).Where(sq.Eq{"id": 1}).ToSql()
+			return sqPG.Update("users").SetMap(map[string]any{"name": "ann", "age": 31}).Where(sq.Eq{"id": 1}).ToSql()
 		},
 		goqu: func() (string, []any, error) {
 			return goquPG.Update("users").
@@ -228,7 +241,8 @@ var scenarios = []scenario{
 		},
 	},
 	{
-		name: "Delete",
+		name:     "Delete",
+		contains: []string{"delete from users", "where"},
 		quill: func() (string, []any, error) {
 			return pg.Delete("users").Where("id", 1).ToSQL()
 		},
@@ -244,6 +258,15 @@ var scenarios = []scenario{
 			return sql, args, nil
 		},
 	},
+}
+
+var spaces = regexp.MustCompile(`\s+`)
+
+// normalize lowercases SQL, drops identifier quotes and collapses whitespace, so quoted
+// (quill, goqu) and unquoted (squirrel, sqlbuilder) output can be compared.
+func normalize(sql string) string {
+	sql = strings.ToLower(strings.ReplaceAll(sql, `"`, ""))
+	return strings.TrimSpace(spaces.ReplaceAllString(sql, " "))
 }
 
 func libs(s scenario) []struct {
@@ -276,6 +299,9 @@ func TestScenariosAreComparable(t *testing.T) {
 					want = n
 				}
 				assert.Equal(t, want, n, "%s binds a different number of arguments", l.name)
+				for _, frag := range s.contains {
+					assert.Contains(t, normalize(sql), frag, "%s builds a different query", l.name)
+				}
 			}
 		})
 	}
