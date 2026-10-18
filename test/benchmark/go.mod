@@ -11,7 +11,6 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/stretchr/testify v1.12.1
 	github.com/uptrace/bun v1.3.0
-	github.com/uptrace/bun/dialect/pgdialect v1.3.0
 	github.com/uptrace/bun/dialect/sqlitedialect v1.3.0
 	gorm.io/gorm v1.31.2
 )
