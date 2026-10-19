@@ -25,7 +25,7 @@ func BenchmarkSliceStructs(b *testing.B) {
 	cols := []string{"id", "user_name", "email", "age"}
 	data := benchRows(100)
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		b.StopTimer() // opening the fake result set is setup, not the scan
 		rs := result(b, cols, data...)
 		b.StartTimer()
@@ -40,7 +40,7 @@ func BenchmarkSliceMaps(b *testing.B) {
 	cols := []string{"id", "user_name", "email", "age"}
 	data := benchRows(100)
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		b.StopTimer() // opening the fake result set is setup, not the scan
 		rs := result(b, cols, data...)
 		b.StartTimer()
@@ -59,7 +59,7 @@ func BenchmarkFields(b *testing.B) {
 	}
 	t := reflect.TypeFor[user]()
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		_ = Fields(t)
 	}
 }

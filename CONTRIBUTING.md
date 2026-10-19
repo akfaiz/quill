@@ -83,9 +83,10 @@ go test -run TestMariaDB ./...                           # only the MariaDB cont
 
 - Without a reachable Docker daemon the PostgreSQL and MySQL tests **skip**.
 - `GOQUERY_SKIP_CONTAINERS=1` skips them on purpose.
-- `test/integration/go.mod` targets the same Go as the root module (1.25). The newest SQLite
+- The root module targets Go 1.23: avoid 1.24+ APIs (`strings.SplitSeq`, `testing.B.Loop`). `test/integration/go.mod`
+  and `test/benchmark/go.mod` stay on Go 1.25 because their dependencies need it. The newest SQLite
   driver releases need Go 1.26, so `modernc.org/sqlite` is pinned to v1.59.0, the newest that
-  supports 1.25. Raise both together when you raise the Go version. After changing dependencies,
+  supports 1.25. After changing dependencies,
   run `GOTOOLCHAIN=local go mod tidy` so a newer toolchain cannot silently bump the `go` line.
 - Shared code: `helpers_test.go` (row types, assertions, the seed rows used by PostgreSQL and
   MySQL) and `containers_test.go` (`TestMain`, the Docker check and container cleanup).

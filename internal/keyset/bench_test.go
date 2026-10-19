@@ -4,7 +4,7 @@ import "testing"
 
 func BenchmarkEncode(b *testing.B) {
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		if _, err := Encode(int64(123456789)); err != nil {
 			b.Fatal(err)
 		}
@@ -17,7 +17,7 @@ func BenchmarkDecode(b *testing.B) {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		if _, err := Decode(tok); err != nil {
 			b.Fatal(err)
 		}
