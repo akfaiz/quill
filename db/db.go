@@ -83,18 +83,6 @@ type Option func(*DB)
 //	// SELECT * FROM "app_users"
 func WithPrefix(prefix string) Option { return func(db *DB) { db.prefix = prefix } }
 
-// WithHook registers fn to run after every statement (logging, metrics, tracing).
-// It is the same as WithAfterHook. Bind values are omitted from the event unless
-// WithLogArgs is also set.
-//
-// Example:
-//
-//	hook := func(_ context.Context, ev db.QueryEvent) { log.Println(ev.SQL, ev.NumArgs) }
-//	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
-//	conn.Select().From("users").Where("name", "ann").Count(ctx)
-//	// hook sees: SELECT COUNT(*) AS "aggregate" FROM "users" WHERE "name" = $1, 1
-func WithHook(fn func(context.Context, QueryEvent)) Option { return WithAfterHook(fn) }
-
 // WithAfterHook registers fn to run after every statement, with Duration and Err set.
 // Hooks run in registration order. Bind values are omitted unless WithLogArgs is set.
 //
@@ -130,7 +118,7 @@ func WithBeforeHook(fn BeforeHook) Option {
 // Example:
 //
 //	hook := func(_ context.Context, ev db.QueryEvent) { log.Println(ev.Args) }
-//	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook), db.WithLogArgs())
+//	conn := db.New(sqlDB, db.Postgres, db.WithAfterHook(hook), db.WithLogArgs())
 //	// ev.Args = ["ann"] for Where("name", "ann")
 func WithLogArgs() Option { return func(db *DB) { db.logArgs = true } }
 

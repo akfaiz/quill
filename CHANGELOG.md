@@ -10,8 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `db.WithBeforeHook` runs before each statement. It can replace the context (for tracing) or return an error to
-  abort the statement. `db.WithAfterHook` is the new name for `db.WithHook`, which keeps working. Hooks may be
-  registered several times and run in registration order; `db.BeforeHook` and `db.AfterHook` name the func types.
+  abort the statement. `db.WithAfterHook` replaces `db.WithHook`. Hooks may be registered several times
+  and run in registration order; `db.BeforeHook` and `db.AfterHook` name the func types.
+
+### Breaking
+
+- Removed `db.WithHook`; use `db.WithAfterHook`.
 
 ### Changed
 

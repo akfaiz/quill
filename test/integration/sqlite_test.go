@@ -959,7 +959,7 @@ func (n noBegin) ExecContext(_ context.Context, _ string, _ ...any) (sql.Result,
 func TestSQLiteHooksAndRawAccess(t *testing.T) {
 	t.Run("args are redacted by default", func(t *testing.T) {
 		var evs []db.QueryEvent
-		conn := newDB(t, db.WithHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }))
+		conn := newDB(t, db.WithAfterHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }))
 		var us []User
 		require.NoError(t, conn.Select().From("users").Where("email", "ann@x").Get(ctx, &us))
 		assert.Len(t, evs, 1)
@@ -973,7 +973,7 @@ func TestSQLiteHooksAndRawAccess(t *testing.T) {
 		conn := newDB(
 			t,
 			db.WithLogArgs(),
-			db.WithHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }),
+			db.WithAfterHook(func(_ context.Context, e db.QueryEvent) { evs = append(evs, e) }),
 		)
 		_, err := conn.Exec(ctx, "insert into nope values (?)", 1)
 		require.Error(t, err)

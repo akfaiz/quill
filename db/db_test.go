@@ -146,7 +146,7 @@ func TestHookSeesEveryStatementAndHidesArgsByDefault(t *testing.T) {
 	var events []db.QueryEvent
 	hook := func(_ context.Context, ev db.QueryEvent) { events = append(events, ev) }
 
-	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
+	conn := db.New(sqlDB, db.Postgres, db.WithAfterHook(hook))
 	mock.ExpectQuery(`SELECT COUNT(*) AS "aggregate" FROM "people" WHERE "name" = $1`).WithArgs("ann").
 		WillReturnRows(count(1))
 	_, err := conn.Select().From("people").Where("name", "ann").Count(ctx)
@@ -162,7 +162,7 @@ func TestHookSeesEveryStatementAndHidesArgsByDefault(t *testing.T) {
 	require.Error(t, events[1].Err)
 
 	events = nil
-	logged := db.New(sqlDB, db.Postgres, db.WithHook(hook), db.WithLogArgs())
+	logged := db.New(sqlDB, db.Postgres, db.WithAfterHook(hook), db.WithLogArgs())
 	mock.ExpectQuery(`SELECT * FROM "people" WHERE "name" = $1`).WithArgs("ann").WillReturnRows(people(0))
 	var out []person
 	require.NoError(t, logged.Select().From("people").Where("name", "ann").Get(ctx, &out))
