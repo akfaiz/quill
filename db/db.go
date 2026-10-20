@@ -40,14 +40,15 @@ type beginner interface {
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
-// QueryEvent describes one executed statement, for hooks.
+// QueryEvent describes one statement, for hooks. A before hook sees SQL, NumArgs and
+// Args only; Duration and Err are filled for after hooks.
 //
 // Example:
 //
 //	hook := func(_ context.Context, ev db.QueryEvent) {
 //		log.Println(ev.SQL, ev.NumArgs, ev.Duration, ev.Err)
 //	}
-//	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
+//	conn := db.New(sqlDB, db.Postgres, db.WithAfterHook(hook))
 //	// ev.Args stays nil unless db.WithLogArgs() is also passed
 type QueryEvent struct {
 	SQL      string
@@ -56,6 +57,15 @@ type QueryEvent struct {
 	Duration time.Duration
 	Err      error
 }
+
+// BeforeHook runs before a statement is sent. The returned context replaces ctx for the
+// statement and for the after hooks (start a trace span here, finish it in an after hook).
+// A non-nil error aborts the statement: it is returned to the caller, nothing is sent and
+// after hooks do not run.
+type BeforeHook func(ctx context.Context, ev QueryEvent) (context.Context, error)
+
+// AfterHook runs after a statement finished, whether it succeeded or not.
+type AfterHook func(ctx context.Context, ev QueryEvent)
 
 // Option configures a DB.
 //
@@ -74,7 +84,8 @@ type Option func(*DB)
 func WithPrefix(prefix string) Option { return func(db *DB) { db.prefix = prefix } }
 
 // WithHook registers fn to run after every statement (logging, metrics, tracing).
-// Bind values are omitted from the event unless WithLogArgs is also set.
+// It is the same as WithAfterHook. Bind values are omitted from the event unless
+// WithLogArgs is also set.
 //
 // Example:
 //
@@ -82,7 +93,36 @@ func WithPrefix(prefix string) Option { return func(db *DB) { db.prefix = prefix
 //	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
 //	conn.Select().From("users").Where("name", "ann").Count(ctx)
 //	// hook sees: SELECT COUNT(*) AS "aggregate" FROM "users" WHERE "name" = $1, 1
-func WithHook(fn func(context.Context, QueryEvent)) Option { return func(db *DB) { db.hook = fn } }
+func WithHook(fn func(context.Context, QueryEvent)) Option { return WithAfterHook(fn) }
+
+// WithAfterHook registers fn to run after every statement, with Duration and Err set.
+// Hooks run in registration order. Bind values are omitted unless WithLogArgs is set.
+//
+// Example:
+//
+//	conn := db.New(sqlDB, db.Postgres, db.WithAfterHook(func(_ context.Context, ev db.QueryEvent) {
+//		log.Println(ev.SQL, ev.Duration, ev.Err)
+//	}))
+func WithAfterHook(fn func(context.Context, QueryEvent)) Option {
+	return func(db *DB) { db.after = append(db.after, fn) }
+}
+
+// WithBeforeHook registers fn to run before every statement is sent. Hooks run in
+// registration order; each receives the context returned by the previous one. The first
+// error aborts the statement (see BeforeHook). Bind values are omitted unless
+// WithLogArgs is set.
+//
+// Example:
+//
+//	conn := db.New(sqlDB, db.Postgres, db.WithBeforeHook(func(ctx context.Context, ev db.QueryEvent) (context.Context, error) {
+//		if strings.HasPrefix(ev.SQL, "DELETE") {
+//			return ctx, errors.New("deletes are disabled")
+//		}
+//		return context.WithValue(ctx, spanKey{}, time.Now()), nil
+//	}))
+func WithBeforeHook(fn BeforeHook) Option {
+	return func(db *DB) { db.before = append(db.before, fn) }
+}
 
 // WithLogArgs includes bind values in QueryEvent.Args. Off by default because
 // arguments routinely carry personal data (UU PDP / ISO 27701).
@@ -105,7 +145,8 @@ type DB struct {
 	conn    Conn
 	dialect Dialect
 	prefix  string
-	hook    func(context.Context, QueryEvent)
+	before  []BeforeHook
+	after   []AfterHook
 	logArgs bool
 	inTx    bool
 	spSeq   *int
@@ -212,6 +253,10 @@ func (db *DB) query(ctx context.Context, sqlText string, args []any) (*sql.Rows,
 	if db.conn == nil {
 		return nil, ErrNotBound
 	}
+	ctx, err := db.emitBefore(ctx, sqlText, args)
+	if err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	rows, err := db.conn.QueryContext(ctx, sqlText, args...)
 	db.emit(ctx, sqlText, args, start, err)
@@ -232,21 +277,49 @@ func (db *DB) exec(ctx context.Context, sqlText string, args []any) (sql.Result,
 	if db.conn == nil {
 		return nil, ErrNotBound
 	}
+	ctx, err := db.emitBefore(ctx, sqlText, args)
+	if err != nil {
+		return nil, err
+	}
 	start := time.Now()
 	res, err := db.conn.ExecContext(ctx, sqlText, args...)
 	db.emit(ctx, sqlText, args, start, err)
 	return res, err
 }
 
-func (db *DB) emit(ctx context.Context, sqlText string, args []any, start time.Time, err error) {
-	if db.hook == nil {
-		return
-	}
-	ev := QueryEvent{SQL: sqlText, NumArgs: len(args), Duration: time.Since(start), Err: err}
+func (db *DB) event(sqlText string, args []any) QueryEvent {
+	ev := QueryEvent{SQL: sqlText, NumArgs: len(args)}
 	if db.logArgs {
 		ev.Args = args
 	}
-	db.hook(ctx, ev)
+	return ev
+}
+
+// emitBefore runs the before hooks, threading the context through them. The first error
+// stops the chain and is returned.
+func (db *DB) emitBefore(ctx context.Context, sqlText string, args []any) (context.Context, error) {
+	if len(db.before) == 0 {
+		return ctx, nil
+	}
+	ev := db.event(sqlText, args)
+	for _, h := range db.before {
+		var err error
+		if ctx, err = h(ctx, ev); err != nil {
+			return ctx, err
+		}
+	}
+	return ctx, nil
+}
+
+func (db *DB) emit(ctx context.Context, sqlText string, args []any, start time.Time, err error) {
+	if len(db.after) == 0 {
+		return
+	}
+	ev := db.event(sqlText, args)
+	ev.Duration, ev.Err = time.Since(start), err
+	for _, h := range db.after {
+		h(ctx, ev)
+	}
 }
 
 // Query runs raw SQL (use the dialect's placeholders) and scans every row into

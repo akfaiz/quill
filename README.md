@@ -46,7 +46,7 @@ are no models, relations, model lifecycle hooks or migrations.
 
 - Scan into structs, maps and scalars; `First`, `Find`, `Sole`, `Value`, `Pluck`, `Exists`
 - Offset, simple and cursor (keyset) pagination; `Chunk` and `Each` for large result sets
-- Transactions, a query hook for logging, metrics and tracing, and a table prefix option
+- Transactions, before and after query hooks for logging, metrics and tracing, and a table prefix option
 - Typed, select-only API with `From[T]`, so you get `[]T` back without a destination variable
 
 ## Why quill
