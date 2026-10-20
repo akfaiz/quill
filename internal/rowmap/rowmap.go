@@ -96,7 +96,7 @@ func collectFields(t reflect.Type, prefix []int, sm *structMap) {
 }
 
 func hasOption(opts, want string) bool {
-	for o := range strings.SplitSeq(opts, ",") {
+	for _, o := range strings.Split(opts, ",") {
 		if strings.TrimSpace(o) == want {
 			return true
 		}

@@ -4,14 +4,14 @@ import "testing"
 
 func BenchmarkSplitKey(b *testing.B) {
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		_, _ = SplitKey("u.meta->x[0]->y")
 	}
 }
 
 func BenchmarkPath(b *testing.B) {
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		_ = Path("a->b->c")
 	}
 }
@@ -19,7 +19,7 @@ func BenchmarkPath(b *testing.B) {
 func BenchmarkPgAttributes(b *testing.B) {
 	path := []string{"a", "b", "c"}
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		_ = PgAttributes(path, "'")
 	}
 }

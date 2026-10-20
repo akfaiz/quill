@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ matrix.dir }}/go.mod
           cache-dependency-path: "**/go.sum"
       - name: Build and vet
         working-directory: ${{ matrix.dir }}
@@ -38,17 +38,23 @@ jobs:
           working-directory: ${{ matrix.dir }}
 
   test:
-    name: Unit and golden tests
+    name: Unit and golden tests (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # "oldest" is the go.mod minimum (1.23); keeps 1.24+ APIs out of the root module.
+        go: [oldest, stable]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go == 'oldest' && '1.23' || 'stable' }}
           cache-dependency-path: "**/go.sum"
       - name: Test with coverage
         run: make test-cover
       - name: Upload coverage reports to Codecov
+        if: matrix.go == 'oldest'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -63,7 +69,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: test/integration/go.mod
           cache-dependency-path: "**/go.sum"
       # The runner ships Docker, which testcontainers uses to start the databases.
       - name: End-to-end tests

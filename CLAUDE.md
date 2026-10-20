@@ -26,7 +26,8 @@ go test -run TestPostgres ./...     # one dialect; also TestMySQL, TestMariaDB, 
 GOQUERY_SKIP_CONTAINERS=1 go test ./...   # skip the Docker-backed suites
 ```
 
-- Both modules target Go 1.25. In `test/integration`, `modernc.org/sqlite` is pinned to v1.59.0 (newer needs Go 1.26);
+- The root module targets Go 1.23 (no 1.24+ APIs: `strings.SplitSeq`, `b.Loop`); `test/integration` and
+  `test/benchmark` stay on Go 1.25 because their dependencies require it. In `test/integration`, `modernc.org/sqlite` is pinned to v1.59.0 (newer needs Go 1.26);
   after touching dependencies run `GOTOOLCHAIN=local go mod tidy` so a newer toolchain cannot bump the `go` line.
 - A fuzz failure writes `testdata/fuzz/...`: fix the cause and commit that file; it becomes a regression case.
 

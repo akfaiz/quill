@@ -151,7 +151,7 @@ func Generate(dir string) ([]byte, error) {
 // importBlock returns the import declaration the generated code needs.
 func importBlock(body string) string {
 	var code strings.Builder
-	for line := range strings.SplitSeq(body, "\n") {
+	for _, line := range strings.Split(body, "\n") {
 		if !strings.HasPrefix(line, "//") {
 			code.WriteString(line + "\n")
 		}

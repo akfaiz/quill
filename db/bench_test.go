@@ -13,7 +13,7 @@ func benchSQL(b *testing.B, build func(d db.Dialect) (string, []any, error)) {
 	for _, d := range benchDialects {
 		b.Run(d.String(), func(b *testing.B) {
 			b.ReportAllocs()
-			for b.Loop() {
+			for range b.N {
 				if _, _, err := build(d); err != nil {
 					b.Fatal(err)
 				}
@@ -97,7 +97,7 @@ func BenchmarkDeleteSQL(b *testing.B) {
 
 func BenchmarkToRawSQL(b *testing.B) {
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		if _, err := db.Use(db.Postgres).
 			Select().
 			From("users").
@@ -116,7 +116,7 @@ func BenchmarkClone(b *testing.B) {
 		Join("posts", "posts.user_id", "users.id").
 		OrderBy("id", "asc")
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		_ = base.Clone().Where("b", 2)
 	}
 }
@@ -129,7 +129,7 @@ func BenchmarkRowFromStruct(b *testing.B) {
 	}
 	m := member{Name: "ann", Email: "a@x"}
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		if _, err := db.Row(m); err != nil {
 			b.Fatal(err)
 		}
@@ -185,7 +185,7 @@ func BenchmarkSelectWideBuild(b *testing.B) {
 	for _, d := range benchDialects {
 		b.Run(d.String(), func(b *testing.B) {
 			b.ReportAllocs()
-			for b.Loop() {
+			for range b.N {
 				_ = wideQuery(d)
 			}
 		})
@@ -198,7 +198,7 @@ func BenchmarkSelectWideCompile(b *testing.B) {
 		q := wideQuery(d)
 		b.Run(d.String(), func(b *testing.B) {
 			b.ReportAllocs()
-			for b.Loop() {
+			for range b.N {
 				if _, _, err := q.ToSQL(); err != nil {
 					b.Fatal(err)
 				}
@@ -210,7 +210,7 @@ func BenchmarkSelectWideCompile(b *testing.B) {
 func BenchmarkCloneWide(b *testing.B) {
 	q := wideQuery(db.Postgres)
 	b.ReportAllocs()
-	for b.Loop() {
+	for range b.N {
 		_ = q.Clone()
 	}
 }
@@ -219,7 +219,7 @@ func BenchmarkCloneWide(b *testing.B) {
 func BenchmarkJoinForms(b *testing.B) {
 	b.Run("plain", func(b *testing.B) {
 		b.ReportAllocs()
-		for b.Loop() {
+		for range b.N {
 			_, _, _ = db.Use(db.Postgres).
 				Select().From("a").
 				Join("b", "b.a_id", "a.id").
@@ -229,7 +229,7 @@ func BenchmarkJoinForms(b *testing.B) {
 	})
 	b.Run("closure", func(b *testing.B) {
 		b.ReportAllocs()
-		for b.Loop() {
+		for range b.N {
 			_, _, _ = db.Use(db.Postgres).Select().From("a").
 				JoinFunc("b", func(j *db.JoinClause) { j.On("b.a_id", "a.id") }).
 				JoinFunc("c", func(j *db.JoinClause) { j.On("c.a_id", "=", "a.id") }).ToSQL()
