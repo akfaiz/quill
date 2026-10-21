@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `db.WithBeforeHook` runs before each statement. It can replace the context (for tracing) or return an error to
+  abort the statement. `db.WithAfterHook` replaces `db.WithHook`. Hooks may be registered several times
+  and run in registration order; `db.BeforeHook` and `db.AfterHook` name the func types.
+
+### Breaking
+
+- Removed `db.WithHook`; use `db.WithAfterHook`.
+
+### Changed
+
+- The root module now requires Go 1.23 (was 1.25): `strings.SplitSeq`, `testing.B.Loop` and `reflect.TypeAssert`
+  are no longer used. `test/integration` and `test/benchmark` stay on Go 1.25 because their dependencies require it.
+- CI reads the Go version of the integration job from `test/integration/go.mod`.
+
 ## [0.2.0] - 2026-10-17
 
 ### Breaking

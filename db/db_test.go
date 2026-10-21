@@ -146,7 +146,7 @@ func TestHookSeesEveryStatementAndHidesArgsByDefault(t *testing.T) {
 	var events []db.QueryEvent
 	hook := func(_ context.Context, ev db.QueryEvent) { events = append(events, ev) }
 
-	conn := db.New(sqlDB, db.Postgres, db.WithHook(hook))
+	conn := db.New(sqlDB, db.Postgres, db.WithAfterHook(hook))
 	mock.ExpectQuery(`SELECT COUNT(*) AS "aggregate" FROM "people" WHERE "name" = $1`).WithArgs("ann").
 		WillReturnRows(count(1))
 	_, err := conn.Select().From("people").Where("name", "ann").Count(ctx)
@@ -162,12 +162,77 @@ func TestHookSeesEveryStatementAndHidesArgsByDefault(t *testing.T) {
 	require.Error(t, events[1].Err)
 
 	events = nil
-	logged := db.New(sqlDB, db.Postgres, db.WithHook(hook), db.WithLogArgs())
+	logged := db.New(sqlDB, db.Postgres, db.WithAfterHook(hook), db.WithLogArgs())
 	mock.ExpectQuery(`SELECT * FROM "people" WHERE "name" = $1`).WithArgs("ann").WillReturnRows(people(0))
 	var out []person
 	require.NoError(t, logged.Select().From("people").Where("name", "ann").Get(ctx, &out))
 	require.Len(t, events, 1)
 	assert.Equal(t, []any{"ann"}, events[0].Args)
+}
+
+func TestBeforeAndAfterHooks(t *testing.T) {
+	type ctxKey struct{}
+	ctx := context.Background()
+
+	t.Run("order, context threading and event contents", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		var trace []string
+		var beforeEv, afterEv db.QueryEvent
+		var afterCtxVal any
+		conn := db.New(sqlDB, db.Postgres,
+			db.WithBeforeHook(func(c context.Context, ev db.QueryEvent) (context.Context, error) {
+				trace = append(trace, "before1")
+				beforeEv = ev
+				return context.WithValue(c, ctxKey{}, "span"), nil
+			}),
+			db.WithBeforeHook(func(c context.Context, _ db.QueryEvent) (context.Context, error) {
+				trace = append(trace, "before2:"+c.Value(ctxKey{}).(string))
+				return c, nil
+			}),
+			db.WithAfterHook(func(c context.Context, ev db.QueryEvent) {
+				trace = append(trace, "after")
+				afterEv, afterCtxVal = ev, c.Value(ctxKey{})
+			}),
+		)
+		mock.ExpectExec(`DELETE FROM "people" WHERE "id" = $1`).WithArgs(1).WillReturnResult(sqlmock.NewResult(0, 1))
+		_, err := conn.Delete("people").Where("id", 1).Exec(ctx)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"before1", "before2:span", "after"}, trace)
+		assert.Equal(t, `DELETE FROM "people" WHERE "id" = $1`, beforeEv.SQL)
+		assert.Equal(t, 1, beforeEv.NumArgs)
+		assert.Nil(t, beforeEv.Args)
+		assert.Zero(t, beforeEv.Duration)
+		assert.Equal(t, "span", afterCtxVal)
+		assert.NoError(t, afterEv.Err)
+	})
+	t.Run("before error aborts the statement", func(t *testing.T) {
+		sqlDB, _ := newMock(t) // no expectations: any statement sent would fail the mock
+		boom := errors.New("blocked")
+		afterRan := false
+		conn := db.New(sqlDB, db.Postgres,
+			db.WithBeforeHook(func(c context.Context, _ db.QueryEvent) (context.Context, error) { return c, boom }),
+			db.WithAfterHook(func(context.Context, db.QueryEvent) { afterRan = true }),
+		)
+		_, err := conn.Exec(ctx, "DELETE FROM people")
+		require.ErrorIs(t, err, boom)
+		var out []person
+		require.ErrorIs(t, conn.Query(ctx, &out, "SELECT * FROM people"), boom)
+		assert.False(t, afterRan)
+	})
+	t.Run("args follow WithLogArgs", func(t *testing.T) {
+		sqlDB, mock := newMock(t)
+		var got []any
+		conn := db.New(sqlDB, db.Postgres, db.WithLogArgs(),
+			db.WithBeforeHook(func(c context.Context, ev db.QueryEvent) (context.Context, error) {
+				got = ev.Args
+				return c, nil
+			}))
+		mock.ExpectExec("UPDATE a SET x = $1").WithArgs(5).WillReturnResult(sqlmock.NewResult(0, 1))
+		_, err := conn.Exec(ctx, "UPDATE a SET x = $1", 5)
+		require.NoError(t, err)
+		assert.Equal(t, []any{5}, got)
+	})
 }
 
 func TestTransactionCommitsRollsBackAndRepanics(t *testing.T) {
